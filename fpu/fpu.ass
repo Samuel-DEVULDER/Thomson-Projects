@@ -492,33 +492,6 @@ fnrm
     std   ,u
   DONE
   rts
-  
-fadd
- 
-  
-  
-
-  neg   ,u
-  neg  1,u
-  s
-  
-  
-  ldd  ,u   ; 5
-  pshu d    ; 7
-  ldb  4,u  ; 5
-  stb  ,-u  ; 6 => 23
-  
-  pulu d,dp ; 8
-  pshu d,dp ; 8
-  pshu d,dp ; 8 => 24
-  
-  ldd  ,u   ; 5
-  leau -3,u ; 5
-  std  ,u   ; 5
-  ldb  5,u  ; 5
-  stb  2,u  ; 5 => 25
-
-
 
 * =====================================
 * Stack manipulation
