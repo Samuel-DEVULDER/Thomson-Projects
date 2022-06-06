@@ -1,0 +1,571 @@
+
+COMPILATION
+===========
+
+Macintosh:
+        tomac.sh       ajustement éventuel des retours de ligne (CR)
+        tounix.sh      ajustement éventuel des retours de ligne (CRLF)
+        fixunix.sh     création du makefile / ajustement des CR des sources
+        make           compilation (voir makefile.all pour les options)
+
+Unix (Linux):
+        tounix.sh      ajustement des retours de ligne (LF)
+        fixlinux.sh    création du makefile
+        make           compilation (voir makefile.all pour les options)
+
+Mingw (Windows):
+        todos.sh       ajustement éventuel des retours de ligne (CRLF)
+        fixmingw.bat   création du makefile
+        mingw32-make   compilation (voir makefile.all pour les options)
+
+Mingw (Windows Unix):
+        todos.sh       ajustement éventuel des retours de ligne (CRLF)
+        fixmingw.sh    création du makefile
+        mingw32-make   compilation (voir makefile.all pour les options)
+
+MS-Dos :
+        todos.sh       ajustement éventuel des retours de ligne (CRLF)
+        fixdjgpp.bat   création du makefile
+        make           compilation (voir makefile.all pour les options)
+
+
+LE PROGRAMME EXÉCUTABLE
+=======================
+
+
+LES ARGUMENTS DE COMMANDE
+-------------------------
+
+Usage: c6809 [options] <source_file>
+
+La ligne de commande accepte les options et le chemin vers le source
+assembleur. Les fichiers '.lst' (texte du source assemblé) et '.BIN' (fichier
+binaire assemblé) seront créés dans le même répertoire avec le même nom et les
+extensions correspondantes.
+
+  Options :
+
+    --help               Aide du programme
+
+  Optimisation: :
+    --optimize           Notifie les optimisations
+
+  Symboles :
+    --symbols-none       N'affiche pas les symboles (par défaut)
+    --symbols-by-error   Affiche les symboles dans l'ordre des erreurs
+    --symbols-by-type    Affiche les symboles dans l'ordre des types
+    --symbols-by-time    Affiche les symboles dans l'ordre de fréquence
+
+  Sortie binaire :
+    --binary-data        Crée un simple fichier data (par default)
+    --binary-not-linear  Crée un binaire Thomson non linéaire
+                         (blocs de 128 octets maximum)
+    --binary-linear      Crée un binaire Thomson linéaire (un seul bloc)
+    --binary-hybrid      Crée un binaire Thomson hybride
+                         (blocs de taille variable)
+
+  Passage d'argument :
+    -d label=value       Fixe la valeur d'un argument
+
+  Création ASM (Thomson specifique) :
+    --create-asm-files   Crée les fichiers ASM
+
+  Type d'assembleur :
+    --assembler-soft     Compile sans restrictions (par défaut)
+    --assembler-macro    Compile comme MACROASSEMBLER (Thomson spécifique)
+    --assembler-to       Compile comme ASSEMBLER 1.0 (Thomson TO spécifique)
+    --assembler-mo       Compile comme ASSEMBLER 1.0 (Thomson MO spécifique)
+
+LES FICHIERS ASSEMBLEUR
+=======================
+
+Les fichiers assembleurs peuvent être écrits en UTF8 ou en ISO-8859-1 pour
+Linux, Windows et MS-Dos, et en UTF8 ou en MacRoman pour Macintosh.
+
+Les expressions assembleur ne peuvent pas être aérées avec des espaces, un
+espace étant traité comme un séparateur.
+
+        Exemple correct :
+        
+                   fcb    $50,$56,$58
+            load1  lda    #value+56
+
+        Exemple incorrect :
+        
+                   fcb    $50, $56, $58
+            load1  lda    #value + 56
+
+
+LES MARQUEURS
+-------------
+
+Les marqueurs doivent se trouver en début de ligne et avec des parenthèses.
+
+(main)
+        Indique le début du programme de lancement.
+        Il doit se trouver dans le premier fichier chargé (fichier d'appel
+        passé en paramètre dans la ligne de commande).
+        S'il est omis, le programme sera assemblé depuis les premières lignes
+        du source sans marquage.
+
+        Exemple :
+
+        (main)MAIN.ASM          est le programme exécuté en premier.
+
+(include)
+        Marque le début d'un INCLUD résident.
+        Les includes ainsi définis peuvent être appelés par la directive
+        INCLUD.
+
+        Exemple :
+
+        (include)INC2.ASM       pourra être appelé par un "INCLUD INC2.ASM".
+
+(info)
+        Demande l'affichage du nombre de cycles et d'octets écoulés depuis le
+        dernier appel d'INFO ou de CHECK.
+        Une fois affichés, le nombre de cycles et d'octets sont remis à 0.
+
+(check)
+        Teste le nombre de cycles/le nombre d'octets
+        Si le nombre de cycles ou le nombre d'octets ne correspond pas à
+        celui demandé, CHECK génèrera une erreur.
+        
+        Exemple :
+        
+        (check)12      Vérifie que 12 cycles se sont écoulés depuis le
+                       dernier CHECK ou le dernier INFO.
+        (check),24     Vérifie que 24 octets octets on été écrits depuis le
+                       dernier CHECK ou le dernier INFO.
+        (check)128,36  Vérifie que 128 cycles se sont écoulés et que 36
+                       octets ont été écrits depuis le dernier CHECK ou le
+                       dernier INFO.
+
+        Une fois la vérification accomplie, le nombre de cycles et d'octets
+        sont remis à 0.
+
+
+LES OPÉRATEURS
+--------------
+
+Les opérateurs suivants sont donnés avec leur priorité :
+
+                  Signe  Priorité
+DIVISION            /       5
+MODULO              %       5
+DECALAGE
+       à gauche     <       5
+       à droite     <-      5
+ET	                &       4
+OU                  !       3
+OU EXCLUSIF         ^       3
+ADDITION            +       2
+SOUSTRACTION        -       2
+EGALITE             =       1
+NOT                 :       1	
+
+Préfixes et suffixes :
+
+			Préfixe		Suffixe
+ASCII          '        (aucun)
+BINAIRE        %           U
+OCTAL          @           Q ou O
+DECIMAL        &           T
+HEXADECIMAL    $           H
+
+Le préfixe ASCII peut être utilisé pour exprimer des valeurs sur 16 bits.
+Exemple : '4'e correspond à la valeur hexadécimale 16 bits $3465.
+Pour désigner le compteur d'adresse, les symboles spéciaux * et . sont
+autorisés dans les expressions.
+
+
+LES DIRECTIVES
+--------------
+
+
+FCB (Fill Constant Byte) 
+        Définit un champ de valeurs 8 bits :
+                    FCB   Valeur1[,Valeur2,Valeur3,Valeur4, etc...]
+        (les champs entre crochets sont facultatifs)
+
+FDB (Fill Double byte) 
+        Définit un champ de valeurs 16 bits :
+                    FDB   Valeur1[,Valeur2,Valeur3,Valeur4, etc...]
+        (les champs entre crochets sont facultatifs)
+
+FCC (Fill Constant Character)
+        Définit une chaîne de caractères :
+                    FCC   /Chaîne de caractères/
+        Toute minuscule accentuée (ç, á, â, ä, à, é, è, ë, ê, î, ï, ô, ö, û,
+        ü et ù) sera interprétée par sa séquence ACC.
+        Tout caractère (ici '/') peut être utilisé pour encadrer la chaîne.
+
+FCS (Fill Character and Set to 0)
+        Définit une chaîne de caractères :
+                    FCS   /Chaîne de caractères/
+        Toute minuscule accentuée (ç, á, â, ä, à, é, è, ë, ê, î, ï, ô, ö, û,
+        ü et ù) sera interprétée par sa séquence ACC.
+        Tout caractère (ici '/') peut être utilisé pour encadrer la chaîne.
+        Un caractère à $00 sera ajouté à la fin de la chaîne.
+
+FCN (Fill Character and Negative) 
+        Définit une chaîne de caractères :
+                    FCN   /Chaîne de caractères/
+        Toute minuscule accentuée (ç, á, â, ä, à, é, è, ë, ê, î, ï, ô, ö, û,
+        ü et ù) sera interprétée par sa séquence ACC.
+        Tout caractère (ici '/') peut être utilisé pour encadrer la chaîne.
+        Le dernier caractère de la chaîne sera augmenté de $80.
+
+RMB (Reserve Memory Byte) 
+        Réservation 8 bits d'une zone mémoire :
+                    RMB    <Taille en 8 bits>[,<valeur de remplissage>]
+        Si la valeur de remplissage est omise, la taille sera passée sans
+        altérer le contenu mémoire. La valeur de remplissage est traitée sur
+        8 bits.
+
+RMD (Reserve Memory Double) 
+        Réservation 16 bits d'une zone mémoire :
+                    RMD    <Taille en 16 bits>[,<valeur de remplissage>]
+        Si la valeur de remplissage est omise, la taille sera passée sans
+        altérer le contenu mémoire. La valeur de remplissage est traitée sur
+        16 bits.
+
+CALL    Appel d'une routine moniteur pour MO (mode JSR) :
+                      CALL   <Numéro de routine>
+
+GOTO    Appel d'une routine moniteur pour MO (mode JMP) :
+                      GOTO   <Numéro de routine>
+
+STOP    Interruption du programme sous assembleur pour MO :
+                      STOP
+
+SET     Définit la valeur d'un symbole de façon temporaire :
+             Symbole  SET    <Valeur>
+
+EQU     Définit la valeur d'un symbole de façon définitive :
+             Symbole  EQU    <Valeur>
+
+ORG     Définit l'origine du programme machine assemblé :
+             ORG      <Adresse d'origine>
+
+SETDP   Fixe le MSB d'adresse pour l'assemblage en page directe :
+             SETDP    <Valeur 8 bits>
+
+END     Indique la fin de l'assemblage.
+        END accepte le paramètre d'exécution du fichier machine :
+             END   <Adresse d'execution>
+        A l'assemblage sur périphérique de sauvegarde, l'adresse d'exécution
+        du binaire sera mise à jour.
+        Si la directive END est omise, MacroAssembler ne génèrera pas d'erreur,
+        mais stoppera l'assemblage à la fin du source.
+
+*       Indique un champ de commentaire.
+        Tout ce qui est écrit après le signe * sera ignoré à l'assemblage.
+        Un commentaire peut commencer dès le début d'une ligne.
+
+/       Encadre plusieurs lignes de commentaire.
+        Tout ce qui est écrit entre deux "/" sera ignoré à l'assemblage. Le
+        signe doit se trouver au début de la ligne. Au premier "/" recontré,
+        l'assemblage passe en mode commentaire. Au deuxième "/" rencontré,
+        l'assemblage repasse en mode normal.
+
+TITLE   Détermine le titre pour l'impression du source sous la forme :
+              TITLE   <Titre du source>
+        où Titre du source est une chaîne de caratères.
+
+PAGE    Force le passage à la page suivante pour l'impression.
+
+OPT     Activation/désactivation des options d'assemblage (voir commande A
+        dans le paragraphe "Liste des commandes pour l'éditeur").
+
+            WS (With Symbols) = Affiche le listing des symboles
+            WL (With Listing) = Affiche le listing
+            WE (Wait Error)   = Stoppe le listing à la première erreur
+                                rencontrée
+            NO (No Object)    = Pas de programme objet généré.
+            SS (Small Screen) = Affichage source et objet sur des lignes
+                                séparées.
+            LP (Line Printer) = Sortie du listing sur imprimante.
+            OP (Optimize)     = Tout branchement, adressage indexé ou indirect
+                                pouvant faire l'objet d'une réduction de taille
+                                de l'offset (ou de son élimination éventuelle)
+                                sera signalé, ainsi que les étiquettes
+                                inutilisées
+
+        Les options seront séparées par le signe "/".
+        Pour la désactivation, précéder l'option du signe ".".
+
+        Exemple :
+
+              OPT    op/ws/wl/.ne
+
+        La directive OPT nue n'a aucun effet. Les options "LP" et "NM" sont
+        inactivables.
+
+INCLUD  Inclut un fichier ASM lors de l'assemblage sous la forme :
+
+            INCLUD   "<chemin du fichier>"
+            INCLUD   <descripteur Thomson>
+            INCLUD   <descripteur Thomson> from "<chemin du fichier>"
+
+        Exemples :
+
+            Chargement d'un INCLUD interne :
+
+                    INCLUD   INCLUD4
+               ou:  INCLUD   INCLUD4.ASM
+
+                Le descripteur Thomson n'est pas entre guillemets.
+                L'include 'INCLUD4' doit être signifié dans le source appelant
+                à l'aide du marqueur '(include)'.
+
+            Chargement d'un INCLUD externe :
+
+                    INCLUD   "src/asm/includ2.asm"
+
+                Le chemin du fichier doit se trouver entre guillemets.
+
+            Chargement d'un INCLUD interne dans un fichier externe :
+
+                    INCLUD   0:INC7 from "src/asm/inc7.inc"
+               ou:  INCLUD   0:INC7.ASM from "src/asm/inc7.inc"
+
+                L'include 'INC7' doit être signifié dans le source appelé par
+                le chemin de fichier à l'aide du marqueur '(include)'.
+                Le descripteur Thomson n'est pas entre guillemets.
+                Le chemin du fichier doit se trouver entre guillemets.
+
+        Les INCLUD peuvent être imbriqués (INCLUD dans un INCLUD).
+        Le suffixe de fichier, s'il est omis, est "ASM" par défaut.
+
+INCBIN  Inclut un fichier binaire Thomson lors de l'assemblage.
+
+            INCBIN   "<chemin du fichier>"
+            INCBIN   <descripteur Thomson> from "<chemin du fichier>"
+
+        Exemples :
+
+            Chargement d'un fichier externe :
+
+                    INCBIN   "data/data2.dat"
+
+                Le chemin du fichier doit se trouver entre guillemets.
+
+            Chargement d'un fichier externe avec descripteur Thomson :
+
+                    INCBIN   1:DATA3 from "data/data3.dat"
+               ou:  INCBIN   1:DATA3.BIN from "data/data3.dat"
+
+                Le descripteur Thomson n'est pas entre guillemets.
+                Le chemin du fichier doit se trouver entre guillemets.
+              
+        Le suffixe de fichier, s'il est omis, est "BIN" par défaut.
+
+INCDAT  Inclut un fichier externe de type quelconque lors de l'assemblage.
+
+            INCDAT   "<chemin du fichier>"
+            INCDAT   <descripteur Thomson> from "<chemin du fichier>"
+
+        Exemples :
+
+            Chargement d'un fichier externe :
+
+                    INCDAT   "data/data2.dat"
+
+                Le chemin du fichier doit se trouver entre guillemets.
+
+            Chargement d'un fichier externe avec descripteur Thomson
+                (nécessaire seulement dans le cas de la création automatique
+                des fichier ASM):
+
+                    INCDAT   DATA3.DAT from "data/data3.dat"
+
+                Le descripteur Thomson n'est pas entre guillemets.
+                Le chemin du fichier doit se trouver entre guillemets.
+              
+        Le suffixe de fichier doit être signifié, puisqu'il n'est pas défini
+        par défaut.
+
+ECHO    Affiche une expression à la dernière passe d'assemblage.
+
+              ECHO    <Expression>
+
+        Exemples :
+
+              echo    Terminé 
+
+        ... affiche "Terminé" à l'assemblage. 
+        On peut afficher la valeur des symboles : 
+
+        var   set    12
+              echo   var binaire = %var 
+              echo   var hexa = $((var+10)/2)
+              echo   var décimal = &(var*150)
+              echo   var octal = @var
+ 
+        ... ou des constantes : 
+              echo   $%111     Affiche en hexadécimal le nombre binaire 111 
+              echo   variable = &(var+@752)  Affiche en décimal une expression
+                                             avec un nombre octal
+
+PRINT   Affiche une expression lors à la première passe d'assemblage.
+
+              PRINT    <Expression>
+
+        Exemples :
+
+              print    Terminé 
+
+        ... affiche "Terminé" à l'assemblage. 
+        Au contraire de ECHO, on ne peut pas afficher la valeur d'une
+        évaluation d'expression.
+
+IF   (If Equal)
+IFEQ (If Equal) 
+IFNE (If Not Equal)
+IFGT (If Greater Than)
+IFLT (If Lower Than) 
+IFGE (If Greater or Equal) 
+IFLE (If Lower or Equal) 
+        Introduction d'une condition sous la forme :
+        IF    <expression>    (assemble si l'expression est vérifiée ou égale
+                               à 0)
+        IFEQ  <expression>    (assemble si l'expression est vérifiée ou égale
+                               à 0 (même effet que IF))
+        IFNE  <expression>    (assemble si l'expression n'est pas vérifiée ou
+                               différente de 0)
+        IFGT  <expression>    (assemble si l'expression est positive (sur 16
+                               bits))
+        IFLT  <expression>    (assemble si l'expression est négative (sur 16
+                               bits))
+        IFGE  <expression>    (assemble si l'expression est positive ou nulle
+                               (sur 16 bits))
+        IFLE  <expression>    (assemble si l'expression est négative ou nulle
+                               (sur 16 bits))
+        Si le résultat de l'expression est vrai (différent de 0), les lignes
+        qui suivent sont assemblées.
+        Pour les conditions signées (IFGT, IFLT, IFGE, IFLE), l'expression est
+        testée sur 16 bits.
+        Une condition est conclue par ENDC.
+
+ELSE    Les lignes qui suivent sont assemblées si la condition introduite par
+        un 'if' n'est pas vérifiée.
+        Une condition est conclue par ENDC.
+
+ENDC/ENDIF (End Condition) 
+        Clôture d'une condition introduite par un 'if'.
+
+MACRO   Engage une définition de macro.
+        Une définition de macro est conclue par ENDM.
+        Les macros peuvent être définies dans un fichier inclu et être
+        appelées après leur déclaration.
+        Les paramètres de macro sont passés en arguments séparés par des
+        virgules dans le champ opérande.
+        L'exécution de la macro réceptionne les arguments par un chiffre de
+        0 à 9 précédé du signe "\".
+
+        Exemple :
+
+        to       equ    1
+
+        affiche  macro
+                 lda    #\0fin-\0debut
+                 ldx    #\0debut
+        \0loop   ldb    ,\2+
+                 ifne   to
+                 jsr    $e803
+                 else
+                 call   $02
+                 endc
+                 deca
+                 bne    \0loop
+                 jmp    ,\2
+        \0debut  fcc    \1
+        \0fin    equ    *
+                 lea\3  ,x
+                 endm
+
+                 affiche  a;"Message";x;y       * Exécution de la macro
+                 swi
+                 end
+         
+        L'exécution de cette macro équivaut à :
+ 
+                lda    #afin-adebut
+                ldx    #adebut
+        aloop   ldb    ,x+
+                jsr    $e803
+                deca
+                bne    aloop
+                jmp    ,x
+        adebut  fcc    "Message"
+        afin    equ    *
+                leay   ,x
+
+                swi
+                end
+
+ENDM (End Macro) 
+        Clôture d'une macro.
+
+
+LES FICHIERS ".ASM"
+-------------------
+
+
+	Les fichiers ".ASM" sont les fichiers de type ASCII dont le format est
+propre aux logiciels Assembler. Dans le bloc descripteur de fichier, leur type
+est de valeur $03 et leur flag de valeur $FF. Une ligne de programme source est
+limité à 40 caractères, espaces compris, et comporte 4 champs:
+
+- Le champ étiquette (position 0) 
+- Le champ instruction (positon 6) 
+- Le champ opérande (position 14) 
+- Le champ commentaire (positions 22 et suivantes) 
+
+	Chacun de ces champs doit être séparé par un espace au moins.
+	Les minuscules accentuées sont codées sur un quartet faible augmenté de $80
+(avec la touche ACC à actionner en préalable, bien que la plupart de ces
+caractères se trouvent en raccourci sur le clavier):
+
+ACC+"Kc"  $80 = ç
+ACC+"Ba"  $81 = á
+ACC+"Ca"  $82 = â
+ACC+"Ha"  $83 = ä
+ACC+"Aa"  $84 = à
+ACC+"Be"  $85 = é
+ACC+"Ae"  $86 = è
+ACC+"He"  $87 = ë
+ACC+"Ce"  $88 = ê
+ACC+"Ci"  $89 = î
+ACC+"Hi"  $8A = ï
+ACC+"Co"  $8B = ô
+ACC+"Ho"  $8C = ö
+ACC+"Cu"  $8D = û
+ACC+"Hu"  $8E = ü
+ACC+"Au"  $8F = ù
+
+	Les espaces entre champs et les espaces de commentaires obéissent aux mêmes
+lois. Le nombre d'espaces consécutifs est codé sur un quartet faible augmenté
+de $F0 (de $F1 à $FF). Si le nombre d'espaces consécutifs dépasse 15, un
+nouveau code d'espace est créé, jusqu'à ce que le nombre d'espaces total soit
+atteint. Les espaces de fin de ligne sont ignorés. Une ligne de programme
+source est clôturée par le caractère CR ($0D).
+
+
+CONSTITUTION D'UNE LIGNE DE PROGRAMME SOURCE EN MEMOIRE SOUS ASSEMBLER
+----------------------------------------------------------------------
+
+
+Pour chaque ligne (à partir de l'adresse contenue en $6300):
+
+Offsets 0-1 Numéro de ligne sur 16 bits
+Offset 2 Taille X de la ligne
+Offset 3-X+3 Ligne en question
+
+La ligne est codée de la même façon qu'une ligne de programme source ".ASM"
+sauf que la ligne n'est pas clôturée par le caractère CR ($0D).
+
+
+
+

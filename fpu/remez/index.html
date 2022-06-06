@@ -1,0 +1,36 @@
+<html><head>
+  <script src="hsd-flotr2.js"></script>
+  <script src="remez.js"></script>
+  </head><body>
+  <div style="float:left; margin-left:2em;">
+  <h2> Remez algorithm </h2>
+  <form method="post"> 
+    Interval Start:<input type = "text" value = "0" name = "iStart" size = "5" oninput="CalculateFormRemez()"><br/>
+    Interval End: <input type = "text" value = "1" name = "iEnd" size = "5" oninput="CalculateFormRemez()"> <br/>
+    Degrees: <input type = "text" value = "2" name = "Degrees" size = "5" oninput="CalculateFormRemez()"><br/>
+    Function: <input type = "text" name = "Expr" size = "70" value = "x==0?1:sin(x)/x" oninput="CalculateFormRemez()" ><br\>
+    <br/><br/>
+    <input id="CalculateButton" type="button" value="Recompute" onclick="CalculateFormRemez()"><br/>
+    <h3>Coefficients</h3>
+    <h3 style="color:red;" id="warning"> </h3>
+    <p><i>Note: You can directly modify these values to see how it affects the polynomial</i></p>
+    <div id="Coefficients" style="margin-left:2em">
+        ...
+    </div>
+    <br/>
+    Max Absolute Error: <input type = "text" name = "AbsErr" size = "20" value = ""><br/>
+    <h3>Generated function</h3>
+    <textarea name="Output" rows="7" cols = "50"> </textarea> <br/>
+  </form>
+  <p><i>Source avaliable at <a href="https://github.com/jonvaldes/webremez">https://github.com/jonvaldes/webremez</a></i></p>
+  </div>
+  <div style="float:left; top:0; margin-left:2em;">
+    <h3>Graphs</h3>
+  <p>Functions (green:original, red:approximation)</p>
+  <div style="height:410px;overflow:hidden;">
+    <div id="functiongraph" style="width:1200px;height:600px;transform:matrix(0.5,0,0,0.5,-300,-90);"></div>
+  </div>
+  <p>Absolute error</p>
+  <div id="errorgraph" style="width:600px;height:300px;"></div>
+  </div>
+</body></html>

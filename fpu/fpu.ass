@@ -1,0 +1,2701 @@
+(main)FPU
+* =====================================
+*
+* Tests around a "new" floating-point
+* representation which is relatively
+* compact and fast.
+*
+* =====================================
+*
+* Format:
+*
+* EEEEEEEE NNNNNNNN NNNNNNNN
+* E=EXPO
+* N=-32768 .. 32767
+*
+* =====================================
+*
+* Represents
+*   x = N * 2**E
+*
+* Normalized form is when the two most
+* significative bits of N are not the 
+* same.
+*
+* =====================================
+*
+* (c) Samuel DEVULDER - May 2020
+*
+* inspired by
+*     http://tinyurl.com/yxng3vau
+*
+* =====================================
+* Conventions:
+* =====================================
+* Floating-point operations are stack-
+* based (register U is used). Comments
+* indicates stack-values like this:
+*            (before -- after)
+*
+* For speed reason, floating point
+* operations typically trash the A
+* and B registers and possibly the X
+* register as well. Consider them
+* as dirty when calling. Same with
+* CC-flags.
+* =====================================
+
+        org     $9000
+
+* =====================================
+* some helpful macros
+* =====================================
+
+* cleard
+clrd    MACRO
+        ldd     #0
+        ENDM
+
+* negate d-reg
+negd    MACRO
+        nega
+        negb
+        sbca    #0
+        ENDM
+
+* arithmetic shift right d-reg
+asrd    MACRO
+        asra
+        rorb
+        ENDM
+
+* logical shift right d-reg
+lsrd    MACRO
+        lsra
+        rorb
+        ENDM
+
+* shift left d-reg
+lsld    MACRO
+        lslb
+        rola
+        ENDM
+
+* rotate right d-reg
+rord    MACRO
+        rora
+        rorb
+        ENDM
+
+* rotate left d-reg
+rold    MACRO
+        rolb
+        rola
+        ENDM
+
+* skip next 2 bytes
+SKIP2   MACRO
+        fcb     $8C     ; SKIP2 (CMPX #N)
+        ENDM
+
+* skip next byte
+SKIP1   MACRO
+        fcb     $81     ; SKIP (CMPA #N)
+        ENDM
+
+* declare a self-modifying code variable
+VAR     MACRO
+\0      set     *-\1
+        ENDM
+
+* define a stack
+DOSTCK  MACRO
+DO9\0   set     0
+DO8\0   set     0
+DO7\0   set     0
+DO6\0   set     0
+DO5\0   set     0
+DO4\0   set     0
+DO3\0   set     0
+DO2\0   set     0
+DO1\0   set     0
+        ENDM
+
+* default stack
+        DOSTCK  def
+DO_cpt  SET     0
+
+* push value onto stack
+DOPUSH  MACRO   QUIET
+        IFNE    DO9\0
+STACK OVERFLOW
+        ENDC
+DO9\0   set     DO8\0
+DO8\0   set     DO7\0
+DO7\0   set     DO6\0
+DO6\0   set     DO5\0
+DO5\0   set     DO4\0
+DO4\0   set     DO3\0
+DO3\0   set     DO2\0
+DO2\0   set     DO1\0
+DO1\0   set     \1
+        ENDM
+
+* pop value out of stack
+DOPOP   MACRO   QUIET
+        IFEQ    DO1\0
+STACK UNDERFLOW
+        ENDC
+DO1\0   set     DO2\0
+DO2\0   set     DO3\0
+DO3\0   set     DO4\0
+DO4\0   set     DO5\0
+DO5\0   set     DO6\0
+DO6\0   set     DO7\0
+DO7\0   set     DO8\0
+DO8\0   set     DO9\0
+DO9\0   set     0
+        ENDM
+
+* macro generating symbols from number
+* DOGEN NUM,ARG1,ARG2,SYMBOL
+DOGEN   MACRO   QUIET
+    IF  \0
+        IFEQ    (\0&7)-0
+        DOGEN   (\0<-3),\1,\2,\30
+        ENDC
+        IFEQ    (\0&7)-1
+        DOGEN   (\0<-3),\1,\2,\31
+        ENDC
+        IFEQ    (\0&7)-2
+        DOGEN   (\0<-3),\1,\2,\32
+        ENDC
+        IFEQ    (\0&7)-3
+        DOGEN   (\0<-3),\1,\2,\33
+        ENDC
+        IFEQ    (\0&7)-4
+        DOGEN   (\0<-3),\1,\2,\34
+        ENDC
+        IFEQ    (\0&7)-5
+        DOGEN   (\0<-3),\1,\2,\35
+        ENDC
+        IFEQ    (\0&7)-6
+        DOGEN   (\0<-3),\1,\2,\36
+        ENDC
+        IFEQ    (\0&7)-7
+        DOGEN   (\0<-3),\1,\2,\37
+        ENDC
+    ELSE
+        \1      \2,\3
+    ENDC
+        ENDM
+
+* sets ARG1 to ARG2
+DOSET1  MACRO   QUIET
+\0 set \1
+        ENDM
+
+* sets ARG2 to ARG1
+DOSET2  MACRO   QUIET
+\1 set \0
+        ENDM
+
+* sets REDO/EXIT values from stack values
+DOSET   MACRO   QUIET
+        IF      DO1def
+        DOGEN   DO1def,DOSET1,EXIT,DOLVE
+        DOGEN   DO1def,DOSET1,REDO,DOENT
+        ENDC
+        IF      DO2def
+        DOGEN   DO2def,DOSET1,EXIT2,DOLVE
+        DOGEN   DO2def,DOSET1,REDO2,DOENT
+        ENDC
+        IF      DO3def
+        DOGEN   DO3def,DOSET1,EXIT3,DOLVE
+        DOGEN   DO3def,DOSET1,REDO3,DOENT
+        ENDC
+        ENDM
+
+* beginning of a block
+DO      MACRO   QUIET
+DO_cpt  set     DO_cpt+1
+        DOPUSH  def,DO_cpt
+        DOGEN   DO1def,DOSET2,*,DOENT
+        DOSET
+        ENDM
+
+* end of block
+DONE    MACRO   QUIET
+        DOGEN   DO1def,DOSET2,*,DOLVE
+        DOPOP   def
+        DOSET
+        ENDM
+
+* encode branch code into number
+DO_ra   set     $20
+DO_rn   set     $21
+DO_hi   set     $22
+DO_ls   set     $23
+DO_hs   set     $24
+DO_lo   set     $25
+DO_ne   set     $26
+DO_eq   set     $27
+DO_vc   set     $28
+DO_vs   set     $29
+DO_pl   set     $2A
+DO_mi   set     $2B
+DO_ge   set     $2C
+DO_lt   set     $2D
+DO_gt   set     $2E
+DO_le   set     $2F
+DO_cc   set     $24
+DO_cs   set     $25
+
+* define branch pairs
+DO_neg  MACRO
+DO__\0  set     DO_\1
+DO__\1  set     DO_\0
+        ENDM
+        DO_neg  ra,rn
+        DO_neg  eq,ne
+        DO_neg  mi,pl
+        DO_neg  vs,vc
+        DO_neg  cs,cc
+        DO_neg  gt,le
+        DO_neg  ge,lt
+        DO_neg  hi,ls
+        DO_neg  hs,lo
+        
+DO_lbr  SET     0
+DOLBR   MACRO   QUIET
+DO_lbr  set     1
+        ENDM
+
+* generate a branch from a coded-branch
+DO_br_  MACRO   QUIET
+        IFEQ    \1-DO_\0
+        IFEQ    DO_lbr
+        b\0     \2
+        ELSE
+        lb\0    \2
+        ENDC
+        echo    ;   -------------------------------------------------> $\2
+        ENDC     
+        ENDM
+DO_br   MACRO   QUIET
+        IFEQ    \0-DO_ra
+        IFEQ    DO_lbr
+        bra     \1
+        ELSE
+        jmp     \1
+        ENDC
+        echo    ;   -------------------------------------------------> $\1
+        ENDC
+        DO_br_  rn,\0,\1
+        DO_br_  ne,\0,\1
+        DO_br_  eq,\0,\1
+        DO_br_  lt,\0,\1
+        DO_br_  ge,\0,\1
+        DO_br_  gt,\0,\1
+        DO_br_  le,\0,\1
+        DO_br_  mi,\0,\1
+        DO_br_  pl,\0,\1
+        DO_br_  vs,\0,\1
+        DO_br_  vc,\0,\1
+        DO_br_  cs,\0,\1
+        DO_br_  cc,\0,\1
+        DO_br_  hi,\0,\1
+        DO_br_  ls,\0,\1
+        ENDM
+
+* DO ... WHILE cc
+WHILE   MACRO   QUIET
+        DO_br   DO_\0,REDO
+        DONE
+DO_lbr  SET     0
+        ENDM
+
+* DOIF cc .. DOELIF cc .. DOELIF cc .. DOELSE .. DONE
+DOIF    MACRO   QUIET
+        DO
+        DO_br   DO__\0,EXIT
+DO_lbr  SET     0
+        ENDM
+
+DOELSE  MACRO   QUIET
+DO_cpt  SET     DO_cpt+1
+        DOGEN   DO_cpt,DOSET1,REDO,DOENT
+        DOGEN   DO_cpt,DOSET1,EXIT,DOLVE
+        DO_br   DO_ra,EXIT
+        DOGEN   DO_cpt,DOSET2,*,DOENT
+        DOGEN   DO1def,DOSET2,*,DOLVE
+DO1def  SET     DO_cpt
+DO_lbr  SET     0
+        ENDM
+
+fmul
+finv
+fdiv
+
+
+fsub
+  bsr fneg
+
+fadd
+  ldb   2,u
+  subb  5,u
+  stb   ,-s
+  DOLBR
+  DOIF ne
+    DOIF gt
+      ldd ,u
+      DOIF ne
+        lsld
+        DOIF vs
+          rord
+          bra EXIT2
+        DONE
+        dec ,s
+        bne REDO+2
+      DONE
+      std ,u
+    DOELSE
+      ldd 3,u
+      DOIF ne
+        lsld
+        DOIF vs
+          rord
+          bra EXIT2
+        DONE
+        inc ,s
+        bne REDO+2
+      DONE
+      std 3,u
+    DONE
+    
+    tst ,s ; zzz
+  DONE
+  ldd   ,u
+  addd  3,u
+  DOIF cs
+    rord
+    inc 5,u
+    bvs fovf
+  DONE
+  leau  3,u
+  std   ,u
+  puls b,pc
+  
+ftck
+  bsr fswp
+
+fdrp
+  leau  3,u
+  rts
+
+fone 
+  ldb #1
+
+fldb
+  sex
+
+fldd
+  pshu d,dp
+  ldb #16
+  stb 2,u
+  rts
+
+fldx
+  ldd  ,x++
+  pshu d
+  ldb  ,x+
+  pshu b
+  rts
+ 
+fstx
+  pulu d
+  std ,x
+  ldb ,u+
+  stb 2,x
+  rts 
+
+ftst
+  ldd ,u
+  rts
+
+fswp
+  ldd ,u
+  ldx 3,u
+  std 3,u
+  stx ,u
+  lda 2,u
+  ldb 5,u
+  sta 5,u
+  stb 2,u
+  rts
+
+fdup
+  ldb  ,u   ; 4
+  ldx  1,u  ; 6
+  pshu b,x  ; 8 => 18
+fnop
+  rts
+  
+fhlf
+  dec 2,u
+  bvc fnop
+
+fclr
+  clrd
+  std ,u
+  rts  
+ 
+fdbl
+  inc 2,u
+  bvs fovf
+  rts
+
+fovf
+  ldd ,u
+  beq fnop
+  ldd #$7fff
+  sta 2,u
+  tst ,u
+  DOIF mi
+    clrd
+  DONE
+  STD ,u
+  rts
+
+fneg
+  clrd
+  subd  ,u    ; 6
+  DOIF vs
+    lsra      ; 2
+    inc   2,u ; 7
+    bvs fovf  ; 3
+  DONE  
+  std   ,u  ; 5 => 17 (32)
+  rts
+  
+fnrm
+  ldd   ,u  ; 5
+  DOIF ne
+    lsld
+    bvs EXIT
+    DO
+      dec 2,s
+      bvs fclr
+      lsld
+    WHILE vc
+    rord
+    std   ,u
+  DONE
+  rts
+  
+fadd
+ 
+  
+  
+
+  neg   ,u
+  neg  1,u
+  s
+  
+  
+  ldd  ,u   ; 5
+  pshu d    ; 7
+  ldb  4,u  ; 5
+  stb  ,-u  ; 6 => 23
+  
+  pulu d,dp ; 8
+  pshu d,dp ; 8
+  pshu d,dp ; 8 => 24
+  
+  ldd  ,u   ; 5
+  leau -3,u ; 5
+  std  ,u   ; 5
+  ldb  5,u  ; 5
+  stb  2,u  ; 5 => 25
+
+
+
+* =====================================
+* Stack manipulation
+* =====================================
+
+* ( a0 .. an -- a1 .. an a0 ) n=B-reg
+fproll
+  pshs  u         ; reference ptr
+  bsr   fpindxb   ; x=u+*b
+  ldd   2,x       ; copy a0 after
+  std   -2,u      ; end of stack
+  ldd   ,x
+  std   -4,u
+  leau  4,x       ; prepare u
+  DO
+    ldd   -8,u    ; get ai+1
+    ldx   -6,u
+    pshu  d,x     ; write to ai
+    cmpu  ,s      ; finished ?
+  WHILE   ne      ; no => loop
+  puls    u,pc
+
+* ( a0 .. an -- a0 .. an a0 )
+fppick
+  ldx   #fpldx    ; stack trick to call
+  pshs  x         ; fpldx on return
+
+* compute x=u+4*b (unsigned)
+fpindxb
+  leax  ,u        ; x=U
+  abx             ; x=u+b
+  abx             ; x=u+b+b
+  abx             ; x=u+b+b+b
+  abx             ; x=u+b+b+b+b
+  rts             ; return to caller
+
+* ( a b c -- c a b )
+fprrot
+  bsr   fpswap    ; a b c -- a c b
+  leau  4,u       ;       -- a c (b)
+  bsr   fpswap    ;       -- c a (b)
+  leau  -4,u      ;       -- c a b
+  rts
+
+* ( a b c -- b c a )
+fplrot
+  leau  4,u       ; a b c -- a b (c)
+  bsr   fpswap    ;       -- b a (c)
+  leau  -4,u      ;       -- b a c
+  bra   fpswap    ;       -- b c a
+
+* ( a b -- )
+fp2drop
+  bsr   fpdrop
+* bra   fpdrop    ; fall through
+
+* ( a -- )
+fpdrop
+  leau  4,u
+  rts
+
+* ( a b -- b a )
+fpswap
+  ldd   6,u
+  ldx   2,u
+  std   2,u
+  stx   6,u
+  ldd   4,u
+  ldx   ,u
+  std   ,u
+  stx   4,u
+  rts
+
+* ( a b -- b )
+fpnip
+  leax  ,u        ; x points to b
+  leau  8,u       ; u points to a
+  bra   fpldx     ; just load from x
+
+* ( a b -- b a b )
+fptuck
+  bsr   fpswap    ; a b -- b a
+* bra   fpover    ;     -- b a b
+  SKIP2
+
+* ( a b -- a b a b )
+fp2dup
+  bsr   fpover    ; call twice fpover
+* bra   fpover    ; but optimized
+
+* ( a b -- a b a )
+fpover
+  leax  4,u       ; point to 2nd flt
+  SKIP2           ; fldx (1 byte gain)
+
+* ( a -- a a )
+fpdup
+  leax  ,u        ; make x point to top
+* bra   fpldx     ; of stack and load
+
+* =====================================
+* Load/Store operations
+* =====================================
+
+* ( -- @X )  push float at X onto stack
+fpldx
+  ldd   ,x        ; get exp+hi mant.
+  ldx   2,x       ; get low mantissa
+  pshu  d,x
+  rts
+
+* ( -- @S ) copy float from S-stack
+fplds MACRO
+  puls  d,x       ; pop float out of S
+  pshu  d,x       ; push it on U-stack
+  ENDM
+
+* ( f -- ) copy float onto S-stack
+fpsts MACRO
+  pulu  d,x
+  pshs  d,x
+  ENDM
+
+* ( f -- ) copy float to x,..,x+3
+fpstx
+  pulu  d         ; get expo+mant.
+  std   ,x        ; store at x
+  pulu  d         ; get mant
+  std   2,x       ; store at x+2
+  rts
+
+* ( -- D ) load a float from D (unsigned)
+fplddu
+  tsta            ; D<256 ?
+  beq   fpldb     ; yes => ldb actually
+
+* ( -- D ) load a float from D!=0 (unsigned)
+fplddunz
+  pshu  cc,d,dp   ; setup stack
+  ldd   #$4100    ; faster than lda/clrb
+  sta   ,u        ; place exponent ($41)
+  stb   3,u       ; clear lsb
+  rts             ; done
+
+* ( -- 1 )
+fpld1
+  ldb   #1
+  bra   fpldbnz
+
+* ( -- B ) load a float from B (unsigned)
+fpldb
+  tstb
+  bne   fpldbnz
+
+* ( -- 0 )
+fpld0
+  clra
+  SKIP2
+
+* ( -- B ) load a float from B!=0 (unsigned)
+fpldbnz
+  lda   #$40      ; signed expo=0
+  ldx   #0        ; no fract part
+  pshu  d,x
+  rts
+
+* ( -- D ) load a float from D (signed)
+fpldd
+  tsta
+  beq   fpldb     ; A=0 => load B
+  bpl   fplddunz  ; A>0 => load D!=0
+  negd            ; A<0 => D=-D
+  bsr   fplddu    ; load D unsigned
+  bra   fpneg     ; negate result
+
+* ( f -- ) load D-reg with trunc(f)
+* D=+/-$7FFF in case of overflow
+fpstd
+  clra
+  ldb   ,u        ; get exponent
+  lslb            ; get rid of sign bit
+  DOIF  mi
+    cmpb  #$41*2
+    DOIF  hi      ; expo>$41 => overfl.
+      ldd  #$7FFF ; maxint
+    DOELSE 
+      DOIF eq
+        ldd   1,u ; get D from mant.
+      DOELSE
+        ldb   1,u
+      DONE
+    DONE
+  DOELSE
+    clrb          ; expo<$40,f<1 => D=0
+  DONE
+  tst  ,u         ; f<0?
+  DOIF  mi
+    negd          ; yes=>negate d
+  DONE
+  jmp   fpdrop    ; done
+
+* =====================================
+* Comparison: N and Z flag updated
+* so compare like usigned
+* =====================================
+
+* ( f -- f ) flags = sign(f)
+fptst
+  lda   ,u        ; get expo
+  lsla            ; move sign-bit off
+  DOIF  ne        ; f==0 ?
+    rora          ; no => put sign back
+  DONE
+  rts             ; done
+
+* ( f g -- f g ) = fptst(f-g)
+fpcmp
+  lda   4,u
+  eora  ,u        ; sign(f)==sign(g) ?
+  DOIF  mi
+    lda   4,u     ; no => get f expo
+    bra   fptst+2 ; sign(f-g)==sign(f)
+  DOELSE
+    bsr   cmpmag  ; compare by mag, but
+    tfr   cc,b    ; inv order for neg.
+    lda   ,u      ; f<0 ?
+    DOIF  mi
+    eorb  #$08    ; yes => inv N flag
+    DONE
+    tfr   b,cc    ; no  => N unchanged
+  DONE
+  rts
+
+* ( f g -- f g ) = fptst(abs(f)-abs(g))
+* compare num by magnit. (sign ignored)
+cmpmag
+  lda   ,u        ; get num1 expo
+  lsla            ; remove sign
+  sta   ,-s
+  ldd   4,u       ; get num2 expo + MSB
+  lsla            ; remove sign
+  cmpa  ,s+       ; same expo ?
+  DOIF  eq
+    cmpb  1,u     ; yes=>compare MSB
+    DOIF  eq
+      ldd   6,u   ; same MSB=>comp LSW
+      subd  2,u   ; faster cmpd ;)
+    DONE
+  DONE
+  rts
+
+* =====================================
+* Arithmetic operations
+* =====================================
+
+* ( f -- |f| )
+fpabs
+  lda   #$7F      ; sign-bit clear mask
+  anda  ,u        ; clear sign bit
+  bra   fpsta     ; update exponent
+
+* ( f -- -f )
+fpneg
+  lda   ,u        ; get expo
+  eora  #$80      ; invert sign-bit
+  bra   fpsta     ; update exponent
+
+* ( f g -- f-g )
+fpsub
+  bsr   fpneg     ; x-y = x+(-y)
+
+* ( f g -- f+g )
+fpadd
+  DO
+* ensure f is bigger than g
+    bsr   cmpmag  ; |f| < |g| ?
+    DOIF  lo
+      jsr fpswap  ; no => put smaller first
+    DONE
+    lda   ,u      ; get g expo
+    leau  4,u     ; prepare stack
+    anda  #$7f    ; g==0?
+    beq   EXIT    ; yes => finished
+* align g mantissa with f mantissa
+    suba  ,u      ; no => compare mag.
+    anda  #127
+    DOIF  ne
+      cmpa  #$7f  ; 1 order of diff ?
+      DOIF  eq
+        ldd  -3,u ; yes => shift 1 place
+        clr  -3,u ; XX YY ZZ --> 0 XX YY
+      DOELSE
+        suba #$7e ; >2 order of diff ?
+        bne EXIT3 ; no => done
+        ldb  -3,u ; get XX
+        sta  -3,u ; clear MSB: 00 YY ZZ
+      DONE
+      std   -2,u  ; 00 00 XX or 00 XX YY
+    DONE
+* compare sign to see if we are adding or
+* subtracting
+    lda   -4,u    ; get sign of g
+    eora  ,u      ; xor with sign of f
+    DOIF  mi
+* sign is different: do proper difference
+      ldd   2,u   ; get f-LSW
+      subd -2,u   ; sub.g-LSW
+      std   2,u   ; store result
+      lda   1,u   ; get f-MSB
+      sbca  -3,u  ; sub.g-MSB /w carry
+      sta   1,u   ; store MSB
+      DOIF eq
+* subtraction cleared MSB
+        ldd 2,u   ; get LSW
+        beq fpsta ; yes => result = 0
+        std 1,u   ; left shift mantissa
+        ldd #$7F00
+        dec ,u    ; dec exponent
+        anda ,u   ; underflow?
+        beq fpsta ; yes=>result=0
+        stb 3,u   ; clear LSB
+      DONE
+    DOELSE
+* sign is same: do proper addition
+      ldd   2,u   ; get f-LSW
+      addd -2,u   ; add g-LSW
+      std   2,u   ; store LSW
+      ldd   1,u   ; get MSB (+ middle byte)
+      adca  -3,u  ; add MSB
+      DOIF  cs    ; MSB overfow ?
+        inc   ,u  ; yes => increase expo.
+        beq   fpovf ; 11111111+1 => ovf
+        bvs   fpovf ; 01111111+1 => ovf
+        std   2,u ; shift LSW
+        lda   #1  ; put carry in MSB
+      DONE
+      sta   1,u   ; update MSB
+    DONE
+  DONE
+  rts             ; done
+
+* ( f -- 0 )
+fpclr
+  clra            ; make result=0
+fpsta
+  sta     ,u      ; store a-reg to expo
+  rts
+
+* ( f -- 1/f )
+fpinv
+  jmp   fpinv_vnrd
+
+* ( f -- 10*f ) fast
+fp_m10
+  jsr   fpdup     ; -- f f
+  bsr   fpshl     ; -- f f*2
+  bsr   fpshl     ; -- f f*4
+  jsr   fpadd     ; -- f*5
+*  bra   fpshl    ; -- f*10 FALL THROUGH
+
+* ( f -- 2*f ) fast!
+fpshl
+  lda   ,u        ; get expo
+  lsla            ; f==0 ?
+  DOIF  ne
+    lsl   3,u     ; no => shift mant.
+    rol   2,u     ; 1 bit to the left
+    rol   1,u
+    DOIF  cs
+      ldd   1,u   ; overflow
+      std   2,u   ; right shift mant.
+      lda   #1    ; put carry at msb
+      sta   1,u
+      adda  ,u    ; increase exponent
+      beq   fpovf ; 11111111 +1 ==> ovf
+      bvs   fpovf ; 01111111 +1 ==> ovf
+      sta   ,u
+    DONE
+  DONE
+  rts
+
+* ( f -- sign(f)*maxflt )
+fpovf
+  ldd   #$ffff    ; make result = +/- max
+  std   2,u       ; max LSW
+  lsra            ; A=$7FFF
+  ora   ,u        ; insert sign-bit
+  std   ,u        ; update MSW
+  rts
+
+* ( f -- f^2 )
+fpsqr
+  jsr   fpdup     ; duplicate & mul
+  SKIP2           ; skip over fpdiv
+
+* ( f g -- f/g )
+fpdiv
+  bsr   fpinv     ; f/g is f*(1/g)
+
+* ( f g -- f*g )
+fpmul
+  lda   ,u        ; get f exponent
+  leau  4,u       ; update stack ptr
+  ldb   ,u        ; get g exponent
+* handle mul by 0 case
+  lsla            ; f=0 ?
+  beq   fpsta     ; yes => result=0
+  lslb            ; g=0 ?
+  beq   fpclr     ; yes => result=0
+* handle exponents
+  suba  #$80      ; unbias f exponent
+  subb  #$80      ; unbias g  exponent
+  sta   ,-s       ; compute exponent addition
+  addb  ,s+       ; overflow ?
+  DOIF  vs
+    bmi   fpovf   ; yes & expo>0  => maxval
+    bra   fpclr   ; yes & expo<=0 => result=0
+* Partial products sums are encoded in
+* a table which contains pairs of
+* offsets (a,b) which is read as
+* follow:
+*  a>0   => add a-offset * b-offset
+*  a=b=0 => shift partial product
+*  a<0   => done
+*
+* U-stack relative indices
+*          1, 2, 3
+*         -3,-2,-1
+* partial products
+*       1*-3
+*          2*-3
+*             3*-3
+*          1*-2
+*             2*-2
+*                3*-2    <== bootstrap
+*             1*-1
+*                2*-1
+*                   3*-1 <== ignored (fixme?)
+fpmultb
+  fcb   2,-1,0,0
+  fcb   3,-3,2,-2,1,-1,0,0
+  fcb   2,-3,1,-2,0,0
+  fcb   1,-3
+  fcb   -1
+  DOELSE
+    addb  #$80    ; add bias
+* handle multiplication of signs
+    stb   ,-s     ; save exponent
+    ldb   ,u      ; get f expo
+    eorb  -4,u    ; xor g expo
+    lslb          ; put sign in C-flag
+    ldb   ,s+     ; restore exponent
+    rorb          ; put sign-bit in
+    stb   ,u      ; update result's exp
+* do partial products
+    lda   3,u     ; bootstrap with 3*-2
+    ldb   -2,u
+    mul           ; ignore clr -6,-5
+    std   -8,u    ; since it'll be done
+    clr   -9,u    ; by future shifts.
+    ldx   #fpmultb
+    ldd   ,x++    ; get code
+    DO
+      DOIF  eq
+* code=0 => shift
+        ldd  -7,u ; code=0 => shift
+        std  -6,u
+        ldd  -9,u
+        std  -8,u
+        clr  -9,u
+      DOELSE
+* code>0 => next partial product
+        lda   a,u ; next partial prod.
+        ldb   b,u
+        mul       ; multiply elements
+        DOIF  ne
+          addd  -8,u  ; add the partial
+          std   -8,u  ; product
+          DOIF  cs
+            inc -9,u  ; handle carry
+          DONE
+        DONE
+      DONE
+      ldd   ,x++
+* code<0 => exit loop
+    WHILE pl
+* copy result back to float
+    ldd   -8,u    ; get HI value
+    tsta          ; extra byte needed ?
+    DOIF  ne
+      std   1,u   ; yes => shift result
+      ldb   -6,u  ; fetch lsb
+      stb   3,u   ; store lsb
+      ldb   ,u    ; increase expo.
+      incb
+      lslb
+      lbeq  fpovf
+      inc   ,u
+    DOELSE
+      stb  1,u    ; no ==> write MSB
+      ldd  -6,u   ; get LSW
+      std  2,u    ; put LSW
+    DONE
+  DONE
+  rts             ; done
+
+* ( f -- f/2 ) fast!
+fpshr
+  ldd   ,u        ; get exponent + msb
+  lsla            ; num==0 ?
+  DOIF  ne
+    lsrb          ; right shift msb
+    DOIF  eq
+      ldd   2,u   ; right shift lsw
+      rord
+      std   1,u   ; put it in msw
+      lda   #0    ; clear lsb
+      rora        ; inject carry
+      sta   3,u   ; updated lsb
+      dec   ,u    ; decr. exponent
+    DOELSE
+      stb   1,u   ; place MSB back
+      ror   2,u   ; shift rest of
+      ror   3,u   ; mantissa
+    DONE
+  DONE
+  rts
+
+* ( f g -- f % g )
+fpmod
+  jsr   fp2dup    ; f g -- f g f g
+  jsr   fpdiv     ;     -- f g f/g
+  jsr   fpfloor   ;     -- f g floor(f/g)
+  jsr   fpmul     ;     -- f g*floor(f/g)
+  jmp   fpsub     ;     -- f-g*floor(f/g)
+
+* ( f g -- f rem g )
+fprem
+  jsr   fptuck    ; f g -- g f g
+  jsr   fpdiv     ;     -- g f/g
+  bsr   fpfrac    ;     -- g frac(f/g)
+  jmp   fpmul     ;     -- g*frac(f/g)
+
+* ( f -- sqrt(f) )
+fpsqrt
+  jsr   fpdup     ; f -- f f
+  jsr   fpinvsqrt ;   -- f 1/sqrt(f)
+  jmp   fpmul     ;   -- f*1/sqrt(f)
+
+* ( f -- frac(f) ) remove integer part.
+* (sign is kept)
+fpfrac
+  clrb            ; preload B with 0
+  lda   ,u        ; get exponent
+  lsla            ; get rid of sign bit
+  DOIF mi         ; |f|<1 => done
+    cmpa  #$82
+    bhs   fpstb   ; |x|>=256^3 => ret 0
+    lsla          ; remove leading bit
+    DOIF eq
+      ldd   2,u   ; expo=$40, get fract
+      beq   fpstb ; frac=0 => ret 0
+      std   1,u   ; shl mantissa 1 byte
+      clr   3,u   ; clear lsb
+      dec   ,u    ; decrease exponent
+      rts         ; done
+    DONE
+    ldb   3,u     ; expo=$41
+    beq   fpstb   ; frac=0 => ret 0
+    stb   1,u     ; shl mant. 2 bytes
+    ldd   #0      ; clear lsb & msb
+    std   2,u
+    ldb   ,u      ; exponent=-2
+    andb  #$80    ; keep sign
+    orb   #$3e
+fpstb
+    stb   ,u      ; return 0
+  DONE
+  rts
+
+* ( f -- trunc(f) ) remove fractionnal
+fptrunc
+  clrb            ; preload B with 0
+  lda   ,u        ; get exponent
+  lsla            ; get rid of sign bit
+  bpl   fpstb     ; expo<$40 => ret 0
+  cmpa  #$82      ; |f|>=256^3 => done
+  DOIF  ls
+    lsla          ; expo==0 ($40) ?
+    DOIF  eq
+      stb 2,u     ; yes => clear msb+
+    DONE
+    stb   3,u     ; clear lsb
+  DONE
+  rts
+
+* ( f -- floor(f) ) round to -inf
+fpfloor
+  lda   ,u
+  bpl   fptrunc
+  jsr   fpdup
+  jsr   fptrunc
+  jsr   chkchg
+  DOIF  ne
+    jsr   fpld1
+    jsr   fpsub
+  DONE
+  rts
+
+* ( f -- ceil(f) ) round to +inf
+fpceil
+  jsr   fpneg
+  bsr   fpfloor
+  jmp   fpneg
+
+* ( f -- round(f) ) round to nearest
+fpround
+  ldx   #0
+  ldd   #$8080
+  anda  ,u
+  ora   #$3f
+  pshu  d,x
+  jsr   fpadd
+  bra   fptrunc
+
+* ( -- 2^n ) n is D-reg (signed)
+fp2tod
+  DO
+    sta   ,-s     ; sign will be pos
+    DOIF  pl
+      pshs  d     ; push n
+      ldb   #2    ; load 2
+      jsr   fpldbnz
+    DOELSE
+      clr   ,s
+      negd        ; negade d
+      pshs  d     ; push -n
+      ldd   #$3F80
+      ldx   #$0   ; load 0.5
+      pshu  d,x
+    DONE
+  DOELSE
+
+* ( f -- f^n ) n is in D-reg (signed)
+fppowd
+    sta   ,-s
+    DOIF  mi
+      negd        ; negate 'n'
+    DONE
+    pshs  d       ; save n on stack
+  DONE
+
+* main power algorithm
+  jsr   fpld1     ; -- f g=1
+  ldd   ,s        ; load n from stack
+  DO
+    lsrd
+    std   ,s      ; n=n/2
+    DOIF  cs      ; n was odd: g'=fg
+      bsr  fpovermul
+    DONE
+    fpsts         ; push g/g' on stack
+    jsr   fpsqr   ; square f
+    fplds         ; get g/g' back
+    ldd   ,s      ; loop while n!=0
+  WHILE ne
+  leas  2,s       ; fixup stack
+  lda   ,s+       ; was n<0 ?
+  DOIF  mi
+    jsr   fpinv   ; yes=>result=1/result
+  DONE
+  jmp   fpnip     ; get rid of f^2^...
+
+* ( f -- 1/f ) using 1/sqrt(f)
+fpinv_quake
+  lda   ,u        ; get expo & sign
+  anda  #$80      ; isolate sign
+  sta   ,-s       ; save sign on stack
+  jsr   fpinvsqrt ; compute 1/sqrt(f)
+  jsr   fpsqr     ; 1/f=1/sqrt(f)^2
+  lda   ,s+       ; get sign back
+  ora   ,u        ; inject in result
+  sta   ,u
+  rts
+
+* ( f -- 1/f )
+* https://en.wikipedia.org/wiki/Division_algorithm#Variant_Newton-Raphson_division
+fpinv_vnrd
+  ldb   ,u        ; get expo
+  lslb            ; remove sign bit
+  DOIF  eq        ; f==0?
+    jmp   fpovf
+  DONE
+  rorb            ; put sign back
+  stb   ,-s
+  andb  #127
+  stb   ,u        ; -- |f|
+  jsr   fpnorm    ; -- g n
+  jsr   fpstd
+  negd
+  jsr   fp2tod    ; -- g 2^-n
+  ldb   ,s+
+  DOIF  mi
+    jsr   fpneg
+  DONE
+  jsr   fpswap    ; -- 2^-n g
+  jsr   fpdup     ; -- 2^-n g g
+  ldx   #fpinv_vnrd_tab
+  jsr   fppoly
+  jsr   fpswap    ; -- 2^-n x g
+  bsr   fpovermul ; -- 2^-n x gx
+  jsr   fpld1     ; -- 2^-n x gx 1
+  jsr   fpsub     ; -- 2^-n x gx-1=-e
+  jsr   fp2dup    ; -- 2^-n x -e x -e
+  jsr   fpmul     ; -- 2^-n x -e -ex=-y
+  jsr   fpswap    ; -- 2^-n x -y -e
+  bsr   fpovermul ; -- 2^-n x -y e*y
+  jsr   fpsub     ; -- 2^-n x -y-e*y
+  jsr   fpsub     ; -- 2^-n x+y+ye
+  jmp   fpmul     ; result
+fpovermul
+  jsr   fpover
+  jmp   fpmul
+fpinv_vnrd_tab
+  fdb   $4002,$95FB   ; 256/99
+  fdb   $C005,$D174   ; -64/11
+  fdb   $4004,$3E10   ; 140/33
+  fcb   $80
+
+* ( f -- 1/f )
+* https://en.wikipedia.org/wiki/Division_algorithm#Binomial_theorem
+fpinv_goldschmidt
+  ldb   ,u        ; get sign
+  lslb            ; remove sign bit
+  DOIF  eq        ; f==0?
+    jmp   fpovf
+  DONE
+  rorb            ; put sign back
+  stb   ,-s
+  andb  #127
+  stb   ,u        ; -- |f|
+  jsr   fpnorm    ; -- g n
+  jsr   fpstd
+  negd
+  jsr   fp2tod    ; -- g 2^-n
+  ldb   ,s+
+  DOIF  mi
+    jsr   fpneg
+  DONE
+  jsr   fpswap    ; -- 2^-n g
+  jsr   fpld1     ; -- 2^-n g 1
+  jsr   fpsub     ; -- 2^-n g-1
+  jsr   fpneg     ; -- 2^-n 1-g=x
+  jsr   fpswap    ; -- x 2^-n=h
+  DO
+    jsr   fpover  ; x h x
+    jsr   fpld1   ; x h x 1
+    jsr   fpadd   ; x h x+1
+    ldd   2,u     ; x+1==1 ?
+    beq   EXIT    ; yes => done
+    jsr   fpmul   ; x h'=h(x+1)
+    fpsts         ; x (h')
+    jsr   fpsqr   ; x^2 (h')
+    fplds         ; x^2 h'
+  WHILE ra
+  jsr   fpdrop    ; x h
+  jmp   fpnip     ; h
+
+* =====================================
+* transcendental functions
+* =====================================
+
+* ( f -- 1/sqrt(abs(f)) )
+* iterates g=g*(1.5 - f*g*g)
+fpinvsqrt
+  ldd   ,u        ; get expo + MSB
+  ora   #$80      ; make f<0
+  cmpa  #$80      ; is f==0 ?
+  DOIF eq
+    jmp   fpovf   ; yes => overflow
+  DONE
+  sta   ,u        ; -- -f
+* prepare 1st approx of 1/sqrt(x) from MSB
+  bitb  #%11110000
+  DOIF  ne
+    bitb  #%11000000
+    DOIF  ne
+      ldb   #16   ; 16 for 64<=msb
+    DOELSE
+      ldb   #32   ; 32 for 16<=msb<64
+    DONE
+  DOELSE
+    bitb  #%00001100
+    DOIF  ne
+      ldb   #64   ; 64 for 4<=msb<16
+    DOELSE
+      ldb   #128  ; 128 for 1<=msb<4
+    DONE
+  DONE
+* We should do:
+* anda #$7F suba #$40 asra     coma  adda #$40
+* 01xxxxxx 00xxxxxx 000xxxxx 111yyyyy 001yyyyy
+* 00xxxxxx 11xxxxxx 111xxxxx 000yyyyy 010yyyyy
+* The following does the same result but
+* shorter (output carry is on if the expo
+* was odd)
+  lsla            ; 1xxxxxx0 0xxxxxx0
+  asra            ; 11xxxxxx 00xxxxxx
+  lsra            ; 011xxxxx 000xxxxx
+  eora  #%01011111 ;001yyyyy 010yyyyy
+  DOIF  cs
+    lsrb          ; odd expo => divide
+    lsrb          ; approx by 256^0.5
+    lsrb
+    lsrb
+  DONE
+  pshs  d         ; push approx 1/sqrt
+  pshs  d         ; onto s stack
+  jsr   fpshr     ; -- -f/2
+  fplds           ; -- -f/2 g
+  DO
+    jsr   fp2dup  ; -f/2 g -f/2 g
+    jsr   fpsqr   ; -f/2 g -f/2 g*g
+    jsr   fpmul   ; -f/2 g -f*g*g/2
+    ldx   #$8000
+    ldd   #$4001
+    pshu  d,x     ; -f/2 g -fgg/2 1.5
+    jsr   fpadd   ; -f/2 g 1.5-fgg/2
+    jsr   fpover  ; -f/2 g 1.5-fgg/2 y
+    jsr   fpmul   ; -f/2 g g(1.5-fgg/2)
+    bsr   chkchg  ; -f/2 g*(1.5-fgg/2)
+  WHILE ne
+  jmp   fpnip
+
+* ( a b -- b ) Z=1 iff a==b
+chkchg
+  pulu  d,x       ; get HI/LO
+  DO
+    cmpd  ,u      ; HI(a)==HI(b) ?
+    bne   EXIT    ; no => goto else
+    cmpx  2,u     ; LO(a)==LO(b) ?
+    bne   EXIT    ; no => goto else
+  DOELSE
+    std   ,u      ; copy HI
+    stx   2,u     ; copy LO
+    lda   #1      ; force Z=0
+  DONE
+  rts
+
+* ( f -- g n ) given an f, return
+* a number g=f/2^n such that
+* 0.5<=|g|<1
+fpnorm
+  ldb   ,u        ; get exponant
+  andb  #127      ; remove sign-bit
+  DOIF  eq
+    jmp   fpld0   ; f==0? g=f,n=0. done
+  DONE
+  subb  #$3f      ; remove bias-1
+  sex             ; extend sign to a
+  lsld            ; mul by 8
+  lsld
+  lsld
+  pshs  y         ; preserve reg
+  tfr   d,y       ; now uses y as n
+  lda   ,u
+  anda  #$80      ; preserve sign
+  ora   #$3f      ; make 1/256<=|f|<1
+  sta   ,u
+  lda   1,u
+  DOIF  mi
+* f already >= 0.5
+  DOELSE
+    jsr   fpshl   ; mul by 2
+    leay  -1,y    ; decrease n by one
+    lda   1,u     ; loop while f<.5
+  WHILE pl
+  tfr   y,d       ; put n to d
+  puls  y         ; restore reg
+  jmp   fpldd     ; push d onto stack
+
+* ( f -- P(f) ) eval a polynom using
+* horner method. coefs are pointed by
+* x. Coefs stops at $80.
+fppoly
+  pshs  y
+  leay  4,x
+  jsr   fpldx     ; -- f g=0
+  DO
+    jsr   fpover  ; -- f g f
+    jsr   fpmul   ; -- f g*f
+    leax  ,y
+    jsr   fpldx   ; -- f g*f coef
+    jsr   fpadd   ; -- f g*f+coef
+    leay  4,y     ; advance y
+    ldb   ,y      ; coef==sentinel ?
+    cmpb  #$80    ; no=>loop
+  WHILE ne
+  puls  y
+  jmp   fpnip     ; f P(f) -- P(f)
+
+* ( f -- ln(f) ) natural logarithm
+*
+* ln(f) = ln(f/2^n) + n*ln(2)
+*
+* When 0.5<=x<=1
+* 65536*ln(x)
+*  = -183520 + x*(
+*     555367 + x*(
+*    -970648 + x*(
+*    1194335 + x*(
+*    -920804 + x*(
+*     399960 + x*(
+*     -74690))))))
+* +/- 0.24422799601597944
+* (determined by Remez algorithm)
+*
+fpln
+  ldb   ,u        ; f<=0 ?
+  DOIF  ls
+    ldd   #$ffff  ; yes => overflow
+    std   ,u      ; return -MAX
+    std   2,u
+    rts
+  DONE
+  bsr   fpnorm    ; -- g=f/2^n n
+  ldd   #$3fB1
+  ldx   #$7218
+  pshu  d,x       ; -- g n ln(2)
+  jsr   fpmul     ; -- g n*ln(2)
+  jsr   fpswap    ; -- n*ln(2) g
+  ldx   #fplntab
+  bsr   fppoly    ; -- n*ln(2) P(g)
+  jmp   fpadd     ; -- n*ln(2)+P
+fplntab
+  fdb   $C001,$23C2
+  fdb   $4006,$1A58
+  fdb   $C00E,$0CE4
+  fdb   $4012,$395F
+  fdb   $C00E,$CF98
+  fdb   $4008,$7967
+  fdb   $C002,$CCE0
+  fcb   $80
+
+* ( f g -- f**g )
+fppow
+    jsr   fpswap    ; -- g f
+    bsr   fpln      ; -- g ln(f)
+    jsr   fpmul     ; -- g*ln(f)
+*   bra   fpexp     ; -- exp(g*ln(f))
+
+* ( f -- exp(x) )
+* Computation is done using these
+* lines:
+*   exp(f) = 1/exp(-f) if f>0
+*
+*   fi     = trunc(f)
+*   ff     = frac(ff)
+*   f      = fi + ff
+*   exp(f) = exp(fi)*exp(ff)
+*          = exp(1)**fi * exp(ff)
+*
+* exp(ff) is interpolated from
+* this optimal degree 4 polynomial
+* found by the Remez algorithm:
+* 0.9999900075045562 +
+* 0.9994830981718971 x +
+* 0.4957031523076224 x^2 +
+* 0.15396347835734295 x^3 +
+* 0.025642850383947424 x^4
+* error is 0.00000999249547650738
+* on the -1..0 interval
+* (found via the Remez algo)
+fpexp
+  ldb   ,u        ; get sign
+  stb   ,-s       ; save it on stack
+  orb   #$80
+  stb   ,u        ; force f < 0
+  ldd   #$4002    ; push e=exp(1)
+  ldx   #$B7E1
+  pshu  d,x       ; -- f e
+  jsr   fpover    ; -- f e f
+* jsr   fptrunc   ; -- f e fi
+  jsr   fpstd     ; D=trunc(-f)
+  jsr   fppowd    ; -- f e**fi
+  jsr   fpswap    ; -- e**fi f
+  jsr   fpfrac    ; -- e**fi ff
+  ldx   #fpexptab
+  jsr   fppoly    ; -- e**fi e**ff
+  jsr   fpmul     ; -- e**(fi+ff)=e**f
+  ldb   ,s+       ; get sign back
+  DOIF  pl
+    jmp   fpinv   ; exp(f)=1/exp(-f)
+  DONE
+  rts
+fpexptab
+  fdb   $3f06,$9088
+  fdb   $3f27,$6A27
+  fdb   $3f7E,$E667
+  fdb   $3fFF,$DE20
+  fdb   $3fFF,$FF58
+  fcb   $80
+
+* ( f -- tan(f) ) tan(x)=sin(x)/cos(x)
+fptan
+  jsr   fpdup       ; -- f f
+  bsr   fpsin       ; -- f sin(f)
+  jsr   fpswap      ; -- sin(f) f
+  bsr   fpcos       ; -- sin(f) cos(f)
+  jmp   fpdiv       ; -- sin(f)/cos(f)
+
+* ( f -- cos(f) ) cos(x)=sin(pi/2-x)
+fpcos
+  jsr   fpneg       ; -- -f
+  ldx   #$9220
+  ldd   #$4001
+  pshu  d,x         ; -- -f pi/2
+  jsr   fpadd       ; -- pi/2-f
+  bra   fpsin       ; -- cos(f)
+
+* ( f -- sin(f) )
+* for x=0..0.25,
+* sin(x*2pi) =
+* 0.00000706851696623261 +
+* 6.28123666831557 x +
+* 0.08660443020176666 x^2 +
+* -42.72388709496302 x^3 +
+* 9.503048902548244 x^4 +
+* 56.03072727906933 x^5
+* +/- 0.000007068527967724059
+fpsin
+  ldb   ,u        ; get sign
+  stb   ,-s       ; save it on stack
+  andb  #$7F
+  stb   ,u        ; force f >= 0
+  ldx   #$BE61
+  ldd   #$3f28
+  pshu  d,x       ; -- f 1/(2pi)
+  jsr   fpmul     ; -- f/(2pi)
+  jsr   fpfrac    ; -- g=f/(2pi)%1
+  jsr   fpld1     ; -- g 1.0
+  jsr   fpshr     ; -- g 0.5
+  jsr   cmpmag    ; f > pi ?
+  DOIF  hs
+    jsr   fptuck  ; -- 0.5 g 0.5
+    jsr   fpsub   ; -- 0.5 g-0.5
+    jsr   fpswap  ; -- g-0.5 0.5
+    com   ,s      ; sin(f) = -sin(f-pi)
+  DONE
+  jsr   fpshr     ; -- g 0.25
+  jsr   cmpmag    ; f > pi/2 ?
+  DOIF  ls
+    jsr fpdrop    ; no => no change
+  DOELSE
+    jsr   fpshl   ; -- g 0.5
+    jsr   fpsub   ; -- g-0.5
+    ldb   ,u      ; g-0.5<0 ?
+    DOIF  mi      ; sin(f)=-sin(|f|)
+      com   ,s    ; yes => negate sign
+    DONE
+    andb  #$7F    ; -- |f|
+    stb   ,u      ; force f >= 0
+  DONE
+  ldx   #fpsintab
+  jsr   fppoly    ; approx sin
+  ldb   ,s+       ; f<0
+  DOIF  mi
+    jmp   fpneg   ; sin(-x)=-sin(x)
+  DONE
+  rts
+fpsintab
+  fdb   $4038,$07DE
+  fdb   $4009,$80C8
+  fdb   $c02A,$B951
+  fdb   $3f16,$2BB5
+  fdb   $4006,$47FF
+  fdb   $3d76,$970D ; fdb   $0000,$0000
+  fcb   $80
+
+* ( f -- atan(f) )
+* atan(x) = pi/2 - atan(1/x) if x>1
+* atan(x) =
+* 0.000006389295356454743 +
+* 0.9993823248162877 x +
+* 0.009671651742441202 x^2 +
+* -0.38851065034559806 x^3 +
+* 0.1385076598650844 x^4
+* 0.06582297699392516 x^5
+* -0.03948857839169288 x^6
+* +/- 0.0000063894644751760765
+* 0<=x<1
+fpatan
+  ldb   ,u        ; get f exponent
+  stb   ,-s       ; store it on stack
+  andb  #127      ; make f>0
+  stb   ,u        ; -- |f|
+  lslb            ; f>=1 ?
+  DOIF  mi
+    jsr   fpinv   ; yes ==> f=1/f
+  DONE
+  ldx   #fpatantab
+  jsr   fppoly    ; f<1 : eval poly
+  ldb   ,s        ; get orig expo
+  lslb            ; f>=1 ?
+  DOIF  mi
+    bsr   fppi    ; -- atan(f) pi
+    jsr   fpshr   ; -- atan(f) pi/2
+    jsr   fpsub   ; -- atan(f)-pi/2
+    com   ,s      ; change result sign
+  DONE
+  ldb   ,s+       ; get sign back
+  DOIF  mi
+    jmp   fpneg   ; -- -atan(f)
+  DONE
+  rts
+fpatantab
+  fdb   $bf0A,$1BEC
+  fdb   $3f10,$D9C6
+  fdb   $3f23,$753D
+  fdb   $bf63,$756F
+  fdb   $3f02,$79D7
+  fdb   $3fFF,$D785
+  fdb   $3d6B,$31D1
+  fcb   $80
+
+* ( -- pi )
+fppi
+  ldx   #$243F
+  ldd   #$4003
+  pshu  d,x
+  rts
+
+* ( -- rnd ) 0 < rnd <1 period:65535
+* http://www.retroprogramming.com/2017/07/xorshift-pseudorandom-numbers-in-z80.html
+fprnd
+  ldd   #0
+  VAR   FPSEED,2
+  DOIF  eq
+    ldd   timeCt
+    ora   123
+  DONE
+* xs ^= xs << 7
+  pshs  d         ; save xs
+  lsra            ; shift a0 into b7
+  rorb            ; b=hi(xs<<7)
+  eorb  ,s        ; lo(xs<<7)=carry*128
+  stb   ,s        ; hi(xs)^=hi(xs<<7)
+* xs ^= xs >> 9
+*
+* tricky part: put carry back
+* in hi(xs>>9) so that it is
+* same as if it was introduced
+* in lo(xs) above.
+  rorb            ; b=hi(xs>>9)^lo(xs)
+  eorb  1,s       ; lo(xs) ^= hi(xs>>9)
+* xs ^= xs << 8;
+  tfr   b,a       ; hi(xs<<8)
+  eora  ,s++      ; hi(xs) ^= hi(xs<<8)
+  std   FPSEED
+  jsr   fplddu
+  dec   ,u
+  dec   ,u
+  rts
+
+* ( f -- gamma(f+1) ) approximate
+* factorial via Ramanujan formula
+fpgammap1
+  ldd   #$4001
+  ldx   #$C5C0
+  pshu  d,x       ; -- f sqrt(pi)
+  jsr   fpover    ; -- f sqrt(pi) f
+  jsr   fpdup     ; -- f sqrt(pi) f f
+  ldd   #$3F5E
+  ldx   #$2D59
+  pshu  d,x       ; -- f sqrt(pi) f f 1/e
+  jsr   fpmul     ; -- f sqrt(pi) f f/e
+  jsr   fpswap    ; -- f sqrt(pi) f/e f
+  jsr   fppow     ; -- f sqrt(pi) (f/e)**f
+  jsr   fpmul     ; -- f sqrt(pi)*(f/e)**f
+  jsr   fpswap    ; -- sqrt(pi)*(f/e)**f f 
+  ldx   #fpgammap1tab
+  jsr   fppoly    ; -- sqrt(pi)*(f/e)**f (8f^2+4f+f+1/30)
+  ldd   #$3F2A
+  ldx   #$AAAB
+  pshu  d,x
+  jsr   fppow     ; -- sqrt(pi)*(f/e)**f (8f^2+4f+f+1/30)^(1/6)
+  jmp   fpmul     ; -- sqrt(pi)*(f/e)**f*(8f^2+4f+f+1/30)^(1/6)
+fpgammap1tab
+  fdb   $4008,$0000
+  fdb   $4004,$0000
+  fdb   $4001,$0000
+  fdb   $3F88,$8889
+  fcb   $80
+* =====================================
+* read/write
+* =====================================
+
+* ( -- <parsed float> ) x=string ptr
+* upon return, x is after last read char
+fprdx
+  pshs  y         ; preserve y
+  leay  ,x        ; transfer x to y
+  bsr   fprdy     ; call reading from y
+  leax  ,y        ; trasnfer y to x
+  puls  y,pc      ; restore y & return
+
+* ( -- <parsed float> ) y=string ptr
+* upon return, y is after last read char
+fprdy
+  bsr   fprdi     ; read integer -- n
+* read decimal part
+  ldb   ,y
+  cmpb  #'.       ; any decimal point?
+  DOIF  eq
+    jsr   fpld0   ; yes ==> parse fract.
+    jsr   fpld1   ; -- 0 1
+    DO
+      jsr  fpdot1 ; -- fract E-n+1 0.1
+      jsr  fpmul  ; -- fract E-n
+      leay 1,y    ; advance ptr
+      ldb  ,y     ; read next char
+      subb #'0    ; < '0' ?
+      blo  EXIT   ; yes => done parsing
+      cmpb #10    ; > '9' ?
+      bhs  EXIT   ; yes => done parsing
+      jsr  fpldb  ; -- fract E-n b
+      jsr  fpover ; -- fract E-n b E-n
+      jsr  fpmul  ; -- fract E-n b.E-n
+      jsr  fplrot ; -- E-n b.E-n fract
+      jsr  fpadd  ; -- E-n fract'
+      jsr  fpswap ; -- fract' E-n
+    WHILE ra
+    jsr   fpdrop  ; -- x fract
+    lda   4,u     ; get sign of x
+    anda  #$80    ; isolate sign bit
+    ora   ,u      ; combine with fract
+    sta   ,u      ; make fract and x same sign
+    jsr   fpadd   ; -- x.fract
+    ldb   ,y      ; get nxt char
+  DONE
+* read exponent
+  DO
+    cmpb  #'e     ; any exponent sign ?
+    beq   EXIT    ; yes ==> goto ELSE
+    cmpb  #'E
+    beq   EXIT
+  DOELSE
+    leay  1,y     ; advance
+    ldb   #10
+    jsr   fpldbnz ; -- x.fract 10
+    bsr   fprdi   ; -- x.fract 10 expo
+    jsr   fpstd   ; -- put expo in D
+    jsr   fppowd  ; -- x.fract 10^expo
+    jmp   fpmul   ; x.fract*10^expo
+  DONE
+  rts
+
+* ( -- <parsed int> ) y=string ptr
+* upon return, y is after last read char
+fprdi
+  jsr   fpld0     ; 0
+  ldb   ,y+       ; get sign-char
+  subb  #'-
+  stb   ,-s       ; push 0 if minus
+  DOIF  ne
+    cmpb  #'+-'-  ; non-nul otherwise
+    beq   EXIT
+    leay  -1,y
+  DONE
+  DO
+    ldb   ,y+     ; read next char
+    subb  #'0     ; < '0' ?
+    blo   EXIT    ; yes => done parsing
+    cmpb  #10     ; > '9' ?
+    bhs   EXIT    ; yes => done parsing
+    jsr   fpldb   ; -- n digit
+    jsr   fpswap  ; -- digit n
+    jsr   fp_m10  ; -- digit 10*n
+    jsr   fpadd   ; -- 10*n + digit
+  WHILE ra
+  leay  -1,y      ; compensate for ,y+
+  ldb   ,s+       ; get sign
+  DOIF  eq
+    jmp   fpneg   ; was negative => neg
+  DONE
+  rts
+
+* ( a -- ) write floating point in
+* engineering notation in string at x
+* (updated).
+fpwrx
+  pshs  y         ; locally use y as
+  leay  ,x        ; string ptr
+  bsr   fpwry
+  leax  ,y
+  puls  y,pc
+fpwry
+  lda   ,u        ; get sign
+  lsla            ; num==0 ?
+* zero-case
+  DOIF eq
+    lda   #'0     ; yes
+    sta   ,y+     ;   write 0. done.
+  DOELSE
+* negative case
+    DOIF cs
+      ldb #'-     ; neg number
+      stb ,y+     ; write neg sign
+    DONE
+    lsra          ; make num positive
+    sta   ,u      ;
+* compute decimal exponent:
+* == a * ln(256)/ln(10)
+* ~~ a * 154/64
+    suba  #$40    ; remove bias
+    sta   ,-s     ; save exponent sign
+    DOIF  mi
+    nega          ; make exponent > 0
+    DONE
+    ldb  #77*2    ; /64 is high(d<<4)
+    mul
+    lsld
+    lsld
+    sta   ,-s     ; save decimal exp
+* compute 1/10^(signed decimal expo)
+    ldb   1,s     ; get sign
+    DOIF  pl
+      bsr  fpdot1 ; expo>0 use 0.1
+    DOELSE
+      ldb  #10    ; expo<0 use 10
+      jsr  fpldbnz
+    DONE
+    clra          ; build positive expo
+    ldb   ,s
+    jsr   fppowd  ; .1^(sign. dec. expo)
+* make num "normalized" between 1 and 256
+    jsr   fpmul
+    bsr   fpwrnorm
+* print digits before decimal place
+    ldb   1,u     ; get 1st big digit
+    clra          ; no leading 0
+    bsr   fpwrb   ; write it
+* handle decimals if any
+    ldd   2,u     ; any fract. value ?
+    DOIF  ne
+      ldb   #'.   ; yes => write with
+      stb   ,y+   ; 4 decimal places
+      bsr   fpwrnxt2
+      bsr   fpwrnxt2
+    DONE
+* print exponent if not nul
+    puls  d       ; get exponent & sign
+    tsta          ; expo==0 ? no print
+    DOIF  ne
+      tstb        ; setup expo sign
+      DOIF  mi
+        ldb #'-
+      DOELSE
+        ldb #'+
+      DONE
+      stb   1,y   ; store sign mark
+      ldb   #'E   ; write E mark
+      stb   ,y++  ; skip over sign
+      tfr   a,b
+      clra        ; no leading 0 please
+      jsr   fpwrb ; write expo
+    DONE
+  DONE
+  clr   ,y        ; end of string
+  jmp   fpdrop    ; fix stack
+* ( -- 0.1 )
+fpdot1
+  ldd   #$3f19
+  ldx   #$999a
+  pshu  d,x
+  rts
+* extract and write next 2 fractionnal
+* digits (if any)
+fpwrnxt2
+  bsr   fpwrnxt   ; fall through!
+* extract and write next fractionnal
+* digit (if any)
+fpwrnxt
+  ldd   2,u       ; any fractionnal ?
+  DOIF  ne
+    clr   1,u     ; clear int value
+    jsr   fp_m10  ; get nxt digit
+    ldb   1,u     ; get next digit
+    addb  #'0     ; convert to ascii
+    stb   ,y+     ; update string
+  DONE
+  rts
+* make num have expo==0, fixing decimal expo (2,s)
+fpwrnorm
+  DO
+    ldb   ,u      ; get biased expo
+    cmpb  #$40    ; signed-expo <= 0 ?
+    bls   EXIT    ; yes => done
+    bsr   fpdot1
+    jsr   fpmul   ; no => divide by 10
+    ldb   3,s     ; and update dec. exp
+    DOIF  pl
+      inc   2,s   ; +1 if >0
+    DOELSE
+      dec   2,s   ; -1 if <0
+    DONE
+  WHILE ra
+  DO
+    ldb   ,u      ; 1 <= num < 256 ?
+    cmpb  #$40
+    bhs   EXIT    ; yes => done
+    jsr   fp_m10  ; no => mul 10
+    ldb   3,s     ; and update dec. exp
+    DOIF  pl
+      dec   2,s   ; -1 if >0
+    DOELSE
+      inc   2,s   ; +1 if <0
+    DONE
+  WHILE ra
+  rts
+
+* write b in decimal to string pointed
+* by y. If a!=0, then leading 0 are
+* added.
+fpwrb
+  pshs  d         ; prepare stack:
+  clra            ; lead0-flag, $00
+  sta   1,s       ;
+  lslb            ; get b's msbit
+  incb            ; inject sentinel
+  DO
+    sta   ,-s     ; rotate A with carry
+    adca  ,s+
+    daa           ; make it decimal
+    rol   1,s     ; rotate 1st digit
+    lslb          ; rotate b
+  WHILE ne
+  ldb   ,s        ; load lead0 flag
+  orb   1,s       ; combine with digit
+  DOIF  ne
+    stb   ,s      ; if non zero, prints
+    ldb   1,s     ; ensure flag is !=0
+    addb  #'0     ; to write all digits
+    stb   ,y+     ; and write 1st digit
+  DONE
+  sta   1,s       ; save digits 2 & 3
+  anda  #$F0      ; isolate 2nd digit
+  ora   ,s        ; combine with lead0
+  DOIF  ne
+    lda   1,s     ; ifn 0 => write it
+    ldb   #$10    ; A<<4 faster than
+    mul           ; with rotations
+    adda  #'0
+    sta   ,y+
+  DONE
+  lda   1,s       ; get last 2 digits
+  anda  #$0F      ; isolate 3rd digit
+  adda  #'0       ; convert to ascii
+  sta   ,y+       ; write it
+  puls  d,pc      ; restore stack, done
+
+(info)
+
+* =====================================
+* interactive calculator
+* =====================================
+
+main
+  pshs  d,x,y,u,dp,cc
+  ldb   $6073     ; backup buzz
+  pshs  b
+  clr   $6073     ; disable buzz
+  jsr   timeInit  ; init timer
+  ldu   #fpstack  ; setup fpu stack
+  ldx   #welcome  ; prints welcome
+  jsr   puts      ; message
+  incb            ; flag interpreter
+  stb   running
+
+  DO
+    bsr   prPrompt
+    ldx   #inpbuf
+    ldy   #inpend
+    jsr   gets
+    DO
+      jsr   nxtToken
+      ldb   ,x
+      beq   EXIT  ; no more tokens
+      bsr   findCmd
+      ldb   ,y
+      DOIF  mi
+        bsr tryFlt  ; no cmd => try float
+      DOELSE
+        jsr doExec  ; got cmd => exec
+      DONE
+    WHILE ra
+    ldb   running
+  WHILE ne
+  puls  b
+  stb   $6073
+  jsr   timeExit
+  ldx   #bye
+  jsr   println
+  puls  d,x,y,u,dp,cc
+  swi
+  rts
+
+* build a nnn> prompt. nnn representing
+* representing current stack depth
+prPrompt
+  ldx   #outbuf   ; make x&y point
+  leay  ,x        ; to output buffer
+  jsr   stksize   ; getstack size
+  ora   #255      ; print leading 0s
+  jsr   fpwrb     ; write nnnn
+  ldd   #32+256*'>
+  std   ,y++      ; add '> '
+  clr   ,y        ; end of string
+  jmp   puts      ; print prompt
+
+* try parsing a float at string pointed
+* by x
+tryFlt
+  jsr   fprdx     ; read float
+  ldb   ,x        ; get last unread char
+  cmpb  #32       ; <=' ' ?
+  DOIF  ls
+    rts           ; yes => done
+  DONE
+  jsr   fpdrop
+  ldy   #syntaxErr  ; red
+* bra   prError   ; print syntax error
+
+* prints the error message pointed by
+* y. Then print the current token
+* (pointed by x). Then make x point to
+* end of string to stop executing any
+* other command in the buffer.
+prError
+  clr   timeEn    ; clear timing flag
+  exg   x,y
+  jsr   puts      ; prints error msg
+  DO
+    ldb   ,y+     ; adv. to next tok
+    cmpb  #32     ; end of tok reached?
+    bls   EXIT    ; yes => quit
+    jsr   putc    ; no => print tok chr
+  WHILE ra
+  tstb            ; end of string?
+  DO
+    beq   EXIT    ; yes => exit loop
+    ldb   ,y+     ; get next char
+  WHILE ra
+  leax  -1,y      ; make x point to 0
+  jsr   println   ; prints crlf
+  leax  -1,y      ; make x point to 0
+  rts
+
+* given a string pointed by x, findCmd
+* a cmd descriptor (pointed by y) which
+* match the current token started at x.
+* If a cmd is found then ",y" contains
+* the arity (number of required params
+* on stack) for the command, and "1,y"
+* contains the execution adress of the
+* cmd. If no cmd matches, then "1,y"
+* contains -1.
+findCmd
+  ldy   #cmds     ; load command desc.
+  DO
+    pshs    x     ; save token ptr
+    DO
+      ldb   ,x    ; get next char
+      cmpb  #32
+      bls   EXIT  ; none => done loop
+      DO
+        cmpb  #'A ; make lower case
+        blo   EXIT
+        cmpb  #'Z
+        bhi   EXIT
+        addb  #'a-'A
+      DONE
+      cmpb  ,y    ; cmp with curr
+      bne   EXIT  ; cmd. no match=>next
+      leax  1,x   ; match: advance both
+      leay  1,y   ; pointers
+    WHILE   ra
+    DO
+      ldb   ,x    ; input token fully
+      cmpb  #32   ; read ?
+      bhi   EXIT  ; no => try next cmd
+      ldb   ,y    ; curr cmd symbol
+      cmpb  #10   ; fully read?
+      bhs   EXIT  ; no => try next cmd
+      stx   ,s    ; cmd found! return x
+      puls  x,pc  ; stack fixup&ereturn
+    DONE
+    puls    x     ; reset input ptr
+    DO
+      ldb   ,y+   ; read whole cmd
+      cmpb  #10   ; descriptor
+    WHILE hs
+    leay    2,y   ; skip addr
+    ldb     ,y    ; loop if cmd valid
+  WHILE pl
+  rts
+
+* execute cmd pointed by y
+doExec
+  pshs  x         ; saves the token ptr
+  jsr   stksize   ; get stack size
+  cmpb  ,y+       ; enough arg on stck?
+  DOIF  lo        ; no => error
+    puls  x       ; not enough params
+    bsr   prvToken
+    ldy   #stackErr
+    bra   prError ; print stack err msg
+  DOELSE
+    ldb   timeEn  ; timing enabled?
+    DOIF  ne
+    bsr   doTiming  ; yes => do time
+    clr   timeEn    ; clear time flag
+    DONE
+    jsr   [,y]    ; execute cmd
+  DONE
+  puls  x,pc      ; restore token ptr
+
+* rewind to start of last token
+prvToken
+  DO
+    ldb   ,-x     ; read prev char
+    cmpb  #32     ; token separatpr?
+  WHILE hi        ; no => loop
+  leax  1,x       ; fixup x
+  rts
+
+* advance to next token
+nxtToken
+  DO
+    ldb   ,x+     ; read next char
+    beq   EXIT    ; end of string=>exit
+    cmpb  #32     ; token separator ?
+  WHILE   ls      ; no => loop
+  leax    -1,x    ; comensate x
+  rts
+
+* returns the fp-stack length in reg D
+stksize
+  ldd   #fpstack  ; load top of stack
+  pshs  u
+  subd  ,s++      ; subtract current
+  lsrd            ; divide by four
+  lsrd
+  rts
+
+* mesure the average time used by a cmd
+* to do so, iterate the cmd again and
+* again on a clone of the stack for
+* TIMELP/10 seconds. The average time
+* for the cmd is time/(#iteration*10)
+* in second.
+TIMELP  equ     150
+doTiming
+  ldx   #timingStr
+  jsr   puts      ; prints a wait msg
+  clra
+  clrb
+  stb   putcEn    ; disable print
+  std   timeCt    ; clear clock counter
+  ldx   #TIMELP   ; timeout
+  DO
+    bsr   doDryExec
+    addd  #1      ; +1 excution
+    DOIF eq
+      ldd #-1     ; wrapped!
+      bra EXIT2   ; stop looping
+    DONE
+    cmpx  timeCt  ; timeout reached ?
+  WHILE cc        ; no => loop
+  jsr   fplddu    ; -- #iter
+  ldd   timeCt    ;
+  jsr   fplddu    ; -- #iter time
+* compute average time in ms
+  jsr   fpover
+  jsr   fp_m10
+  jsr   fpover
+  jsr   fpdiv
+  jsr   fprrot
+* compute flops
+  jsr   fp_m10
+  jsr   fp_m10
+  jsr   fpswap
+  jsr   fpdiv
+
+  inc   putcEn    ; enable print
+  ldx   #timeResStr
+  jsr   puts      ; print result msg
+  jsr   doDot     ; prints avg time
+  ldx   #flopsResStr
+  jsr   puts      ; prints flops msg
+  jmp   doDot     ; print flops
+
+* execute the command without affecting
+* the stack
+doDryExec
+  pshs  d,x,u     ; preserve regs
+  ldb   -1,y      ; get arity
+  DOIF  ne
+    DO
+      decb        ; arg-index
+      stb   ,-s   ; preserve
+      ldb   -1,y
+      decb        ; push arg-1
+      jsr   fppick
+      ldb   ,s+
+    WHILE ne
+  DONE
+  jsr   [,y]      ; execute cmd
+  puls  d,x,u,pc
+
+* given a buffer in x (ending in y-1), reads a string.
+* result is a nul-terminated string
+gets
+  leay  -1,y      ; y=end of buffer-1
+  pshs  d,y,x     ; preserve values
+  clr   ,y        ; mark end of buf
+  DO
+    jsr   $E806   ; read a char
+    tstb          ; got it ?
+    beq   REDO    ; no=>read again
+
+    cmpb  #13     ; return?
+    beq   EXIT    ; yes=>exit loop
+
+    cmpb  #8      ; back
+    DOIF  eq
+      cmpx  2,s   ; already at start?
+      DOIF ne     ; no=>go back
+        leax  -1,x
+        ldd   #1
+        bsr   backsp
+      DONE
+      bra   REDO2
+    DONE
+
+    cmpb  #9      ; right
+    DOIF  eq
+      ldb   ,x+
+      DOIF eq     ; end of buffer?
+        leax -1,x ; yes => get back
+        ldb   #7  ; beep
+      DONE
+      bsr   putc  ; print char
+      bra   REDO2
+    DONE
+
+    cmpb  #10     ; down-->reset line
+    DOIF  eq
+      tfr   x,d
+      subd  2,s
+      bsr   backsp
+      ldx   2,s
+      bra   REDO2
+    DONE
+
+    cmpb  #11     ; up --> print prev
+    DOIF  eq
+      bsr   puts
+      leax  -1,x
+      bra   REDO2
+    DONE
+
+    cmpb  #32     ; < ' '
+    blo   REDO    ; yes => ignore
+    cmpb  #127    ; > 127
+    bhi   REDO    ; yes => ignore
+    cmpx  4,s     ; at end of buffer ?
+    DOIF  hs
+      ldb   #7    ; beep
+      bsr   putc
+      bra   REDO2
+    DONE
+    stb   ,x+
+    bsr   putc
+  WHILE ra
+  clr   ,x        ; end of string
+  bsr   println   ; prints crlf
+  puls  d,x,y,pc
+
+* prints a backspace of length "n"
+* (in reg D)
+backsp
+  pshs  x         ; save regs
+  tfr   d,x       ; x=n
+  DOIF  ne
+    ldb   #8      ; print backspace
+    bsr   backsp2 ; n times
+    ldb   #32     ; print space n
+    bsr   backsp2 ; times
+    ldb   #8      ; then backspace
+    bsr   backsp2 ; n times again
+  DONE
+  puls  x,pc
+* prints a char (in B reg) n times
+* (in X reg)
+backsp2
+  pshs    x
+  DO
+    bsr   putc
+    leax  -1,x
+  WHILE ne
+  puls    x,pc
+
+* prints a line pointed by x (trashed)
+println
+  bsr   puts
+  ldx   #crlf
+  SKIP2           ; skip over bsr putc
+
+* prints a nul-terminated string
+  DO
+    bsr   putc    ; print char
+puts
+    ldb   ,x+     ; load next char
+  WHILE ne        ; any? no=> loop
+  rts
+
+* prints a char
+putc
+  tst   putcEn    ; print enabled?
+  DOIF  eq
+    rts           ; no => do nothing
+  DONE
+  jmp   $E803     ; yes => rom routine
+
+* prints current float in outbuf
+doDot
+  ldx   #outbuf
+* write current float in buf pointed
+* by x and prints outbuf
+doDot2
+  jsr   fpwrx
+  ldx   #outbuf
+  bra   println
+
+* prints full stack
+doDotS
+  jsr   stksize   ; B=stack size (% 256)
+  pshs  b,x,y
+  DOIF  ne
+    DO
+      decb
+      stb   ,-s
+      comb
+      addb  1,s
+      ldy   #outbuf
+      lda   #1
+      jsr   fpwrb
+      ldd   #32+256*': ; add ': '
+      std   ,y++
+      ldb   ,s
+      jsr   fppick
+      leax  ,y
+      bsr   doDot2
+      ldb   ,s+
+    WHILE   ne
+  DONE
+  puls  b,x,y,pc
+
+* quit the interpreter
+doQuit
+  clr   running   ; clear flag
+  clr   ,x        ; kill token buffer
+  rts
+
+* do nothing
+doNop
+  rts
+
+* reset fpu stack
+doZ
+  ldu   #fpstack
+  rts
+
+* prints the list of possible commands
+* the arity is indicated in text
+* font
+doHelp
+  ldx   #cmds     ; cmd list
+  clr   putcAttr  ; no attribute by def
+  DO
+    bsr   doHelpAttr
+    lda   #8      ; max cmd len
+    DO
+      ldb   ,x    ; get next cmd char
+      cmpb  #10   ; arity reached?
+      DOIF  hs    ; no=>advance
+        leax  1,x
+      DOELSE
+        ldb   #32 ; yes=>output space
+        clr   putcAttr ; clear attrib
+      DONE
+      bsr   attrPutc
+      deca
+    WHILE ne
+    bsr   doHelpArity
+    leax  2,x     ; skip over exec addr
+    ldb   ,x
+  WHILE pl
+  ldx   #crlf
+  jmp   puts
+* loop till arity reached
+doHelpArity
+  DO
+    ldb   ,x+     ; got arity?
+    cmpb  #10     ; not yet=>loop
+  WHILE hs
+  rts
+* determine a text attribute according
+* to the arity of the cmd pointd by y
+doHelpAttr
+  pshs  x
+  bsr   doHelpArity
+  ldx   #arityAttrb
+  ldb   b,x
+  stb   putcAttr
+  puls  x,pc
+NONE  equ   %0000 ; no attribute
+BOLD  equ   %0001 ; display bold
+ITAL  equ   %0010 ; italics
+UNDL  equ   %0100 ; underline
+RVID  equ   %1000 ; reverse video
+arityAttrb
+  fcb   NONE
+  fcb   BOLD
+  fcb   RVID
+  fcb   RVID+BOLD
+  fcb   RVID+ITAL+BOLD
+* a modified vesion of putc that can
+* apply text attribute to printed
+* char
+attrPutc
+  pshs  x,d       ; preserve regs
+  ldx   $605A     ; get cur addr on scr
+  jsr   putc      ; print char
+  ldb   #0        ; get curr. attribute
+  VAR   putcAttr,1
+
+  lsrb            ; bold flag set ?
+  DOIF  cs        ; yes==>
+    bsr   bold    ; make char bold
+    leax  320,x   ; go down 8 lines
+    bra   EXIT    ; skip local routine
+bold
+    bsr   *+2     ; repeat 8
+    bsr   *+2
+    bsr   *+2
+    lda   ,x      ; get video byte
+    lsra          ; shift add
+    ora   ,x      ; merge it with
+    sta   ,x      ; previous
+    leax  -40,x   ; go up 1 line
+    rts
+  DONE
+
+  lsrb            ; italic flag set ?
+  DOIF  cs
+    lsl ,x        ; yes => left shift
+    lsl -1*40,x   ; 3 bottom lines and
+    lsl -2*40,x   ; right shift 3 top
+    lsr -5*40,x   ; lines
+    lsr -6*40,x
+    lsr -7*40,x
+  DONE
+
+  lsrb            ; underline flag set?
+  DOIF  cs
+    com   ,x      ; yes => compl. video
+  DONE
+
+
+  lsrb            ; reverse video set?
+  DOIF  cs
+    bsr   invvid  ; reverse char
+    leax  320,x   ; 8 line down
+    bra   EXIT    ; skip local routine
+invvid
+    bsr   *+2     ; repeat 8 times
+    bsr   *+2
+    bsr   *+2
+    com   ,x      ; complement video
+    leax  -40,x   ; 1 line up
+    rts
+  DONE
+  puls  x,d,pc    ; done
+
+* compare 2 floats and print < = >
+* accordingly
+doCmp
+  jsr   fpcmp     ; compare
+  DOIF  eq
+    ldb #'=
+  DOELSE
+    DOIF hi
+      ldb #'>
+    DOELSE
+      ldb #'<
+    DONE
+  DONE
+  jsr   putc      ; print sylbol
+  jsr   fp2drop   ; drop 2 chars
+  ldx   #crlf     ; new line
+  jmp   puts
+
+* init timer isr
+timeInit
+  ldx   #timeIt     ; activate timer
+  stx   $6027
+* stx   $6021
+  lda   $6019
+  ora   #32
+  sta   $6019
+  andcc #255-$50
+  rts
+
+* stop timer isr
+timeExit
+  lda   $6019
+  anda  #255-32
+  sta   $6019
+  rts
+
+* timer isr
+timeIt
+  inc   timeCt+1
+  DOIF eq
+    inc timeCt
+  DONE
+  jmp   $E830
+
+* flag timed operation
+timeOn
+  inc   timeEn
+  rts
+
+* =====================================
+CMD MACRO
+  fcc   \0          ; name
+  fcb   \2          ; arity < 10
+  fdb   \1          ; fonction pointer
+    ENDM
+cmds
+  CMD   /?/,doHelp,0
+  CMD   /help/,doHelp,0
+  CMD   /quit/,doQuit,0
+  CMD   /time/,timeOn,0
+  CMD   /.s/,doDotS,0
+
+  CMD   /pi/,fppi,0
+  CMD   /n.nnE+n/,doNop,0
+
+  CMD   /+/,fpadd,2
+  CMD   /-/,fpsub,2
+  CMD   /*/,fpmul,2
+  CMD   %/%,fpdiv,2
+  CMD   /%/,fpmod,2
+  CMD   /rem/,fprem,2
+  CMD   /**/,fppow,2
+
+  CMD   /*2/,fpshl,1
+  CMD   %/2%,fpshr,1
+  CMD   %1/%,fpinv,1
+
+  CMD   /abs/,fpabs,1
+  CMD   /**2/,fpsqr,1
+  CMD   /sqrt/,fpsqrt,1
+  CMD   %1/sqrt%,fpinvsqrt,1
+  CMD   /sin/,fpsin,1
+  CMD   /cos/,fpcos,1
+  CMD   /tan/,fptan,1
+  CMD   /atan/,fpatan,1
+  CMD   /ln/,fpln,1
+  CMD   /exp/,fpexp,1
+  CMD   /!/,fpgammap1,1
+
+  CMD   /trunc/,fptrunc,1
+  CMD   /frac/,fpfrac,1
+  CMD   /floor/,fpfloor,1
+  CMD   /ceil/,fpceil,1
+  CMD   /round/,fpround,1
+
+  CMD   /cmp/,doCmp,2
+  CMD   /./,doDot,1
+
+  CMD   /z/,doZ,0
+  CMD   /nop/,doNop,0
+  CMD   /drop/,fpdrop,1
+  CMD   /dup/,fpdup,1
+  CMD   /swap/,fpswap,2
+  CMD   /2drop/,fpdrop,2
+  CMD   /2dup/,fp2dup,2
+  CMD   /over/,fpover,2
+  CMD   /rot/,fplrot,3
+  CMD   /-rot/,fprrot,3
+
+  CMD   %1//%,fpinv_vnrd,1
+  CMD   %1///%,fpinv_goldschmidt,1
+  CMD   %1////%,fpinv_quake,1
+  CMD   %rnd%,fprnd,0
+
+  fcb   -1      ; end of cmds
+
+welcome
+  fcc   /RPN calc/
+  fcc   /, by Samuel DEVULDER/
+  fcc   / 2019/
+coloroff
+  fcb   $1B,$68
+crlf
+  fcb   13,10,0
+
+bye
+  fcc   /Bye.../
+coloron
+  fcb   $1B,$69
+  fcb   0
+
+stackErr
+  fcc   %!!! %
+  fcb   7,0
+
+syntaxErr
+  fcc   /??? /
+  fcb   7,0
+
+timingStr
+  fcc   /timing for /
+  fcb   (TIMELP/100)+'0
+  fcb   ((TIMELP/10)%10)+'0
+  fcc   /./
+  fcb   TIMELP%10+'0
+  fcc   /s.../
+  fcb   0
+
+timeResStr
+  fcb   13,$18
+  fcc   /time(ms) = /
+  fcb   0
+
+flopsResStr
+  fcc   /flops    = /
+  fcb   0
+
+* =====================================
+
+running
+  fcb   -1  ; still interpret ?
+putcEn
+  fcb   -1  ; putc enabled ?
+timeEn
+  fcb   0   ; timing enabled ?
+timeCt
+  fdb   0   ; timer counter
+
+* =====================================
+
+  fcb   0   ; sentinel
+inpbuf
+  rmb   256,0
+inpend
+
+outbuf
+  rmb   256
+outend
+
+fpstackend
+  rmb   128*4
+fpstack
+
+  end   main

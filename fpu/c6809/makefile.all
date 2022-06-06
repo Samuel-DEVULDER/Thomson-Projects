@@ -1,0 +1,158 @@
+#
+#  Shared makefile for building C6809. Requires GNU make.
+#
+#  Available options:
+#
+#     Environment variables:
+#        DEBUG=1           building with debug
+#
+#     Targets: 
+#        default:          just build C6809.
+#        clean:            remove objects files.
+#        veryclean:        remove all generated files.
+#
+#  The "clean" and "veryclean" targets require a Unix-style rm command
+#  to be installed, eg. from the djgpp fileutils package.
+#
+
+.PHONY: _default
+
+_default: default
+
+
+# ------ sources files ------
+
+SOURCE_FILES = \
+    src/instruction/bra.c       \
+    src/instruction/inherent.c  \
+    src/instruction/immediate.c \
+    src/instruction/indexed.c   \
+    src/instruction/lbra.c      \
+    src/instruction/pushpull.c  \
+    src/instruction/tfrexg.c    \
+    src/directive/mo.c       \
+    src/directive/end.c      \
+    src/directive/if.c       \
+    src/directive/opt.c      \
+    src/directive/org.c      \
+    src/directive/page.c     \
+    src/directive/print.c    \
+    src/directive/rmx.c      \
+    src/directive/setdp.c    \
+    src/directive/title.c    \
+    src/directive/fcx.c      \
+    src/directive/includ.c   \
+    src/directive/macro.c    \
+    src/directive/setequ.c   \
+    src/directive/blank.c    \
+    src/encode.c         \
+    src/display.c        \
+    src/source.c         \
+    src/arg.c            \
+    src/bin.c            \
+    src/symbol.c         \
+    src/eval.c           \
+    src/asm.c            \
+    src/mark.c           \
+    src/assemble.c       \
+    src/error.c          \
+    src/main.c
+
+# ------ compiler flags ------ 
+
+CC = gcc
+
+CC=gcc
+
+WFLAGS= -W -Wall -fsigned-char
+
+PROG_NAME=c6809
+
+# ------ compiler flags ------ 
+
+ifdef DEBUGMODE
+
+# -- debugging build --
+CFLAGS = -g -DDEBUG $(WFLAGS)
+LFLAGS = -g
+DESCRIPTION = debugging
+
+else
+ifdef PROFILEMODE
+
+# -- profiling build --
+CFLAGS = -pg $(WFLAGS)
+LFLAGS = -pg
+DESCRIPTION = profiling
+
+else
+
+# -- optimised build --
+CFLAGS = $(WFLAGS)
+LFLAGS = -s
+DESCRIPTION = optimized
+
+endif
+endif
+
+# ------ special compiler flags ------ 
+
+ifdef WINDOWS_TOOL
+
+OBJ_DIR = obj/win
+CFLAGS += -DWINDOWS_TOOL
+LFLAGS += -Wl,--subsystem,console
+PLATFORM = Windows
+
+else
+ifdef MACINTOSH_TOOL
+
+OBJ_DIR = obj/mac
+CFLAGS += -DMACINTOSH_TOOL
+PLATFORM = Macintosh
+
+else
+ifdef LINUX_TOOL
+
+OBJ_DIR = obj/linux
+CFLAGS += -DLINUX_TOOL
+PLATFORM = Linux
+
+else
+ifdef DJGPP
+
+OBJ_DIR = obj/msdos
+PLATFORM = DJGPP
+
+endif
+endif
+endif
+endif
+
+# ------ object files ------
+
+VPATH = src src/directive src/instruction
+
+PROG_OBJ = $(basename $(notdir $(SOURCE_FILES)))
+PROG_OBJECTS = $(addprefix $(OBJ_DIR)/, $(addsuffix .o,$(PROG_OBJ)))
+
+$(OBJ_DIR)/%.o: %.c
+	$(CC) -c $(CFLAGS) -I./include -o $@ $< -MMD
+
+$(PROG_NAME): $(PROG_OBJECTS)
+	$(CC) $(LFLAGS) -o $(PROG_NAME) $(PROG_OBJECTS)
+
+-include $(OBJ_DIR)/*.d
+
+# ------ target rules ------ 
+
+.PHONY: default all clean veryclean
+
+default: $(PROG_NAME)
+	@echo The $(DESCRIPTION) $(PLATFORM) version has been compiled.
+
+clean :
+	rm -f $(OBJ_DIR)/*.*
+
+veryclean :
+	rm -f $(OBJ_DIR)/*.* $(PROG_NAME)
