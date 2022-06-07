@@ -1,2 +1,2 @@
 # Thomson
-Various project for the Thomson machines.
+Various projects for the Thomson machines.
