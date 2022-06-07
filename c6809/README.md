@@ -1,8 +1,11 @@
 # What is it?
-This is c6809-0.83 a macro-assembler for the Thomson's machines (MacroAssembler-like).
+This is `c6809-0.83` a macro-assembler for the Thomson's machines (MacroAssembler-like).
 
 # Who did it?
 Copyright (C) mars 2010 François Mouret
+
+# Web site
+http://www.pulsdemos.com/c6809.html
 
 # License 
 This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.
