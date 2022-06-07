@@ -1,30 +1,26 @@
-ALL=$(wildcard *.ass)
 DISK=disk.sap
-K7=$(DISK:.sap=.k7)
-IMAGES=
 
-all: compile fill_sapdir w
+ALL=$(wildcard *.ass)
 
-compile: $(IMAGES) $(ALL:.ass=.BIN)
+all: compile $(DISK)
+
+compile: tools/c6809.exe $(ALL:.ass=.BIN)
 
 list:	compile
 	less codes.lst
 
 clean: 
-	rm *.BIN
+	rm *.BIN *.ASM
 
-%.BIN: %.ass tools/c6809.exe
+%.BIN: %.ass 
 	tools/c6809.exe -c -bh -am -oOP $< `echo $@|tr a-z A-Z`
 	
-tools/%.exe: c6809/%.c
+tools/%.exe: ../c6809/%.c
 	gcc -O3 -fomit-frame-pointer "$<" -o "$@"
 	
 $(DISK): fill_sapdir
 	tools/sapfs -c $@
 	tools/sapfs -a $@ sapdir
-	
-$(K7): 
-	echo >$@ -n
 
 fill_sapdir: compile
 	-mkdir sapdir

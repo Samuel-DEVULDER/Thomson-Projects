@@ -110,7 +110,7 @@ The label is followed by a (before -- after) resprentation to show how it operat
   Reciprocal of tangent.
 
 * fpgammap1 ( f -- gamma(f+1) ) 
-  Approximate factorial via Ramanujan formula
+  Approximate factorial via Ramanujan formula.
   
 ### Misc
 
