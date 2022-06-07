@@ -1,0 +1,3241 @@
+/*--------------------------------------------------------------*
+ * Compilé avec C6809 v0.83                                     *
+ *--------------------------------------------------------------*
+ * Fichier source      : fpu.ass
+ * Fichier destination : FPU.BIN
+ * Contenu :
+*** Le fichier 'FPU.ASM' pourrait être trop grand pour être chargé
+ *     Main     0:FPU.ASM      49393
+ *--------------------------------------------------------------*/
+
+Macro Pass
+Pass1
+Pass2
+      2                           * =====================================
+      3                           *
+      4                           * Tests around a "new" floating-point
+      5                           * representation which is relatively
+      6                           * compact and fast.
+      7                           *
+      8                           * =====================================
+      9                           *
+     10                           * Format:
+     11                           *
+     12                           * EEEEEEEE NNNNNNNN NNNNNNNN
+     13                           * E=EXPO
+     14                           * N=-32768 .. 32767
+     15                           *
+     16                           * =====================================
+     17                           *
+     18                           * Represents
+     19                           *   x = N * 2**E
+     20                           *
+     21                           * Normalized form is when the two most
+     22                           * significative bits of N are not the
+     23                           * same.
+     24                           *
+     25                           * =====================================
+     26                           *
+     27                           * (c) Samuel DEVULDER - May 2020
+     28                           *
+     29                           * inspired by
+     30                           *     http://tinyurl.com/yxng3vau
+     31                           *
+     32                           * =====================================
+     33                           * Conventions:
+     34                           * =====================================
+     35                           * Floating-point operations are stack-
+     36                           * based (register U is used). Comments
+     37                           * indicates stack-values like this:
+     38                           *            (before -- after)
+     39                           *
+     40                           * For speed reason, floating point
+     41                           * operations typically trash the A
+     42                           * and B registers and possibly the X
+     43                           * register as well. Consider them
+     44                           * as dirty when calling. Same with
+     45                           * CC-flags.
+     46                           * =====================================
+     47
+     48        9000                       org     $9000
+     49
+     50                           * =====================================
+     51                           * some helpful macros
+     52                           * =====================================
+     53
+     54                           * cleard
+     55                           clrd    MACRO
+     56                                   ldd     #0
+     57                                   ENDM
+     58
+     59                           * negate d-reg
+     60                           negd    MACRO
+     61                                   nega
+     62                                   negb
+     63                                   sbca    #0
+     64                                   ENDM
+     65
+     66                           * arithmetic shift right d-reg
+     67                           asrd    MACRO
+     68                                   asra
+     69                                   rorb
+     70                                   ENDM
+     71
+     72                           * logical shift right d-reg
+     73                           lsrd    MACRO
+     74                                   lsra
+     75                                   rorb
+     76                                   ENDM
+     77
+     78                           * shift left d-reg
+     79                           lsld    MACRO
+     80                                   lslb
+     81                                   rola
+     82                                   ENDM
+     83
+     84                           * rotate right d-reg
+     85                           rord    MACRO
+     86                                   rora
+     87                                   rorb
+     88                                   ENDM
+     89
+     90                           * rotate left d-reg
+     91                           rold    MACRO
+     92                                   rolb
+     93                                   rola
+     94                                   ENDM
+     95
+     96                           * skip next 2 bytes
+     97                           SKIP2   MACRO
+     98                                   fcb     $8C     ; SKIP2 (CMPX #N)>>
+     99                                   ENDM
+    100
+    101                           * skip next byte
+    102                           SKIP1   MACRO
+    103                                   fcb     $81     ; SKIP (CMPA #N)
+    104                                   ENDM
+    105
+    106                           * declare a self-modifying code variable
+    107                           VAR     MACRO
+    108                           \0      set     *-\1
+    109                                   ENDM
+    110
+    111                           * define a stack
+    112                           DOSTCK  MACRO
+    113                           DO9\0   set     0
+    114                           DO8\0   set     0
+    115                           DO7\0   set     0
+    116                           DO6\0   set     0
+    117                           DO5\0   set     0
+    118                           DO4\0   set     0
+    119                           DO3\0   set     0
+    120                           DO2\0   set     0
+    121                           DO1\0   set     0
+    122                                   ENDM
+    123
+    124                           * default stack
+    113                  0000     DO9def   set     0
+    114                  0000     DO8def   set     0
+    115                  0000     DO7def   set     0
+    116                  0000     DO6def   set     0
+    117                  0000     DO5def   set     0
+    118                  0000     DO4def   set     0
+    119                  0000     DO3def   set     0
+    120                  0000     DO2def   set     0
+    121                  0000     DO1def   set     0
+    126                  0000     DO_cpt  SET     0
+    127
+    128                           * push value onto stack
+    129                           DOPUSH  MACRO   QUIET
+    130                                   IFNE    DO9\0
+    131                           STACK OVERFLOW
+    132                                   ENDC
+    133                           DO9\0   set     DO8\0
+    134                           DO8\0   set     DO7\0
+    135                           DO7\0   set     DO6\0
+    136                           DO6\0   set     DO5\0
+    137                           DO5\0   set     DO4\0
+    138                           DO4\0   set     DO3\0
+    139                           DO3\0   set     DO2\0
+    140                           DO2\0   set     DO1\0
+    141                           DO1\0   set     \1
+    142                                   ENDM
+    143
+    144                           * pop value out of stack
+    145                           DOPOP   MACRO   QUIET
+    146                                   IFEQ    DO1\0
+    147                           STACK UNDERFLOW
+    148                                   ENDC
+    149                           DO1\0   set     DO2\0
+    150                           DO2\0   set     DO3\0
+    151                           DO3\0   set     DO4\0
+    152                           DO4\0   set     DO5\0
+    153                           DO5\0   set     DO6\0
+    154                           DO6\0   set     DO7\0
+    155                           DO7\0   set     DO8\0
+    156                           DO8\0   set     DO9\0
+    157                           DO9\0   set     0
+    158                                   ENDM
+    159
+    160                           * macro generating symbols from number
+    161                           * DOGEN NUM,ARG1,ARG2,SYMBOL
+    162                           DOGEN   MACRO   QUIET
+    163                               IF  \0
+    164                                   IFEQ    (\0&7)-0
+    165                                   DOGEN   (\0<-3),\1,\2,\30
+    166                                   ENDC
+    167                                   IFEQ    (\0&7)-1
+    168                                   DOGEN   (\0<-3),\1,\2,\31
+    169                                   ENDC
+    170                                   IFEQ    (\0&7)-2
+    171                                   DOGEN   (\0<-3),\1,\2,\32
+    172                                   ENDC
+    173                                   IFEQ    (\0&7)-3
+    174                                   DOGEN   (\0<-3),\1,\2,\33
+    175                                   ENDC
+    176                                   IFEQ    (\0&7)-4
+    177                                   DOGEN   (\0<-3),\1,\2,\34
+    178                                   ENDC
+    179                                   IFEQ    (\0&7)-5
+    180                                   DOGEN   (\0<-3),\1,\2,\35
+    181                                   ENDC
+    182                                   IFEQ    (\0&7)-6
+    183                                   DOGEN   (\0<-3),\1,\2,\36
+    184                                   ENDC
+    185                                   IFEQ    (\0&7)-7
+    186                                   DOGEN   (\0<-3),\1,\2,\37
+    187                                   ENDC
+    188                               ELSE
+    189                                   \1      \2,\3
+    190                               ENDC
+    191                                   ENDM
+    192
+    193                           * sets ARG1 to ARG2
+    194                           DOSET1  MACRO   QUIET
+    195                           \0 set \1
+    196                                   ENDM
+    197
+    198                           * sets ARG2 to ARG1
+    199                           DOSET2  MACRO   QUIET
+    200                           \1 set \0
+    201                                   ENDM
+    202
+    203                           * sets REDO/EXIT values from stack values>>
+    204                           DOSET   MACRO   QUIET
+    205                                   IF      DO1def
+    206                                   DOGEN   DO1def,DOSET1,EXIT,DOLVE
+    207                                   DOGEN   DO1def,DOSET1,REDO,DOENT
+    208                                   ENDC
+    209                                   IF      DO2def
+    210                                   DOGEN   DO2def,DOSET1,EXIT2,DOLVE>>
+    211                                   DOGEN   DO2def,DOSET1,REDO2,DOENT>>
+    212                                   ENDC
+    213                                   IF      DO3def
+    214                                   DOGEN   DO3def,DOSET1,EXIT3,DOLVE>>
+    215                                   DOGEN   DO3def,DOSET1,REDO3,DOENT>>
+    216                                   ENDC
+    217                                   ENDM
+    218
+    219                           * beginning of a block
+    220                           DO      MACRO   QUIET
+    221                           DO_cpt  set     DO_cpt+1
+    222                                   DOPUSH  def,DO_cpt
+    223                                   DOGEN   DO1def,DOSET2,*,DOENT
+    224                                   DOSET
+    225                                   ENDM
+    226
+    227                           * end of block
+    228                           DONE    MACRO   QUIET
+    229                                   DOGEN   DO1def,DOSET2,*,DOLVE
+    230                                   DOPOP   def
+    231                                   DOSET
+    232                                   ENDM
+    233
+    234                           * encode branch code into number
+    235                  0020     DO_ra   set     $20
+    236                  0021     DO_rn   set     $21
+    237                  0022     DO_hi   set     $22
+    238                  0023     DO_ls   set     $23
+    239                  0024     DO_hs   set     $24
+    240                  0025     DO_lo   set     $25
+    241                  0026     DO_ne   set     $26
+    242                  0027     DO_eq   set     $27
+    243                  0028     DO_vc   set     $28
+    244                  0029     DO_vs   set     $29
+    245                  002A     DO_pl   set     $2A
+    246                  002B     DO_mi   set     $2B
+    247                  002C     DO_ge   set     $2C
+    248                  002D     DO_lt   set     $2D
+    249                  002E     DO_gt   set     $2E
+    250                  002F     DO_le   set     $2F
+    251                  0024     DO_cc   set     $24
+    252                  0025     DO_cs   set     $25
+    253
+    254                           * define branch pairs
+    255                           DO_neg  MACRO
+    256                           DO__\0  set     DO_\1
+    257                           DO__\1  set     DO_\0
+    258                                   ENDM
+    256                  0021     DO__ra  set     DO_rn
+    257                  0020     DO__rn  set     DO_ra
+    256                  0026     DO__eq  set     DO_ne
+    257                  0027     DO__ne  set     DO_eq
+    256                  002A     DO__mi  set     DO_pl
+    257                  002B     DO__pl  set     DO_mi
+    256                  0028     DO__vs  set     DO_vc
+    257                  0029     DO__vc  set     DO_vs
+    256                  0024     DO__cs  set     DO_cc
+    257                  0025     DO__cc  set     DO_cs
+    256                  002F     DO__gt  set     DO_le
+    257                  002E     DO__le  set     DO_gt
+    256                  002D     DO__ge  set     DO_lt
+    257                  002C     DO__lt  set     DO_ge
+    256                  0023     DO__hi  set     DO_ls
+    257                  0022     DO__ls  set     DO_hi
+    256                  0025     DO__hs  set     DO_lo
+    257                  0024     DO__lo  set     DO_hs
+    268                            
+    269                  0000     DO_lbr  SET     0
+    270                           DOLBR   MACRO   QUIET
+    271                           DO_lbr  set     1
+    272                                   ENDM
+    273
+    274                           * generate a branch from a coded-branch
+    275                           DO_br_  MACRO   QUIET
+    276                                   IFEQ    \1-DO_\0
+    277                                   IFEQ    DO_lbr
+    278                                   b\0     \2
+    279                                   ELSE
+    280                                   lb\0    \2
+    281                                   ENDC
+    282                                   echo    ;   --------------------->>
+    283                                   ENDC
+    284                                   ENDM
+    285                           DO_br   MACRO   QUIET
+    286                                   IFEQ    \0-DO_ra
+    287                                   IFEQ    DO_lbr
+    288                                   bra     \1
+    289                                   ELSE
+    290                                   jmp     \1
+    291                                   ENDC
+    292                                   echo    ;   --------------------->>
+    293                                   ENDC
+    294                                   DO_br_  rn,\0,\1
+    295                                   DO_br_  ne,\0,\1
+    296                                   DO_br_  eq,\0,\1
+    297                                   DO_br_  lt,\0,\1
+    298                                   DO_br_  ge,\0,\1
+    299                                   DO_br_  gt,\0,\1
+    300                                   DO_br_  le,\0,\1
+    301                                   DO_br_  mi,\0,\1
+    302                                   DO_br_  pl,\0,\1
+    303                                   DO_br_  vs,\0,\1
+    304                                   DO_br_  vc,\0,\1
+    305                                   DO_br_  cs,\0,\1
+    306                                   DO_br_  cc,\0,\1
+    307                                   DO_br_  hi,\0,\1
+    308                                   DO_br_  ls,\0,\1
+    309                                   ENDM
+    310
+    311                           * DO ... WHILE cc
+    312                           WHILE   MACRO   QUIET
+    313                                   DO_br   DO_\0,REDO
+    314                                   DONE
+    315                           DO_lbr  SET     0
+    316                                   ENDM
+    317
+    318                           * DOIF cc .. DOELIF cc .. DOELIF cc .. DO>>
+    319                           DOIF    MACRO   QUIET
+    320                                   DO
+    321                                   DO_br   DO__\0,EXIT
+    322                           DO_lbr  SET     0
+    323                                   ENDM
+    324
+    325                           DOELSE  MACRO   QUIET
+    326                           DO_cpt  SET     DO_cpt+1
+    327                                   DOGEN   DO_cpt,DOSET1,REDO,DOENT
+    328                                   DOGEN   DO_cpt,DOSET1,EXIT,DOLVE
+    329                                   DO_br   DO_ra,EXIT
+    330                                   DOGEN   DO_cpt,DOSET2,*,DOENT
+    331                                   DOGEN   DO1def,DOSET2,*,DOLVE
+    332                           DO1def  SET     DO_cpt
+    333                           DO_lbr  SET     0
+    334                                   ENDM
+    335
+    336        9000               ftck
+    337  7     9000 8D   22         bsr fswp ; $9024
+    338
+    339        9002               fdrp
+    340  4+1   9002 33   43         leau  3,u
+    341  5     9004 39              rts
+    342
+    343        9005               fone
+    344  2     9005 C6   01         ldb #1
+    345
+    346        9007               fldb
+    347  2     9007 1D              sex
+    348
+    349        9008               fldd
+    350  5+3   9008 36   0E         pshu d,dp
+    351  2     900A C6   10         ldb #16
+    352  4+1   900C E7   42         stb 2,u
+    353  5     900E 39              rts
+    354
+    355        900F               fldx
+    356  5+3   900F EC   81         ldd  ,x++
+    357  5+2   9011 36   06         pshu d
+    358  4+2   9013 E6   80         ldb  ,x+
+    359  5+1   9015 36   04         pshu b
+    360  5     9017 39              rts
+    361                            
+    362        9018               fstx
+    363  5+2   9018 37   06         pulu d
+    364  5+0   901A ED   84         std ,x
+    365  4+2   901C E6   C0         ldb ,u+
+    366  4+1   901E E7   02         stb 2,x
+    367  5     9020 39              rts
+    368
+    369        9021               ftst
+    370  5+0   9021 EC   C4         ldd ,u
+    371  5     9023 39              rts
+    372
+    373        9024               fswp
+    374  5+0   9024 EC   C4         ldd ,u
+    375  5+1   9026 AE   43         ldx 3,u
+    376  5+1   9028 ED   43         std 3,u
+    377  5+0   902A AF   C4         stx ,u
+    378  4+1   902C A6   42         lda 2,u
+    379  4+1   902E E6   45         ldb 5,u
+    380  4+1   9030 A7   45         sta 5,u
+    381  4+1   9032 E7   42         stb 2,u
+    382  5     9034 39              rts
+    383
+    384        9035               fdup
+    385  4+0   9035 E6   C4         ldb  ,u   ; 4
+    386  5+1   9037 AE   41         ldx  1,u  ; 6
+    387  5+3   9039 36   14         pshu b,x  ; 8 => 18
+    388        903B               fnop
+    389  5     903B 39              rts
+    390                            
+    391        903C               fhlf
+    392  6+1   903C 6A   42         dec 2,u
+    393  3     903E 28   FB         bvc fnop ; $903B
+    394
+    395        9040               fclr
+     56  3     9040 CC   0000             ldd     #0
+    397  5+0   9043 ED   C4         std ,u
+    398  5     9045 39              rts
+    399                            
+    400        9046               fdbl
+    401  6+1   9046 6C   42         inc 2,u
+    402  3     9048 29   01         bvs fovf ; $904B
+    403  5     904A 39              rts
+    404
+    405        904B               fovf
+    406  5+0   904B EC   C4         ldd ,u
+    407  3     904D 27   EC         beq fnop ; $903B
+    408  3     904F CC   7FFF       ldd #$7fff
+    409  4+1   9052 A7   42         sta 2,u
+    410  6+0   9054 6D   C4         tst ,u
+    278  3     9056 2A   03               bpl     EXIT ; $905B
+     56  3     9058 CC   0000             ldd     #0
+    414  5+0   905B ED   C4         STD ,u
+    415  5     905D 39              rts
+    416
+    417        905E               fneg
+     56  3     905E CC   0000             ldd     #0
+    419  6+0   9061 A3   C4         subd  ,u    ; 6
+    278  3     9063 28   05               bvc     EXIT ; $906A
+    421  2     9065 44                lsra      ; 2
+    422  6+1   9066 6C   42           inc   2,u ; 7
+    423  3     9068 29   E1           bvs fovf  ; 3 ; $904B
+    425  5+0   906A ED   C4         std   ,u  ; 5 => 17 (32)
+    426  5     906C 39              rts
+    427                            
+    428        906D               fnrm
+    429  5+0   906D EC   C4         ldd   ,u  ; 5
+    278  3     906F 27   10               beq     EXIT ; $9081
+     80  2     9071 58                    lslb
+     81  2     9072 49                    rola
+    432  3     9073 29   0C           bvs EXIT ; $9081
+    434  6+1   9075 6A   62             dec 2,s
+    435  3     9077 29   C7             bvs fclr ; $9040
+     80  2     9079 58                    lslb
+     81  2     907A 49                    rola
+    278  3     907B 28   F8               bvc     REDO ; $9075
+     86  2     907D 46                    rora
+     87  2     907E 56                    rorb
+    439  5+0   907F ED   C4           std   ,u
+    441  5     9081 39              rts
+    442
+    443                           * =====================================
+    444                           * Stack manipulation
+    445                           * =====================================
+    446
+    447                           * ( a0 .. an -- a1 .. an a0 ) n=B-reg
+    448        9082               fproll
+    449  5+2   9082 34   40         pshs  u         ; reference ptr
+    450  7     9084 8D   1C         bsr   fpindxb   ; x=u+*b ; $90A2
+    451  5+1   9086 EC   02         ldd   2,x       ; copy a0 after
+    452  5+1   9088 ED   5E         std   -2,u      ; end of stack
+    453  5+0   908A EC   84         ldd   ,x
+    454  5+1   908C ED   5C         std   -4,u
+    455  4+1   908E 33   04         leau  4,x       ; prepare u
+    457  5+1   9090 EC   58           ldd   -8,u    ; get ai+1
+    458  5+1   9092 AE   5A           ldx   -6,u
+    459  5+4   9094 36   16           pshu  d,x     ; write to ai
+    460  7+0   9096 11A3 E4           cmpu  ,s      ; finished ?
+    278  3     9099 26   F5               bne     REDO ; $9090
+    462  5+4   909B 35   C0         puls    u,pc
+    463
+    464                           * ( a0 .. an -- a0 .. an a0 )
+    465        909D               fppick
+    466  3     909D 8E   90E0       ldx   #fpldx    ; stack trick to call
+    467  5+2   90A0 34   10         pshs  x         ; fpldx on return
+    468
+    469                           * compute x=u+4*b (unsigned)
+    470        90A2               fpindxb
+    471  4+0   90A2 30   C4         leax  ,u        ; x=U
+    472  3     90A4 3A              abx             ; x=u+b
+    473  3     90A5 3A              abx             ; x=u+b+b
+    474  3     90A6 3A              abx             ; x=u+b+b+b
+    475  3     90A7 3A              abx             ; x=u+b+b+b+b
+    476  5     90A8 39              rts             ; return to caller
+    477
+    478                           * ( a b c -- c a b )
+    479        90A9               fprrot
+    480  7     90A9 8D   14         bsr   fpswap    ; a b c -- a c b ; $90B>>
+    481  4+1   90AB 33   44         leau  4,u       ;       -- a c (b)
+    482  7     90AD 8D   10         bsr   fpswap    ;       -- c a (b) ; $9>>
+    483  4+1   90AF 33   5C         leau  -4,u      ;       -- c a b
+    484  5     90B1 39              rts
+    485
+    486                           * ( a b c -- b c a )
+    487        90B2               fplrot
+    488  4+1   90B2 33   44         leau  4,u       ; a b c -- a b (c)
+    489  7     90B4 8D   09         bsr   fpswap    ;       -- b a (c) ; $9>>
+    490  4+1   90B6 33   5C         leau  -4,u      ;       -- b a c
+    491  3     90B8 20   05         bra   fpswap    ;       -- b c a ; $90B>>
+    492
+    493                           * ( a b -- )
+    494        90BA               fp2drop
+    495  7     90BA 8D   00         bsr   fpdrop ; $90BC
+    496                           * bra   fpdrop    ; fall through
+    497
+    498                           * ( a -- )
+    499        90BC               fpdrop
+    500  4+1   90BC 33   44         leau  4,u
+    501  5     90BE 39              rts
+    502
+    503                           * ( a b -- b a )
+    504        90BF               fpswap
+    505  5+1   90BF EC   46         ldd   6,u
+    506  5+1   90C1 AE   42         ldx   2,u
+    507  5+1   90C3 ED   42         std   2,u
+    508  5+1   90C5 AF   46         stx   6,u
+    509  5+1   90C7 EC   44         ldd   4,u
+    510  5+0   90C9 AE   C4         ldx   ,u
+    511  5+0   90CB ED   C4         std   ,u
+    512  5+1   90CD AF   44         stx   4,u
+    513  5     90CF 39              rts
+    514
+    515                           * ( a b -- b )
+    516        90D0               fpnip
+    517  4+0   90D0 30   C4         leax  ,u        ; x points to b
+    518  4+1   90D2 33   48         leau  8,u       ; u points to a
+    519  3     90D4 20   0A         bra   fpldx     ; just load from x ; $9>>
+    520
+    521                           * ( a b -- b a b )
+    522        90D6               fptuck
+    523  7     90D6 8D   E7         bsr   fpswap    ; a b -- b a ; $90BF
+    524                           * bra   fpover    ;     -- b a b
+     98        90D8 8C                    fcb     $8C     ; SKIP2 (CMPX #N)>>
+    526
+    527                           * ( a b -- a b a b )
+    528        90D9               fp2dup
+    529  7     90D9 8D   00         bsr   fpover    ; call twice fpover ; $>>
+    530                           * bra   fpover    ; but optimized
+    531
+    532                           * ( a b -- a b a )
+    533        90DB               fpover
+    534  4+1   90DB 30   44         leax  4,u       ; point to 2nd flt
+     98        90DD 8C                    fcb     $8C     ; SKIP2 (CMPX #N)>>
+    536
+    537                           * ( a -- a a )
+    538        90DE               fpdup
+    539  4+0   90DE 30   C4         leax  ,u        ; make x point to top
+    540                           * bra   fpldx     ; of stack and load
+    541
+    542                           * =====================================
+    543                           * Load/Store operations
+    544                           * =====================================
+    545
+    546                           * ( -- @X )  push float at X onto stack
+    547        90E0               fpldx
+    548  5+0   90E0 EC   84         ldd   ,x        ; get exp+hi mant.
+    549  5+1   90E2 AE   02         ldx   2,x       ; get low mantissa
+    550  5+4   90E4 36   16         pshu  d,x
+    551  5     90E6 39              rts
+    552
+    553                           * ( -- @S ) copy float from S-stack
+    554                           fplds MACRO
+    555                             puls  d,x       ; pop float out of S
+    556                             pshu  d,x       ; push it on U-stack
+    557                             ENDM
+    558
+    559                           * ( f -- ) copy float onto S-stack
+    560                           fpsts MACRO
+    561                             pulu  d,x
+    562                             pshs  d,x
+    563                             ENDM
+    564
+    565                           * ( f -- ) copy float to x,..,x+3
+    566        90E7               fpstx
+    567  5+2   90E7 37   06         pulu  d         ; get expo+mant.
+    568  5+0   90E9 ED   84         std   ,x        ; store at x
+    569  5+2   90EB 37   06         pulu  d         ; get mant
+    570  5+1   90ED ED   02         std   2,x       ; store at x+2
+    571  5     90EF 39              rts
+    572
+    573                           * ( -- D ) load a float from D (unsigned)>>
+    574        90F0               fplddu
+    575  2     90F0 4D              tsta            ; D<256 ?
+    576  3     90F1 27   0E         beq   fpldb     ; yes => ldb actually ;>>
+    577
+    578                           * ( -- D ) load a float from D!=0 (unsign>>
+    579        90F3               fplddunz
+    580  5+4   90F3 36   0F         pshu  cc,d,dp   ; setup stack
+    581  3     90F5 CC   4100       ldd   #$4100    ; faster than lda/clrb
+    582  4+0   90F8 A7   C4         sta   ,u        ; place exponent ($41)
+    583  4+1   90FA E7   43         stb   3,u       ; clear lsb
+    584  5     90FC 39              rts             ; done
+    585
+    586                           * ( -- 1 )
+    587        90FD               fpld1
+    588  2     90FD C6   01         ldb   #1
+    589  3     90FF 20   05         bra   fpldbnz ; $9106
+    590
+    591                           * ( -- B ) load a float from B (unsigned)>>
+    592        9101               fpldb
+    593  2     9101 5D              tstb
+    594  3     9102 26   02         bne   fpldbnz ; $9106
+    595
+    596                           * ( -- 0 )
+    597        9104               fpld0
+    598  2     9104 4F              clra
+     98        9105 8C                    fcb     $8C     ; SKIP2 (CMPX #N)>>
+    600
+    601                           * ( -- B ) load a float from B!=0 (unsign>>
+    602        9106               fpldbnz
+    603  2     9106 86   40         lda   #$40      ; signed expo=0
+    604  3     9108 8E   0000       ldx   #0        ; no fract part
+    605  5+4   910B 36   16         pshu  d,x
+    606  5     910D 39              rts
+    607
+    608                           * ( -- D ) load a float from D (signed)
+    609        910E               fpldd
+    610  2     910E 4D              tsta
+    611  3     910F 27   F0         beq   fpldb     ; A=0 => load B ; $9101>>
+    612  3     9111 2A   E0         bpl   fplddunz  ; A>0 => load D!=0 ; $9>>
+     61  2     9113 40                    nega
+     62  2     9114 50                    negb
+     63  2     9115 82   00               sbca    #0
+    614  7     9117 8D   D7         bsr   fplddu    ; load D unsigned ; $90>>
+    615  3     9119 20   60         bra   fpneg     ; negate result ; $917B>>
+    616
+    617                           * ( f -- ) load D-reg with trunc(f)
+    618                           * D=+/-$7FFF in case of overflow
+    619        911B               fpstd
+    620  2     911B 4F              clra
+    621  4+0   911C E6   C4         ldb   ,u        ; get exponent
+    622  2     911E 58              lslb            ; get rid of sign bit
+    278  3     911F 2A   13               bpl     EXIT ; $9134
+    624  2     9121 C1   82           cmpb  #$41*2
+    278  3     9123 23   05               bls     EXIT ; $912A
+    626  3     9125 CC   7FFF           ldd  #$7FFF ; maxint
+    288  3     9128 20   08               bra     EXIT ; $9132
+    278  3     912A 26   04               bne     EXIT ; $9130
+    629  5+1   912C EC   41               ldd   1,u ; get D from mant.
+    288  3     912E 20   02               bra     EXIT ; $9132
+    631  4+1   9130 E6   41               ldb   1,u
+    288  3     9132 20   01               bra     EXIT ; $9135
+    635  2     9134 5F                clrb          ; expo<$40,f<1 => D=0
+    637  6+0   9135 6D   C4         tst  ,u         ; f<0?
+    278  3     9137 2A   04               bpl     EXIT ; $913D
+     61  2     9139 40                    nega
+     62  2     913A 50                    negb
+     63  2     913B 82   00               sbca    #0
+    641  4     913D 7E   90BC       jmp   fpdrop    ; done
+    642
+    643                           * =====================================
+    644                           * Comparison: N and Z flag updated
+    645                           * so compare like usigned
+    646                           * =====================================
+    647
+    648                           * ( f -- f ) flags = sign(f)
+    649        9140               fptst
+    650  4+0   9140 A6   C4         lda   ,u        ; get expo
+    651  2     9142 48              lsla            ; move sign-bit off
+    278  3     9143 27   01               beq     EXIT ; $9146
+    653  2     9145 46                rora          ; no => put sign back
+    655  5     9146 39              rts             ; done
+    656
+    657                           * ( f g -- f g ) = fptst(f-g)
+    658        9147               fpcmp
+    659  4+1   9147 A6   44         lda   4,u
+    660  4+0   9149 A8   C4         eora  ,u        ; sign(f)==sign(g) ?
+    278  3     914B 2A   06               bpl     EXIT ; $9153
+    662  4+1   914D A6   44           lda   4,u     ; no => get f expo
+    663  3     914F 20   F1           bra   fptst+2 ; sign(f-g)==sign(f) ; >>
+    288  3     9151 20   0C               bra     EXIT ; $915F
+    665  7     9153 8D   0B           bsr   cmpmag  ; compare by mag, but ;>>
+    666  6     9155 1F   A9           tfr   cc,b    ; inv order for neg.
+    667  4+0   9157 A6   C4           lda   ,u      ; f<0 ?
+    278  3     9159 2A   02               bpl     EXIT ; $915D
+    669  2     915B C8   08           eorb  #$08    ; yes => inv N flag
+    671  6     915D 1F   9A           tfr   b,cc    ; no  => N unchanged
+    673  5     915F 39              rts
+    674
+    675                           * ( f g -- f g ) = fptst(abs(f)-abs(g))
+    676                           * compare num by magnit. (sign ignored)
+    677        9160               cmpmag
+    678  4+0   9160 A6   C4         lda   ,u        ; get num1 expo
+    679  2     9162 48              lsla            ; remove sign
+    680  4+2   9163 A7   E2         sta   ,-s
+    681  5+1   9165 EC   44         ldd   4,u       ; get num2 expo + MSB
+    682  2     9167 48              lsla            ; remove sign
+    683  4+2   9168 A1   E0         cmpa  ,s+       ; same expo ?
+    278  3     916A 26   08               bne     EXIT ; $9174
+    685  4+1   916C E1   41           cmpb  1,u     ; yes=>compare MSB
+    278  3     916E 26   04               bne     EXIT ; $9174
+    687  5+1   9170 EC   46             ldd   6,u   ; same MSB=>comp LSW
+    688  6+1   9172 A3   42             subd  2,u   ; faster cmpd ;)
+    691  5     9174 39              rts
+    692
+    693                           * =====================================
+    694                           * Arithmetic operations
+    695                           * =====================================
+    696
+    697                           * ( f -- |f| )
+    698        9175               fpabs
+    699  2     9175 86   7F         lda   #$7F      ; sign-bit clear mask
+    700  4+0   9177 A4   C4         anda  ,u        ; clear sign bit
+    701  3     9179 20   72         bra   fpsta     ; update exponent ; $91>>
+    702
+    703                           * ( f -- -f )
+    704        917B               fpneg
+    705  4+0   917B A6   C4         lda   ,u        ; get expo
+    706  2     917D 88   80         eora  #$80      ; invert sign-bit
+    707  3     917F 20   6C         bra   fpsta     ; update exponent ; $91>>
+    708
+    709                           * ( f g -- f-g )
+    710        9181               fpsub
+    711  7     9181 8D   F8         bsr   fpneg     ; x-y = x+(-y) ; $917B
+    712
+    713                           * ( f g -- f+g )
+    714        9183               fpadd
+    716                           * ensure f is bigger than g
+    717  7     9183 8D   DB           bsr   cmpmag  ; |f| < |g| ? ; $9160
+    278  3     9185 24   03               bcc     EXIT ; $918A
+    719  8     9187 BD   90BF           jsr fpswap  ; no => put smaller fir>>
+    721  4+0   918A A6   C4           lda   ,u      ; get g expo
+    722  4+1   918C 33   44           leau  4,u     ; prepare stack
+    723  2     918E 84   7F           anda  #$7f    ; g==0?
+    724  3     9190 27   59           beq   EXIT    ; yes => finished ; $91>>
+    725                           * align g mantissa with f mantissa
+    726  4+0   9192 A0   C4           suba  ,u      ; no => compare mag.
+    727  2     9194 84   7F           anda  #127
+    278  3     9196 27   14               beq     EXIT ; $91AC
+    729  2     9198 81   7F             cmpa  #$7f  ; 1 order of diff ?
+    278  3     919A 26   06               bne     EXIT ; $91A2
+    731  5+1   919C EC   5D               ldd  -3,u ; yes => shift 1 place
+    732  6+1   919E 6F   5D               clr  -3,u ; XX YY ZZ --> 0 XX YY
+    288  3     91A0 20   08               bra     EXIT ; $91AA
+    734  2     91A2 80   7E               suba #$7e ; >2 order of diff ?
+    735  3     91A4 26   45               bne EXIT3 ; no => done ; $91EB
+    736  4+1   91A6 E6   5D               ldb  -3,u ; get XX
+    737  4+1   91A8 A7   5D               sta  -3,u ; clear MSB: 00 YY ZZ
+    739  5+1   91AA ED   5E             std   -2,u  ; 00 00 XX or 00 XX YY
+    741                           * compare sign to see if we are adding or>>
+    742                           * subtracting
+    743  4+1   91AC A6   5C           lda   -4,u    ; get sign of g
+    744  4+0   91AE A8   C4           eora  ,u      ; xor with sign of f
+    278  3     91B0 2A   21               bpl     EXIT ; $91D3
+    746                           * sign is different: do proper difference>>
+    747  5+1   91B2 EC   42             ldd   2,u   ; get f-LSW
+    748  6+1   91B4 A3   5E             subd -2,u   ; sub.g-LSW
+    749  5+1   91B6 ED   42             std   2,u   ; store result
+    750  4+1   91B8 A6   41             lda   1,u   ; get f-MSB
+    751  4+1   91BA A2   5D             sbca  -3,u  ; sub.g-MSB /w carry
+    752  4+1   91BC A7   41             sta   1,u   ; store MSB
+    278  3     91BE 26   11               bne     EXIT ; $91D1
+    754                           * subtraction cleared MSB
+    755  5+1   91C0 EC   42               ldd 2,u   ; get LSW
+    756  3     91C2 27   29               beq fpsta ; yes => result = 0 ; $>>
+    757  5+1   91C4 ED   41               std 1,u   ; left shift mantissa
+    758  3     91C6 CC   7F00             ldd #$7F00
+    759  6+0   91C9 6A   C4               dec ,u    ; dec exponent
+    760  4+0   91CB A4   C4               anda ,u   ; underflow?
+    761  3     91CD 27   1E               beq fpsta ; yes=>result=0 ; $91ED>>
+    762  4+1   91CF E7   43               stb 3,u   ; clear LSB
+    288  3     91D1 20   18               bra     EXIT ; $91EB
+    765                           * sign is same: do proper addition
+    766  5+1   91D3 EC   42             ldd   2,u   ; get f-LSW
+    767  6+1   91D5 E3   5E             addd -2,u   ; add g-LSW
+    768  5+1   91D7 ED   42             std   2,u   ; store LSW
+    769  5+1   91D9 EC   41             ldd   1,u   ; get MSB (+ middle byt>>
+    770  4+1   91DB A9   5D             adca  -3,u  ; add MSB
+    278  3     91DD 24   0A               bcc     EXIT ; $91E9
+    772  6+0   91DF 6C   C4               inc   ,u  ; yes => increase expo.>>
+    773  3     91E1 27   38               beq   fpovf ; 11111111+1 => ovf ;>>
+    774  3     91E3 29   36               bvs   fpovf ; 01111111+1 => ovf ;>>
+    775  5+1   91E5 ED   42               std   2,u ; shift LSW
+    776  2     91E7 86   01               lda   #1  ; put carry in MSB
+    778  4+1   91E9 A7   41             sta   1,u   ; update MSB
+    781  5     91EB 39              rts             ; done
+    782
+    783                           * ( f -- 0 )
+    784        91EC               fpclr
+    785  2     91EC 4F              clra            ; make result=0
+    786        91ED               fpsta
+    787  4+0   91ED A7   C4         sta     ,u      ; store a-reg to expo
+    788  5     91EF 39              rts
+    789
+    790                           * ( f -- 1/f )
+    791        91F0               fpinv
+    792  4     91F0 7E   93CA       jmp   fpinv_vnrd
+    793
+    794                           * ( f -- 10*f ) fast
+    795        91F3               fp_m10
+    796  8     91F3 BD   90DE       jsr   fpdup     ; -- f f
+    797  7     91F6 8D   05         bsr   fpshl     ; -- f f*2 ; $91FD
+    798  7     91F8 8D   03         bsr   fpshl     ; -- f f*4 ; $91FD
+    799  8     91FA BD   9183       jsr   fpadd     ; -- f*5
+    800                           *  bra   fpshl    ; -- f*10 FALL THROUGH
+    801
+    802                           * ( f -- 2*f ) fast!
+    803        91FD               fpshl
+    804  4+0   91FD A6   C4         lda   ,u        ; get expo
+    805  2     91FF 48              lsla            ; f==0 ?
+    278  3     9200 27   18               beq     EXIT ; $921A
+    807  6+1   9202 68   43           lsl   3,u     ; no => shift mant.
+    808  6+1   9204 69   42           rol   2,u     ; 1 bit to the left
+    809  6+1   9206 69   41           rol   1,u
+    278  3     9208 24   10               bcc     EXIT ; $921A
+    811  5+1   920A EC   41             ldd   1,u   ; overflow
+    812  5+1   920C ED   42             std   2,u   ; right shift mant.
+    813  2     920E 86   01             lda   #1    ; put carry at msb
+    814  4+1   9210 A7   41             sta   1,u
+    815  4+0   9212 AB   C4             adda  ,u    ; increase exponent
+    816  3     9214 27   05             beq   fpovf ; 11111111 +1 ==> ovf ;>>
+    817  3     9216 29   03             bvs   fpovf ; 01111111 +1 ==> ovf ;>>
+    818  4+0   9218 A7   C4             sta   ,u
+    821  5     921A 39              rts
+    822
+    823                           * ( f -- sign(f)*maxflt )
+    824        921B               fpovf
+    825  3     921B CC   FFFF       ldd   #$ffff    ; make result = +/- max>>
+    826  5+1   921E ED   42         std   2,u       ; max LSW
+    827  2     9220 44              lsra            ; A=$7FFF
+    828  4+0   9221 AA   C4         ora   ,u        ; insert sign-bit
+    829  5+0   9223 ED   C4         std   ,u        ; update MSW
+    830  5     9225 39              rts
+    831
+    832                           * ( f -- f^2 )
+    833        9226               fpsqr
+    834  8     9226 BD   90DE       jsr   fpdup     ; duplicate & mul
+     98        9229 8C                    fcb     $8C     ; SKIP2 (CMPX #N)>>
+    836
+    837                           * ( f g -- f/g )
+    838        922A               fpdiv
+    839  7     922A 8D   C4         bsr   fpinv     ; f/g is f*(1/g) ; $91F>>
+    840
+    841                           * ( f g -- f*g )
+    842        922C               fpmul
+    843  4+0   922C A6   C4         lda   ,u        ; get f exponent
+    844  4+1   922E 33   44         leau  4,u       ; update stack ptr
+    845  4+0   9230 E6   C4         ldb   ,u        ; get g exponent
+    846                           * handle mul by 0 case
+    847  2     9232 48              lsla            ; f=0 ?
+    848  3     9233 27   B8         beq   fpsta     ; yes => result=0 ; $91>>
+    849  2     9235 58              lslb            ; g=0 ?
+    850  3     9236 27   B4         beq   fpclr     ; yes => result=0 ; $91>>
+    851                           * handle exponents
+    852  2     9238 80   80         suba  #$80      ; unbias f exponent
+    853  2     923A C0   80         subb  #$80      ; unbias g  exponent
+    854  4+2   923C A7   E2         sta   ,-s       ; compute exponent addi>>
+    855  4+2   923E EB   E0         addb  ,s+       ; overflow ?
+    278  3     9240 28   1B               bvc     EXIT ; $925D
+    857  3     9242 2B   D7           bmi   fpovf   ; yes & expo>0  => maxv>>
+    858  3     9244 20   A6           bra   fpclr   ; yes & expo<=0 => resu>>
+    859                           * Partial products sums are encoded in
+    860                           * a table which contains pairs of
+    861                           * offsets (a,b) which is read as
+    862                           * follow:
+    863                           *  a>0   => add a-offset * b-offset
+    864                           *  a=b=0 => shift partial product
+    865                           *  a<0   => done
+    866                           *
+    867                           * U-stack relative indices
+    868                           *          1, 2, 3
+    869                           *         -3,-2,-1
+    870                           * partial products
+    871                           *       1*-3
+    872                           *          2*-3
+    873                           *             3*-3
+    874                           *          1*-2
+    875                           *             2*-2
+    876                           *                3*-2    <== bootstrap
+    877                           *             1*-1
+    878                           *                2*-1
+    879                           *                   3*-1 <== ignored (fix>>
+    880        9246               fpmultb
+    881        9246 02 FF 00 00     fcb   2,-1,0,0
+    882        924A 03 FD 02 FE     fcb   3,-3,2,-2,1,-1,0,0
+               924E 01 FF 00 00
+    883        9252 02 FD 01 FE     fcb   2,-3,1,-2,0,0
+               9256 00 00
+    884        9258 01 FD           fcb   1,-3
+    885        925A FF              fcb   -1
+    288  3     925B 20   5A               bra     EXIT ; $92B7
+    887  2     925D CB   80           addb  #$80    ; add bias
+    888                           * handle multiplication of signs
+    889  4+2   925F E7   E2           stb   ,-s     ; save exponent
+    890  4+0   9261 E6   C4           ldb   ,u      ; get f expo
+    891  4+1   9263 E8   5C           eorb  -4,u    ; xor g expo
+    892  2     9265 58                lslb          ; put sign in C-flag
+    893  4+2   9266 E6   E0           ldb   ,s+     ; restore exponent
+    894  2     9268 56                rorb          ; put sign-bit in
+    895  4+0   9269 E7   C4           stb   ,u      ; update result's exp
+    896                           * do partial products
+    897  4+1   926B A6   43           lda   3,u     ; bootstrap with 3*-2
+    898  4+1   926D E6   5E           ldb   -2,u
+    899  11    926F 3D                mul           ; ignore clr -6,-5
+    900  5+1   9270 ED   58           std   -8,u    ; since it'll be done
+    901  6+1   9272 6F   57           clr   -9,u    ; by future shifts.
+    902  3     9274 8E   9246         ldx   #fpmultb
+    903  5+3   9277 EC   81           ldd   ,x++    ; get code
+    278  3     9279 26   0C               bne     EXIT ; $9287
+    906                           * code=0 => shift
+    907  5+1   927B EC   59               ldd  -7,u ; code=0 => shift
+    908  5+1   927D ED   5A               std  -6,u
+    909  5+1   927F EC   57               ldd  -9,u
+    910  5+1   9281 ED   58               std  -8,u
+    911  6+1   9283 6F   57               clr  -9,u
+    288  3     9285 20   0F               bra     EXIT ; $9296
+    913                           * code>0 => next partial product
+    914  4+1   9287 A6   C6               lda   a,u ; next partial prod.
+    915  4+1   9289 E6   C5               ldb   b,u
+    916  11    928B 3D                    mul       ; multiply elements
+    278  3     928C 27   08               beq     EXIT ; $9296
+    918  6+1   928E E3   58                 addd  -8,u  ; add the partial
+    919  5+1   9290 ED   58                 std   -8,u  ; product
+    278  3     9292 24   02               bcc     EXIT ; $9296
+    921  6+1   9294 6C   57                   inc -9,u  ; handle carry
+    925  5+3   9296 EC   81             ldd   ,x++
+    926                           * code<0 => exit loop
+    278  3     9298 2A   DF               bpl     REDO ; $9279
+    928                           * copy result back to float
+    929  5+1   929A EC   58           ldd   -8,u    ; get HI value
+    930  2     929C 4D                tsta          ; extra byte needed ?
+    278  3     929D 27   12               beq     EXIT ; $92B1
+    932  5+1   929F ED   41             std   1,u   ; yes => shift result
+    933  4+1   92A1 E6   5A             ldb   -6,u  ; fetch lsb
+    934  4+1   92A3 E7   43             stb   3,u   ; store lsb
+    935  4+0   92A5 E6   C4             ldb   ,u    ; increase expo.
+    936  2     92A7 5C                  incb
+    937  2     92A8 58                  lslb
+    938  6     92A9 1027 FF6E           lbeq  fpovf ; $921B
+    939  6+0   92AD 6C   C4             inc   ,u
+    288  3     92AF 20   06               bra     EXIT ; $92B7
+    941  4+1   92B1 E7   41             stb  1,u    ; no ==> write MSB
+    942  5+1   92B3 EC   5A             ldd  -6,u   ; get LSW
+    943  5+1   92B5 ED   42             std  2,u    ; put LSW
+    946  5     92B7 39              rts             ; done
+    947
+    948                           * ( f -- f/2 ) fast!
+    949        92B8               fpshr
+    950  5+0   92B8 EC   C4         ldd   ,u        ; get exponent + msb
+    951  2     92BA 48              lsla            ; num==0 ?
+    278  3     92BB 27   18               beq     EXIT ; $92D5
+    953  2     92BD 54                lsrb          ; right shift msb
+    278  3     92BE 26   0F               bne     EXIT ; $92CF
+    955  5+1   92C0 EC   42             ldd   2,u   ; right shift lsw
+     86  2     92C2 46                    rora
+     87  2     92C3 56                    rorb
+    957  5+1   92C4 ED   41             std   1,u   ; put it in msw
+    958  2     92C6 86   00             lda   #0    ; clear lsb
+    959  2     92C8 46                  rora        ; inject carry
+    960  4+1   92C9 A7   43             sta   3,u   ; updated lsb
+    961  6+0   92CB 6A   C4             dec   ,u    ; decr. exponent
+    288  3     92CD 20   06               bra     EXIT ; $92D5
+    963  4+1   92CF E7   41             stb   1,u   ; place MSB back
+    964  6+1   92D1 66   42             ror   2,u   ; shift rest of
+    965  6+1   92D3 66   43             ror   3,u   ; mantissa
+    968  5     92D5 39              rts
+    969
+    970                           * ( f g -- f % g )
+    971        92D6               fpmod
+    972  8     92D6 BD   90D9       jsr   fp2dup    ; f g -- f g f g
+    973  8     92D9 BD   922A       jsr   fpdiv     ;     -- f g f/g
+    974  8     92DC BD   9337       jsr   fpfloor   ;     -- f g floor(f/g)>>
+    975  8     92DF BD   922C       jsr   fpmul     ;     -- f g*floor(f/g)>>
+    976  4     92E2 7E   9181       jmp   fpsub     ;     -- f-g*floor(f/g)>>
+    977
+    978                           * ( f g -- f rem g )
+    979        92E5               fprem
+    980  8     92E5 BD   90D6       jsr   fptuck    ; f g -- g f g
+    981  8     92E8 BD   922A       jsr   fpdiv     ;     -- g f/g
+    982  7     92EB 8D   0C         bsr   fpfrac    ;     -- g frac(f/g) ; >>
+    983  4     92ED 7E   922C       jmp   fpmul     ;     -- g*frac(f/g)
+    984
+    985                           * ( f -- sqrt(f) )
+    986        92F0               fpsqrt
+    987  8     92F0 BD   90DE       jsr   fpdup     ; f -- f f
+    988  8     92F3 BD   9480       jsr   fpinvsqrt ;   -- f 1/sqrt(f)
+    989  4     92F6 7E   922C       jmp   fpmul     ;   -- f*1/sqrt(f)
+    990
+    991                           * ( f -- frac(f) ) remove integer part.
+    992                           * (sign is kept)
+    993        92F9               fpfrac
+    994  2     92F9 5F              clrb            ; preload B with 0
+    995  4+0   92FA A6   C4         lda   ,u        ; get exponent
+    996  2     92FC 48              lsla            ; get rid of sign bit
+    278  3     92FD 2A   25               bpl     EXIT ; $9324
+    998  2     92FF 81   82           cmpa  #$82
+    999  3     9301 24   1F           bhs   fpstb   ; |x|>=256^3 => ret 0 ;>>
+   1000  2     9303 48                lsla          ; remove leading bit
+    278  3     9304 26   0B               bne     EXIT ; $9311
+   1002  5+1   9306 EC   42             ldd   2,u   ; expo=$40, get fract
+   1003  3     9308 27   18             beq   fpstb ; frac=0 => ret 0 ; $93>>
+   1004  5+1   930A ED   41             std   1,u   ; shl mantissa 1 byte
+   1005  6+1   930C 6F   43             clr   3,u   ; clear lsb
+   1006  6+0   930E 6A   C4             dec   ,u    ; decrease exponent
+   1007  5     9310 39                  rts         ; done
+   1009  4+1   9311 E6   43           ldb   3,u     ; expo=$41
+   1010  3     9313 27   0D           beq   fpstb   ; frac=0 => ret 0 ; $93>>
+   1011  4+1   9315 E7   41           stb   1,u     ; shl mant. 2 bytes
+   1012  3     9317 CC   0000         ldd   #0      ; clear lsb & msb
+   1013  5+1   931A ED   42           std   2,u
+   1014  4+0   931C E6   C4           ldb   ,u      ; exponent=-2
+   1015  2     931E C4   80           andb  #$80    ; keep sign
+   1016  2     9320 CA   3E           orb   #$3e
+   1017        9322               fpstb
+   1018  4+0   9322 E7   C4           stb   ,u      ; return 0
+   1020  5     9324 39              rts
+   1021
+   1022                           * ( f -- trunc(f) ) remove fractionnal
+   1023        9325               fptrunc
+   1024  2     9325 5F              clrb            ; preload B with 0
+   1025  4+0   9326 A6   C4         lda   ,u        ; get exponent
+   1026  2     9328 48              lsla            ; get rid of sign bit
+   1027  3     9329 2A   F7         bpl   fpstb     ; expo<$40 => ret 0 ; $>>
+   1028  2     932B 81   82         cmpa  #$82      ; |f|>=256^3 => done
+    278  3     932D 22   07               bhi     EXIT ; $9336
+   1030  2     932F 48                lsla          ; expo==0 ($40) ?
+    278  3     9330 26   02               bne     EXIT ; $9334
+   1032  4+1   9332 E7   42             stb 2,u     ; yes => clear msb+
+   1034  4+1   9334 E7   43           stb   3,u     ; clear lsb
+   1036  5     9336 39              rts
+   1037
+   1038                           * ( f -- floor(f) ) round to -inf
+   1039        9337               fpfloor
+   1040  4+0   9337 A6   C4         lda   ,u
+   1041  3     9339 2A   EA         bpl   fptrunc ; $9325
+   1042  8     933B BD   90DE       jsr   fpdup
+   1043  8     933E BD   9325       jsr   fptrunc
+   1044  8     9341 BD   94DE       jsr   chkchg
+    278  3     9344 27   06               beq     EXIT ; $934C
+   1046  8     9346 BD   90FD         jsr   fpld1
+   1047  8     9349 BD   9181         jsr   fpsub
+   1049  5     934C 39              rts
+   1050
+   1051                           * ( f -- ceil(f) ) round to +inf
+   1052        934D               fpceil
+   1053  8     934D BD   917B       jsr   fpneg
+   1054  7     9350 8D   E5         bsr   fpfloor ; $9337
+   1055  4     9352 7E   917B       jmp   fpneg
+   1056
+   1057                           * ( f -- round(f) ) round to nearest
+   1058        9355               fpround
+   1059  3     9355 8E   0000       ldx   #0
+   1060  3     9358 CC   8080       ldd   #$8080
+   1061  4+0   935B A4   C4         anda  ,u
+   1062  2     935D 8A   3F         ora   #$3f
+   1063  5+4   935F 36   16         pshu  d,x
+   1064  8     9361 BD   9183       jsr   fpadd
+   1065  3     9364 20   BF         bra   fptrunc ; $9325
+   1066
+   1067                           * ( -- 2^n ) n is D-reg (signed)
+   1068        9366               fp2tod
+   1070  4+2   9366 A7   E2           sta   ,-s     ; sign will be pos
+    278  3     9368 2B   09               bmi     EXIT ; $9373
+   1072  5+2   936A 34   06             pshs  d     ; push n
+   1073  2     936C C6   02             ldb   #2    ; load 2
+   1074  8     936E BD   9106           jsr   fpldbnz
+    288  3     9371 20   10               bra     EXIT ; $9383
+   1076  6+0   9373 6F   E4             clr   ,s
+     61  2     9375 40                    nega
+     62  2     9376 50                    negb
+     63  2     9377 82   00               sbca    #0
+   1078  5+2   9379 34   06             pshs  d     ; push -n
+   1079  3     937B CC   3F80           ldd   #$3F80
+   1080  3     937E 8E   0000           ldx   #$0   ; load 0.5
+   1081  5+4   9381 36   16             pshu  d,x
+    288  3     9383 20   0A               bra     EXIT ; $938F
+   1084
+   1085                           * ( f -- f^n ) n is in D-reg (signed)
+   1086        9385               fppowd
+   1087  4+2   9385 A7   E2           sta   ,-s
+    278  3     9387 2A   04               bpl     EXIT ; $938D
+     61  2     9389 40                    nega
+     62  2     938A 50                    negb
+     63  2     938B 82   00               sbca    #0
+   1091  5+2   938D 34   06           pshs  d       ; save n on stack
+   1093
+   1094                           * main power algorithm
+   1095  8     938F BD   90FD       jsr   fpld1     ; -- f g=1
+   1096  5+0   9392 EC   E4         ldd   ,s        ; load n from stack
+     74  2     9394 44                    lsra
+     75  2     9395 56                    rorb
+   1099  5+0   9396 ED   E4           std   ,s      ; n=n/2
+    278  3     9398 24   02               bcc     EXIT ; $939C
+   1101  7     939A 8D   7C             bsr  fpovermul ; $9418
+    561  5+4   939C 37   16         pulu  d,x
+    562  5+4   939E 34   16         pshs  d,x
+   1104  8     93A0 BD   9226         jsr   fpsqr   ; square f
+    555  5+4   93A3 35   16         puls  d,x       ; pop float out of S
+    556  5+4   93A5 36   16         pshu  d,x       ; push it on U-stack
+   1106  5+0   93A7 EC   E4           ldd   ,s      ; loop while n!=0
+    278  3     93A9 26   E9               bne     REDO ; $9394
+   1108  4+1   93AB 32   62         leas  2,s       ; fixup stack
+   1109  4+2   93AD A6   E0         lda   ,s+       ; was n<0 ?
+    278  3     93AF 2A   03               bpl     EXIT ; $93B4
+   1111  8     93B1 BD   91F0         jsr   fpinv   ; yes=>result=1/result
+   1113  4     93B4 7E   90D0       jmp   fpnip     ; get rid of f^2^...
+   1114
+   1115                           * ( f -- 1/f ) using 1/sqrt(f)
+   1116        93B7               fpinv_quake
+   1117  4+0   93B7 A6   C4         lda   ,u        ; get expo & sign
+   1118  2     93B9 84   80         anda  #$80      ; isolate sign
+   1119  4+2   93BB A7   E2         sta   ,-s       ; save sign on stack
+   1120  8     93BD BD   9480       jsr   fpinvsqrt ; compute 1/sqrt(f)
+   1121  8     93C0 BD   9226       jsr   fpsqr     ; 1/f=1/sqrt(f)^2
+   1122  4+2   93C3 A6   E0         lda   ,s+       ; get sign back
+   1123  4+0   93C5 AA   C4         ora   ,u        ; inject in result
+   1124  4+0   93C7 A7   C4         sta   ,u
+   1125  5     93C9 39              rts
+   1126
+   1127                           * ( f -- 1/f )
+   1128                           * https://en.wikipedia.org/wiki/Division_>>
+   1129        93CA               fpinv_vnrd
+   1130  4+0   93CA E6   C4         ldb   ,u        ; get expo
+   1131  2     93CC 58              lslb            ; remove sign bit
+    278  3     93CD 26   03               bne     EXIT ; $93D2
+   1133  4     93CF 7E   921B         jmp   fpovf
+   1135  2     93D2 56              rorb            ; put sign back
+   1136  4+2   93D3 E7   E2         stb   ,-s
+   1137  2     93D5 C4   7F         andb  #127
+   1138  4+0   93D7 E7   C4         stb   ,u        ; -- |f|
+   1139  8     93D9 BD   94F2       jsr   fpnorm    ; -- g n
+   1140  8     93DC BD   911B       jsr   fpstd
+     61  2     93DF 40                    nega
+     62  2     93E0 50                    negb
+     63  2     93E1 82   00               sbca    #0
+   1142  8     93E3 BD   9366       jsr   fp2tod    ; -- g 2^-n
+   1143  4+2   93E6 E6   E0         ldb   ,s+
+    278  3     93E8 2A   03               bpl     EXIT ; $93ED
+   1145  8     93EA BD   917B         jsr   fpneg
+   1147  8     93ED BD   90BF       jsr   fpswap    ; -- 2^-n g
+   1148  8     93F0 BD   90DE       jsr   fpdup     ; -- 2^-n g g
+   1149  3     93F3 8E   941E       ldx   #fpinv_vnrd_tab
+   1150  8     93F6 BD   9526       jsr   fppoly
+   1151  8     93F9 BD   90BF       jsr   fpswap    ; -- 2^-n x g
+   1152  7     93FC 8D   1A         bsr   fpovermul ; -- 2^-n x gx ; $9418
+   1153  8     93FE BD   90FD       jsr   fpld1     ; -- 2^-n x gx 1
+   1154  8     9401 BD   9181       jsr   fpsub     ; -- 2^-n x gx-1=-e
+   1155  8     9404 BD   90D9       jsr   fp2dup    ; -- 2^-n x -e x -e
+   1156  8     9407 BD   922C       jsr   fpmul     ; -- 2^-n x -e -ex=-y
+   1157  8     940A BD   90BF       jsr   fpswap    ; -- 2^-n x -y -e
+   1158  7     940D 8D   09         bsr   fpovermul ; -- 2^-n x -y e*y ; $9>>
+   1159  8     940F BD   9181       jsr   fpsub     ; -- 2^-n x -y-e*y
+   1160  8     9412 BD   9181       jsr   fpsub     ; -- 2^-n x+y+ye
+   1161  4     9415 7E   922C       jmp   fpmul     ; result
+   1162        9418               fpovermul
+   1163  8     9418 BD   90DB       jsr   fpover
+   1164  4     941B 7E   922C       jmp   fpmul
+   1165        941E               fpinv_vnrd_tab
+   1166        941E 4002 95FB       fdb   $4002,$95FB   ; 256/99
+   1167        9422 C005 D174       fdb   $C005,$D174   ; -64/11
+   1168        9426 4004 3E10       fdb   $4004,$3E10   ; 140/33
+   1169        942A 80              fcb   $80
+   1170
+   1171                           * ( f -- 1/f )
+   1172                           * https://en.wikipedia.org/wiki/Division_>>
+   1173        942B               fpinv_goldschmidt
+   1174  4+0   942B E6   C4         ldb   ,u        ; get sign
+   1175  2     942D 58              lslb            ; remove sign bit
+    278  3     942E 26   03               bne     EXIT ; $9433
+   1177  4     9430 7E   921B         jmp   fpovf
+   1179  2     9433 56              rorb            ; put sign back
+   1180  4+2   9434 E7   E2         stb   ,-s
+   1181  2     9436 C4   7F         andb  #127
+   1182  4+0   9438 E7   C4         stb   ,u        ; -- |f|
+   1183  8     943A BD   94F2       jsr   fpnorm    ; -- g n
+   1184  8     943D BD   911B       jsr   fpstd
+     61  2     9440 40                    nega
+     62  2     9441 50                    negb
+     63  2     9442 82   00               sbca    #0
+   1186  8     9444 BD   9366       jsr   fp2tod    ; -- g 2^-n
+   1187  4+2   9447 E6   E0         ldb   ,s+
+    278  3     9449 2A   03               bpl     EXIT ; $944E
+   1189  8     944B BD   917B         jsr   fpneg
+   1191  8     944E BD   90BF       jsr   fpswap    ; -- 2^-n g
+   1192  8     9451 BD   90FD       jsr   fpld1     ; -- 2^-n g 1
+   1193  8     9454 BD   9181       jsr   fpsub     ; -- 2^-n g-1
+   1194  8     9457 BD   917B       jsr   fpneg     ; -- 2^-n 1-g=x
+   1195  8     945A BD   90BF       jsr   fpswap    ; -- x 2^-n=h
+   1197  8     945D BD   90DB         jsr   fpover  ; x h x
+   1198  8     9460 BD   90FD         jsr   fpld1   ; x h x 1
+   1199  8     9463 BD   9183         jsr   fpadd   ; x h x+1
+   1200  5+1   9466 EC   42           ldd   2,u     ; x+1==1 ?
+   1201  3     9468 27   10           beq   EXIT    ; yes => done ; $947A
+   1202  8     946A BD   922C         jsr   fpmul   ; x h'=h(x+1)
+    561  5+4   946D 37   16         pulu  d,x
+    562  5+4   946F 34   16         pshs  d,x
+   1204  8     9471 BD   9226         jsr   fpsqr   ; x^2 (h')
+    555  5+4   9474 35   16         puls  d,x       ; pop float out of S
+    556  5+4   9476 36   16         pshu  d,x       ; push it on U-stack
+    288  3     9478 20   E3               bra     REDO ; $945D
+   1207  8     947A BD   90BC       jsr   fpdrop    ; x h
+   1208  4     947D 7E   90D0       jmp   fpnip     ; h
+   1209
+   1210                           * =====================================
+   1211                           * transcendental functions
+   1212                           * =====================================
+   1213
+   1214                           * ( f -- 1/sqrt(abs(f)) )
+   1215                           * iterates g=g*(1.5 - f*g*g)
+   1216        9480               fpinvsqrt
+   1217  5+0   9480 EC   C4         ldd   ,u        ; get expo + MSB
+   1218  2     9482 8A   80         ora   #$80      ; make f<0
+   1219  2     9484 81   80         cmpa  #$80      ; is f==0 ?
+    278  3     9486 26   03               bne     EXIT ; $948B
+   1221  4     9488 7E   921B         jmp   fpovf   ; yes => overflow
+   1223  4+0   948B A7   C4         sta   ,u        ; -- -f
+   1224                           * prepare 1st approx of 1/sqrt(x) from MS>>
+   1225  2     948D C5   F0         bitb  #%11110000
+    278  3     948F 27   0C               beq     EXIT ; $949D
+   1227  2     9491 C5   C0           bitb  #%11000000
+    278  3     9493 27   04               beq     EXIT ; $9499
+   1229  2     9495 C6   10             ldb   #16   ; 16 for 64<=msb
+    288  3     9497 20   02               bra     EXIT ; $949B
+   1231  2     9499 C6   20             ldb   #32   ; 32 for 16<=msb<64
+    288  3     949B 20   0A               bra     EXIT ; $94A7
+   1234  2     949D C5   0C           bitb  #%00001100
+    278  3     949F 27   04               beq     EXIT ; $94A5
+   1236  2     94A1 C6   40             ldb   #64   ; 64 for 4<=msb<16
+    288  3     94A3 20   02               bra     EXIT ; $94A7
+   1238  2     94A5 C6   80             ldb   #128  ; 128 for 1<=msb<4
+   1241                           * We should do:
+   1242                           * anda #$7F suba #$40 asra     coma  adda>>
+   1243                           * 01xxxxxx 00xxxxxx 000xxxxx 111yyyyy 001>>
+   1244                           * 00xxxxxx 11xxxxxx 111xxxxx 000yyyyy 010>>
+   1245                           * The following does the same result but
+   1246                           * shorter (output carry is on if the expo>>
+   1247                           * was odd)
+   1248  2     94A7 48              lsla            ; 1xxxxxx0 0xxxxxx0
+   1249  2     94A8 47              asra            ; 11xxxxxx 00xxxxxx
+   1250  2     94A9 44              lsra            ; 011xxxxx 000xxxxx
+   1251  2     94AA 88   5F         eora  #%01011111 ;001yyyyy 010yyyyy
+    278  3     94AC 24   04               bcc     EXIT ; $94B2
+   1253  2     94AE 54                lsrb          ; odd expo => divide
+   1254  2     94AF 54                lsrb          ; approx by 256^0.5
+   1255  2     94B0 54                lsrb
+   1256  2     94B1 54                lsrb
+   1258  5+2   94B2 34   06         pshs  d         ; push approx 1/sqrt
+   1259  5+2   94B4 34   06         pshs  d         ; onto s stack
+   1260  8     94B6 BD   92B8       jsr   fpshr     ; -- -f/2
+    555  5+4   94B9 35   16         puls  d,x       ; pop float out of S
+    556  5+4   94BB 36   16         pshu  d,x       ; push it on U-stack
+   1263  8     94BD BD   90D9         jsr   fp2dup  ; -f/2 g -f/2 g
+   1264  8     94C0 BD   9226         jsr   fpsqr   ; -f/2 g -f/2 g*g
+   1265  8     94C3 BD   922C         jsr   fpmul   ; -f/2 g -f*g*g/2
+   1266  3     94C6 8E   8000         ldx   #$8000
+   1267  3     94C9 CC   4001         ldd   #$4001
+   1268  5+4   94CC 36   16           pshu  d,x     ; -f/2 g -fgg/2 1.5
+   1269  8     94CE BD   9183         jsr   fpadd   ; -f/2 g 1.5-fgg/2
+   1270  8     94D1 BD   90DB         jsr   fpover  ; -f/2 g 1.5-fgg/2 y
+   1271  8     94D4 BD   922C         jsr   fpmul   ; -f/2 g g(1.5-fgg/2)
+   1272  7     94D7 8D   05           bsr   chkchg  ; -f/2 g*(1.5-fgg/2) ; >>
+    278  3     94D9 26   E2               bne     REDO ; $94BD
+   1274  4     94DB 7E   90D0       jmp   fpnip
+   1275
+   1276                           * ( a b -- b ) Z=1 iff a==b
+   1277        94DE               chkchg
+   1278  5+4   94DE 37   16         pulu  d,x       ; get HI/LO
+   1280  7+0   94E0 10A3 C4           cmpd  ,u      ; HI(a)==HI(b) ?
+   1281  3     94E3 26   06           bne   EXIT    ; no => goto else ; $94>>
+   1282  6+1   94E5 AC   42           cmpx  2,u     ; LO(a)==LO(b) ?
+   1283  3     94E7 26   02           bne   EXIT    ; no => goto else ; $94>>
+    288  3     94E9 20   06               bra     EXIT ; $94F1
+   1285  5+0   94EB ED   C4           std   ,u      ; copy HI
+   1286  5+1   94ED AF   42           stx   2,u     ; copy LO
+   1287  2     94EF 86   01           lda   #1      ; force Z=0
+   1289  5     94F1 39              rts
+   1290
+   1291                           * ( f -- g n ) given an f, return
+   1292                           * a number g=f/2^n such that
+   1293                           * 0.5<=|g|<1
+   1294        94F2               fpnorm
+   1295  4+0   94F2 E6   C4         ldb   ,u        ; get exponant
+   1296  2     94F4 C4   7F         andb  #127      ; remove sign-bit
+    278  3     94F6 26   03               bne     EXIT ; $94FB
+   1298  4     94F8 7E   9104         jmp   fpld0   ; f==0? g=f,n=0. done
+   1300  2     94FB C0   3F         subb  #$3f      ; remove bias-1
+   1301  2     94FD 1D              sex             ; extend sign to a
+     80  2     94FE 58                    lslb
+     81  2     94FF 49                    rola
+     80  2     9500 58                    lslb
+     81  2     9501 49                    rola
+     80  2     9502 58                    lslb
+     81  2     9503 49                    rola
+   1305  5+2   9504 34   20         pshs  y         ; preserve reg
+   1306  6     9506 1F   02         tfr   d,y       ; now uses y as n
+   1307  4+0   9508 A6   C4         lda   ,u
+   1308  2     950A 84   80         anda  #$80      ; preserve sign
+   1309  2     950C 8A   3F         ora   #$3f      ; make 1/256<=|f|<1
+   1310  4+0   950E A7   C4         sta   ,u
+   1311  4+1   9510 A6   41         lda   1,u
+    278  3     9512 2A   02               bpl     EXIT ; $9516
+   1313                           * f already >= 0.5
+    288  3     9514 20   09               bra     EXIT ; $951F
+   1315  8     9516 BD   91FD         jsr   fpshl   ; mul by 2
+   1316  4+1   9519 31   3F           leay  -1,y    ; decrease n by one
+   1317  4+1   951B A6   41           lda   1,u     ; loop while f<.5
+    278  3     951D 2A   F7               bpl     REDO ; $9516
+   1319  6     951F 1F   20         tfr   y,d       ; put n to d
+   1320  5+2   9521 35   20         puls  y         ; restore reg
+   1321  4     9523 7E   910E       jmp   fpldd     ; push d onto stack
+   1322
+   1323                           * ( f -- P(f) ) eval a polynom using
+   1324                           * horner method. coefs are pointed by
+   1325                           * x. Coefs stops at $80.
+   1326        9526               fppoly
+   1327  5+2   9526 34   20         pshs  y
+   1328  4+1   9528 31   04         leay  4,x
+   1329  8     952A BD   90E0       jsr   fpldx     ; -- f g=0
+   1331  8     952D BD   90DB         jsr   fpover  ; -- f g f
+   1332  8     9530 BD   922C         jsr   fpmul   ; -- f g*f
+   1333  4+0   9533 30   A4           leax  ,y
+   1334  8     9535 BD   90E0         jsr   fpldx   ; -- f g*f coef
+   1335  8     9538 BD   9183         jsr   fpadd   ; -- f g*f+coef
+   1336  4+1   953B 31   24           leay  4,y     ; advance y
+   1337  4+0   953D E6   A4           ldb   ,y      ; coef==sentinel ?
+   1338  2     953F C1   80           cmpb  #$80    ; no=>loop
+    278  3     9541 26   EA               bne     REDO ; $952D
+   1340  5+2   9543 35   20         puls  y
+   1341  4     9545 7E   90D0       jmp   fpnip     ; f P(f) -- P(f)
+   1342
+   1343                           * ( f -- ln(f) ) natural logarithm
+   1344                           *
+   1345                           * ln(f) = ln(f/2^n) + n*ln(2)
+   1346                           *
+   1347                           * When 0.5<=x<=1
+   1348                           * 65536*ln(x)
+   1349                           *  = -183520 + x*(
+   1350                           *     555367 + x*(
+   1351                           *    -970648 + x*(
+   1352                           *    1194335 + x*(
+   1353                           *    -920804 + x*(
+   1354                           *     399960 + x*(
+   1355                           *     -74690))))))
+   1356                           * +/- 0.24422799601597944
+   1357                           * (determined by Remez algorithm)
+   1358                           *
+   1359        9548               fpln
+   1360  4+0   9548 E6   C4         ldb   ,u        ; f<=0 ?
+    278  3     954A 22   08               bhi     EXIT ; $9554
+   1362  3     954C CC   FFFF         ldd   #$ffff  ; yes => overflow
+   1363  5+0   954F ED   C4           std   ,u      ; return -MAX
+   1364  5+1   9551 ED   42           std   2,u
+   1365  5     9553 39                rts
+   1367  7     9554 8D   9C         bsr   fpnorm    ; -- g=f/2^n n ; $94F2
+   1368  3     9556 CC   3FB1       ldd   #$3fB1
+   1369  3     9559 8E   7218       ldx   #$7218
+   1370  5+4   955C 36   16         pshu  d,x       ; -- g n ln(2)
+   1371  8     955E BD   922C       jsr   fpmul     ; -- g n*ln(2)
+   1372  8     9561 BD   90BF       jsr   fpswap    ; -- n*ln(2) g
+   1373  3     9564 8E   956C       ldx   #fplntab
+   1374  7     9567 8D   BD         bsr   fppoly    ; -- n*ln(2) P(g) ; $95>>
+   1375  4     9569 7E   9183       jmp   fpadd     ; -- n*ln(2)+P
+   1376        956C               fplntab
+   1377        956C C001 23C2       fdb   $C001,$23C2
+   1378        9570 4006 1A58       fdb   $4006,$1A58
+   1379        9574 C00E 0CE4       fdb   $C00E,$0CE4
+   1380        9578 4012 395F       fdb   $4012,$395F
+   1381        957C C00E CF98       fdb   $C00E,$CF98
+   1382        9580 4008 7967       fdb   $4008,$7967
+   1383        9584 C002 CCE0       fdb   $C002,$CCE0
+   1384        9588 80              fcb   $80
+   1385
+   1386                           * ( f g -- f**g )
+   1387        9589               fppow
+   1388  8     9589 BD   90BF         jsr   fpswap    ; -- g f
+   1389  7     958C 8D   BA           bsr   fpln      ; -- g ln(f) ; $9548
+   1390  8     958E BD   922C         jsr   fpmul     ; -- g*ln(f)
+   1391                           *   bra   fpexp     ; -- exp(g*ln(f))
+   1392
+   1393                           * ( f -- exp(x) )
+   1394                           * Computation is done using these
+   1395                           * lines:
+   1396                           *   exp(f) = 1/exp(-f) if f>0
+   1397                           *
+   1398                           *   fi     = trunc(f)
+   1399                           *   ff     = frac(ff)
+   1400                           *   f      = fi + ff
+   1401                           *   exp(f) = exp(fi)*exp(ff)
+   1402                           *          = exp(1)**fi * exp(ff)
+   1403                           *
+   1404                           * exp(ff) is interpolated from
+   1405                           * this optimal degree 4 polynomial
+   1406                           * found by the Remez algorithm:
+   1407                           * 0.9999900075045562 +
+   1408                           * 0.9994830981718971 x +
+   1409                           * 0.4957031523076224 x^2 +
+   1410                           * 0.15396347835734295 x^3 +
+   1411                           * 0.025642850383947424 x^4
+   1412                           * error is 0.00000999249547650738
+   1413                           * on the -1..0 interval
+   1414                           * (found via the Remez algo)
+   1415        9591               fpexp
+   1416  4+0   9591 E6   C4         ldb   ,u        ; get sign
+   1417  4+2   9593 E7   E2         stb   ,-s       ; save it on stack
+   1418  2     9595 CA   80         orb   #$80
+   1419  4+0   9597 E7   C4         stb   ,u        ; force f < 0
+   1420  3     9599 CC   4002       ldd   #$4002    ; push e=exp(1)
+   1421  3     959C 8E   B7E1       ldx   #$B7E1
+   1422  5+4   959F 36   16         pshu  d,x       ; -- f e
+   1423  8     95A1 BD   90DB       jsr   fpover    ; -- f e f
+   1424                           * jsr   fptrunc   ; -- f e fi
+   1425  8     95A4 BD   911B       jsr   fpstd     ; D=trunc(-f)
+   1426  8     95A7 BD   9385       jsr   fppowd    ; -- f e**fi
+   1427  8     95AA BD   90BF       jsr   fpswap    ; -- e**fi f
+   1428  8     95AD BD   92F9       jsr   fpfrac    ; -- e**fi ff
+   1429  3     95B0 8E   95C1       ldx   #fpexptab
+   1430  8     95B3 BD   9526       jsr   fppoly    ; -- e**fi e**ff
+   1431  8     95B6 BD   922C       jsr   fpmul     ; -- e**(fi+ff)=e**f
+   1432  4+2   95B9 E6   E0         ldb   ,s+       ; get sign back
+    278  3     95BB 2B   03               bmi     EXIT ; $95C0
+   1434  4     95BD 7E   91F0         jmp   fpinv   ; exp(f)=1/exp(-f)
+   1436  5     95C0 39              rts
+   1437        95C1               fpexptab
+   1438        95C1 3F06 9088       fdb   $3f06,$9088
+   1439        95C5 3F27 6A27       fdb   $3f27,$6A27
+   1440        95C9 3F7E E667       fdb   $3f7E,$E667
+   1441        95CD 3FFF DE20       fdb   $3fFF,$DE20
+   1442        95D1 3FFF FF58       fdb   $3fFF,$FF58
+   1443        95D5 80              fcb   $80
+   1444
+   1445                           * ( f -- tan(f) ) tan(x)=sin(x)/cos(x)
+   1446        95D6               fptan
+   1447  8     95D6 BD   90DE       jsr   fpdup       ; -- f f
+   1448  7     95D9 8D   18         bsr   fpsin       ; -- f sin(f) ; $95F3>>
+   1449  8     95DB BD   90BF       jsr   fpswap      ; -- sin(f) f
+   1450  7     95DE 8D   03         bsr   fpcos       ; -- sin(f) cos(f) ; >>
+   1451  4     95E0 7E   922A       jmp   fpdiv       ; -- sin(f)/cos(f)
+   1452
+   1453                           * ( f -- cos(f) ) cos(x)=sin(pi/2-x)
+   1454        95E3               fpcos
+   1455  8     95E3 BD   917B       jsr   fpneg       ; -- -f
+   1456  3     95E6 8E   9220       ldx   #$9220
+   1457  3     95E9 CC   4001       ldd   #$4001
+   1458  5+4   95EC 36   16         pshu  d,x         ; -- -f pi/2
+   1459  8     95EE BD   9183       jsr   fpadd       ; -- pi/2-f
+   1460  3     95F1 20   00         bra   fpsin       ; -- cos(f) ; $95F3
+   1461
+   1462                           * ( f -- sin(f) )
+   1463                           * for x=0..0.25,
+   1464                           * sin(x*2pi) =
+   1465                           * 0.00000706851696623261 +
+   1466                           * 6.28123666831557 x +
+   1467                           * 0.08660443020176666 x^2 +
+   1468                           * -42.72388709496302 x^3 +
+   1469                           * 9.503048902548244 x^4 +
+   1470                           * 56.03072727906933 x^5
+   1471                           * +/- 0.000007068527967724059
+   1472        95F3               fpsin
+   1473  4+0   95F3 E6   C4         ldb   ,u        ; get sign
+   1474  4+2   95F5 E7   E2         stb   ,-s       ; save it on stack
+   1475  2     95F7 C4   7F         andb  #$7F
+   1476  4+0   95F9 E7   C4         stb   ,u        ; force f >= 0
+   1477  3     95FB 8E   BE61       ldx   #$BE61
+   1478  3     95FE CC   3F28       ldd   #$3f28
+   1479  5+4   9601 36   16         pshu  d,x       ; -- f 1/(2pi)
+   1480  8     9603 BD   922C       jsr   fpmul     ; -- f/(2pi)
+   1481  8     9606 BD   92F9       jsr   fpfrac    ; -- g=f/(2pi)%1
+   1482  8     9609 BD   90FD       jsr   fpld1     ; -- g 1.0
+   1483  8     960C BD   92B8       jsr   fpshr     ; -- g 0.5
+   1484  8     960F BD   9160       jsr   cmpmag    ; f > pi ?
+    278  3     9612 25   0B               bcs     EXIT ; $961F
+   1486  8     9614 BD   90D6         jsr   fptuck  ; -- 0.5 g 0.5
+   1487  8     9617 BD   9181         jsr   fpsub   ; -- 0.5 g-0.5
+   1488  8     961A BD   90BF         jsr   fpswap  ; -- g-0.5 0.5
+   1489  6+0   961D 63   E4           com   ,s      ; sin(f) = -sin(f-pi)
+   1491  8     961F BD   92B8       jsr   fpshr     ; -- g 0.25
+   1492  8     9622 BD   9160       jsr   cmpmag    ; f > pi/2 ?
+    278  3     9625 22   05               bhi     EXIT ; $962C
+   1494  8     9627 BD   90BC         jsr fpdrop    ; no => no change
+    288  3     962A 20   10               bra     EXIT ; $963C
+   1496  8     962C BD   91FD         jsr   fpshl   ; -- g 0.5
+   1497  8     962F BD   9181         jsr   fpsub   ; -- g-0.5
+   1498  4+0   9632 E6   C4           ldb   ,u      ; g-0.5<0 ?
+    278  3     9634 2A   02               bpl     EXIT ; $9638
+   1500  6+0   9636 63   E4             com   ,s    ; yes => negate sign
+   1502  2     9638 C4   7F           andb  #$7F    ; -- |f|
+   1503  4+0   963A E7   C4           stb   ,u      ; force f >= 0
+   1505  3     963C 8E   964A       ldx   #fpsintab
+   1506  8     963F BD   9526       jsr   fppoly    ; approx sin
+   1507  4+2   9642 E6   E0         ldb   ,s+       ; f<0
+    278  3     9644 2A   03               bpl     EXIT ; $9649
+   1509  4     9646 7E   917B         jmp   fpneg   ; sin(-x)=-sin(x)
+   1511  5     9649 39              rts
+   1512        964A               fpsintab
+   1513        964A 4038 07DE       fdb   $4038,$07DE
+   1514        964E 4009 80C8       fdb   $4009,$80C8
+   1515        9652 C02A B951       fdb   $c02A,$B951
+   1516        9656 3F16 2BB5       fdb   $3f16,$2BB5
+   1517        965A 4006 47FF       fdb   $4006,$47FF
+   1518        965E 3D76 970D       fdb   $3d76,$970D ; fdb   $0000,$0000
+   1519        9662 80              fcb   $80
+   1520
+   1521                           * ( f -- atan(f) )
+   1522                           * atan(x) = pi/2 - atan(1/x) if x>1
+   1523                           * atan(x) =
+   1524                           * 0.000006389295356454743 +
+   1525                           * 0.9993823248162877 x +
+   1526                           * 0.009671651742441202 x^2 +
+   1527                           * -0.38851065034559806 x^3 +
+   1528                           * 0.1385076598650844 x^4
+   1529                           * 0.06582297699392516 x^5
+   1530                           * -0.03948857839169288 x^6
+   1531                           * +/- 0.0000063894644751760765
+   1532                           * 0<=x<1
+   1533        9663               fpatan
+   1534  4+0   9663 E6   C4         ldb   ,u        ; get f exponent
+   1535  4+2   9665 E7   E2         stb   ,-s       ; store it on stack
+   1536  2     9667 C4   7F         andb  #127      ; make f>0
+   1537  4+0   9669 E7   C4         stb   ,u        ; -- |f|
+   1538  2     966B 58              lslb            ; f>=1 ?
+    278  3     966C 2A   03               bpl     EXIT ; $9671
+   1540  8     966E BD   91F0         jsr   fpinv   ; yes ==> f=1/f
+   1542  3     9671 8E   968E       ldx   #fpatantab
+   1543  8     9674 BD   9526       jsr   fppoly    ; f<1 : eval poly
+   1544  4+0   9677 E6   E4         ldb   ,s        ; get orig expo
+   1545  2     9679 58              lslb            ; f>=1 ?
+    278  3     967A 2A   0A               bpl     EXIT ; $9686
+   1547  7     967C 8D   2D           bsr   fppi    ; -- atan(f) pi ; $96AB>>
+   1548  8     967E BD   92B8         jsr   fpshr   ; -- atan(f) pi/2
+   1549  8     9681 BD   9181         jsr   fpsub   ; -- atan(f)-pi/2
+   1550  6+0   9684 63   E4           com   ,s      ; change result sign
+   1552  4+2   9686 E6   E0         ldb   ,s+       ; get sign back
+    278  3     9688 2A   03               bpl     EXIT ; $968D
+   1554  4     968A 7E   917B         jmp   fpneg   ; -- -atan(f)
+   1556  5     968D 39              rts
+   1557        968E               fpatantab
+   1558        968E BF0A 1BEC       fdb   $bf0A,$1BEC
+   1559        9692 3F10 D9C6       fdb   $3f10,$D9C6
+   1560        9696 3F23 753D       fdb   $3f23,$753D
+   1561        969A BF63 756F       fdb   $bf63,$756F
+   1562        969E 3F02 79D7       fdb   $3f02,$79D7
+   1563        96A2 3FFF D785       fdb   $3fFF,$D785
+   1564        96A6 3D6B 31D1       fdb   $3d6B,$31D1
+   1565        96AA 80              fcb   $80
+   1566
+   1567                           * ( -- pi )
+   1568        96AB               fppi
+   1569  3     96AB 8E   243F       ldx   #$243F
+   1570  3     96AE CC   4003       ldd   #$4003
+   1571  5+4   96B1 36   16         pshu  d,x
+   1572  5     96B3 39              rts
+   1573
+   1574                           * ( -- rnd ) 0 < rnd <1 period:65535
+   1575                           * http://www.retroprogramming.com/2017/07>>
+   1576        96B4               fprnd
+   1577  3     96B4 CC   0000       ldd   #0
+    108                  96B5     FPSEED      set     *-2
+    278  3     96B7 26   05               bne     EXIT ; $96BE
+   1580  6     96B9 FC   9DA3         ldd   timeCt
+   1581  4     96BC 9A   7B           ora   123
+   1583                           * xs ^= xs << 7
+   1584  5+2   96BE 34   06         pshs  d         ; save xs
+   1585  2     96C0 44              lsra            ; shift a0 into b7
+   1586  2     96C1 56              rorb            ; b=hi(xs<<7)
+   1587  4+0   96C2 E8   E4         eorb  ,s        ; lo(xs<<7)=carry*128
+   1588  4+0   96C4 E7   E4         stb   ,s        ; hi(xs)^=hi(xs<<7)
+   1589                           * xs ^= xs >> 9
+   1590                           *
+   1591                           * tricky part: put carry back
+   1592                           * in hi(xs>>9) so that it is
+   1593                           * same as if it was introduced
+   1594                           * in lo(xs) above.
+   1595  2     96C6 56              rorb            ; b=hi(xs>>9)^lo(xs)
+   1596  4+1   96C7 E8   61         eorb  1,s       ; lo(xs) ^= hi(xs>>9)
+   1597                           * xs ^= xs << 8;
+   1598  6     96C9 1F   98         tfr   b,a       ; hi(xs<<8)
+   1599  4+3   96CB A8   E1         eora  ,s++      ; hi(xs) ^= hi(xs<<8)
+   1600  6     96CD FD   96B5       std   FPSEED
+   1601  8     96D0 BD   90F0       jsr   fplddu
+   1602  6+0   96D3 6A   C4         dec   ,u
+   1603  6+0   96D5 6A   C4         dec   ,u
+   1604  5     96D7 39              rts
+   1605
+   1606                           * ( f -- gamma(f+1) ) approximate
+   1607                           * factorial via Ramanujan formula
+   1608        96D8               fpgammap1
+   1609  3     96D8 CC   4001       ldd   #$4001
+   1610  3     96DB 8E   C5C0       ldx   #$C5C0
+   1611  5+4   96DE 36   16         pshu  d,x       ; -- f sqrt(pi)
+   1612  8     96E0 BD   90DB       jsr   fpover    ; -- f sqrt(pi) f
+   1613  8     96E3 BD   90DE       jsr   fpdup     ; -- f sqrt(pi) f f
+   1614  3     96E6 CC   3F5E       ldd   #$3F5E
+   1615  3     96E9 8E   2D59       ldx   #$2D59
+   1616  5+4   96EC 36   16         pshu  d,x       ; -- f sqrt(pi) f f 1/e>>
+   1617  8     96EE BD   922C       jsr   fpmul     ; -- f sqrt(pi) f f/e
+   1618  8     96F1 BD   90BF       jsr   fpswap    ; -- f sqrt(pi) f/e f
+   1619  8     96F4 BD   9589       jsr   fppow     ; -- f sqrt(pi) (f/e)**>>
+   1620  8     96F7 BD   922C       jsr   fpmul     ; -- f sqrt(pi)*(f/e)**>>
+   1621  8     96FA BD   90BF       jsr   fpswap    ; -- sqrt(pi)*(f/e)**f >>
+   1622  3     96FD 8E   9711       ldx   #fpgammap1tab
+   1623  8     9700 BD   9526       jsr   fppoly    ; -- sqrt(pi)*(f/e)**f >>
+   1624  3     9703 CC   3F2A       ldd   #$3F2A
+   1625  3     9706 8E   AAAB       ldx   #$AAAB
+   1626  5+4   9709 36   16         pshu  d,x
+   1627  8     970B BD   9589       jsr   fppow     ; -- sqrt(pi)*(f/e)**f >>
+   1628  4     970E 7E   922C       jmp   fpmul     ; -- sqrt(pi)*(f/e)**f*>>
+   1629        9711               fpgammap1tab
+   1630        9711 4008 0000       fdb   $4008,$0000
+   1631        9715 4004 0000       fdb   $4004,$0000
+   1632        9719 4001 0000       fdb   $4001,$0000
+   1633        971D 3F88 8889       fdb   $3F88,$8889
+   1634        9721 80              fcb   $80
+   1635                           * =====================================
+   1636                           * read/write
+   1637                           * =====================================
+   1638
+   1639                           * ( -- <parsed float> ) x=string ptr
+   1640                           * upon return, x is after last read char
+   1641        9722               fprdx
+   1642  5+2   9722 34   20         pshs  y         ; preserve y
+   1643  4+0   9724 31   84         leay  ,x        ; transfer x to y
+   1644  7     9726 8D   04         bsr   fprdy     ; call reading from y ;>>
+   1645  4+0   9728 30   A4         leax  ,y        ; trasnfer y to x
+   1646  5+4   972A 35   A0         puls  y,pc      ; restore y & return
+   1647
+   1648                           * ( -- <parsed float> ) y=string ptr
+   1649                           * upon return, y is after last read char
+   1650        972C               fprdy
+   1651  7     972C 8D   5F         bsr   fprdi     ; read integer -- n ; $>>
+   1652                           * read decimal part
+   1653  4+0   972E E6   A4         ldb   ,y
+   1654  2     9730 C1   2E         cmpb  #'.       ; any decimal point?
+    278  3     9732 26   3C               bne     EXIT ; $9770
+   1656  8     9734 BD   9104         jsr   fpld0   ; yes ==> parse fract.
+   1657  8     9737 BD   90FD         jsr   fpld1   ; -- 0 1
+   1659  8     973A BD   9836           jsr  fpdot1 ; -- fract E-n+1 0.1
+   1660  8     973D BD   922C           jsr  fpmul  ; -- fract E-n
+   1661  4+1   9740 31   21             leay 1,y    ; advance ptr
+   1662  4+0   9742 E6   A4             ldb  ,y     ; read next char
+   1663  2     9744 C0   30             subb #'0    ; < '0' ?
+   1664  3     9746 25   18             blo  EXIT   ; yes => done parsing ;>>
+   1665  2     9748 C1   0A             cmpb #10    ; > '9' ?
+   1666  3     974A 24   14             bhs  EXIT   ; yes => done parsing ;>>
+   1667  8     974C BD   9101           jsr  fpldb  ; -- fract E-n b
+   1668  8     974F BD   90DB           jsr  fpover ; -- fract E-n b E-n
+   1669  8     9752 BD   922C           jsr  fpmul  ; -- fract E-n b.E-n
+   1670  8     9755 BD   90B2           jsr  fplrot ; -- E-n b.E-n fract
+   1671  8     9758 BD   9183           jsr  fpadd  ; -- E-n fract'
+   1672  8     975B BD   90BF           jsr  fpswap ; -- fract' E-n
+    288  3     975E 20   DA               bra     REDO ; $973A
+   1674  8     9760 BD   90BC         jsr   fpdrop  ; -- x fract
+   1675  4+1   9763 A6   44           lda   4,u     ; get sign of x
+   1676  2     9765 84   80           anda  #$80    ; isolate sign bit
+   1677  4+0   9767 AA   C4           ora   ,u      ; combine with fract
+   1678  4+0   9769 A7   C4           sta   ,u      ; make fract and x same>>
+   1679  8     976B BD   9183         jsr   fpadd   ; -- x.fract
+   1680  4+0   976E E6   A4           ldb   ,y      ; get nxt char
+   1682                           * read exponent
+   1684  2     9770 C1   65           cmpb  #'e     ; any exponent sign ?
+   1685  3     9772 27   06           beq   EXIT    ; yes ==> goto ELSE ; $>>
+   1686  2     9774 C1   45           cmpb  #'E
+   1687  3     9776 27   02           beq   EXIT ; $977A
+    288  3     9778 20   12               bra     EXIT ; $978C
+   1689  4+1   977A 31   21           leay  1,y     ; advance
+   1690  2     977C C6   0A           ldb   #10
+   1691  8     977E BD   9106         jsr   fpldbnz ; -- x.fract 10
+   1692  7     9781 8D   0A           bsr   fprdi   ; -- x.fract 10 expo ; >>
+   1693  8     9783 BD   911B         jsr   fpstd   ; -- put expo in D
+   1694  8     9786 BD   9385         jsr   fppowd  ; -- x.fract 10^expo
+   1695  4     9789 7E   922C         jmp   fpmul   ; x.fract*10^expo
+   1697  5     978C 39              rts
+   1698
+   1699                           * ( -- <parsed int> ) y=string ptr
+   1700                           * upon return, y is after last read char
+   1701        978D               fprdi
+   1702  8     978D BD   9104       jsr   fpld0     ; 0
+   1703  4+2   9790 E6   A0         ldb   ,y+       ; get sign-char
+   1704  2     9792 C0   2D         subb  #'-
+   1705  4+2   9794 E7   E2         stb   ,-s       ; push 0 if minus
+    278  3     9796 27   06               beq     EXIT ; $979E
+   1707  2     9798 C1   FE           cmpb  #'+-'-  ; non-nul otherwise
+   1708  3     979A 27   02           beq   EXIT ; $979E
+   1709  4+1   979C 31   3F           leay  -1,y
+   1712  4+2   979E E6   A0           ldb   ,y+     ; read next char
+   1713  2     97A0 C0   30           subb  #'0     ; < '0' ?
+   1714  3     97A2 25   12           blo   EXIT    ; yes => done parsing ;>>
+   1715  2     97A4 C1   0A           cmpb  #10     ; > '9' ?
+   1716  3     97A6 24   0E           bhs   EXIT    ; yes => done parsing ;>>
+   1717  8     97A8 BD   9101         jsr   fpldb   ; -- n digit
+   1718  8     97AB BD   90BF         jsr   fpswap  ; -- digit n
+   1719  8     97AE BD   91F3         jsr   fp_m10  ; -- digit 10*n
+   1720  8     97B1 BD   9183         jsr   fpadd   ; -- 10*n + digit
+    288  3     97B4 20   E8               bra     REDO ; $979E
+   1722  4+1   97B6 31   3F         leay  -1,y      ; compensate for ,y+
+   1723  4+2   97B8 E6   E0         ldb   ,s+       ; get sign
+    278  3     97BA 26   03               bne     EXIT ; $97BF
+   1725  4     97BC 7E   917B         jmp   fpneg   ; was negative => neg
+   1727  5     97BF 39              rts
+   1728
+   1729                           * ( a -- ) write floating point in
+   1730                           * engineering notation in string at x
+   1731                           * (updated).
+   1732        97C0               fpwrx
+   1733  5+2   97C0 34   20         pshs  y         ; locally use y as
+   1734  4+0   97C2 31   84         leay  ,x        ; string ptr
+   1735  7     97C4 8D   04         bsr   fpwry ; $97CA
+   1736  4+0   97C6 30   A4         leax  ,y
+   1737  5+4   97C8 35   A0         puls  y,pc
+   1738        97CA               fpwry
+   1739  4+0   97CA A6   C4         lda   ,u        ; get sign
+   1740  2     97CC 48              lsla            ; num==0 ?
+   1741                           * zero-case
+    278  3     97CD 26   06               bne     EXIT ; $97D5
+   1743  2     97CF 86   30           lda   #'0     ; yes
+   1744  4+2   97D1 A7   A0           sta   ,y+     ;   write 0. done.
+    288  3     97D3 20   5C               bra     EXIT ; $9831
+   1746                           * negative case
+    278  3     97D5 24   04               bcc     EXIT ; $97DB
+   1748  2     97D7 C6   2D             ldb #'-     ; neg number
+   1749  4+2   97D9 E7   A0             stb ,y+     ; write neg sign
+   1751  2     97DB 44                lsra          ; make num positive
+   1752  4+0   97DC A7   C4           sta   ,u      ;
+   1753                           * compute decimal exponent:
+   1754                           * == a * ln(256)/ln(10)
+   1755                           * ~~ a * 154/64
+   1756  2     97DE 80   40           suba  #$40    ; remove bias
+   1757  4+2   97E0 A7   E2           sta   ,-s     ; save exponent sign
+    278  3     97E2 2A   01               bpl     EXIT ; $97E5
+   1759  2     97E4 40                nega          ; make exponent > 0
+   1761  2     97E5 C6   9A           ldb  #77*2    ; /64 is high(d<<4)
+   1762  11    97E7 3D                mul
+     80  2     97E8 58                    lslb
+     81  2     97E9 49                    rola
+     80  2     97EA 58                    lslb
+     81  2     97EB 49                    rola
+   1765  4+2   97EC A7   E2           sta   ,-s     ; save decimal exp
+   1766                           * compute 1/10^(signed decimal expo)
+   1767  4+1   97EE E6   61           ldb   1,s     ; get sign
+    278  3     97F0 2B   04               bmi     EXIT ; $97F6
+   1769  7     97F2 8D   42             bsr  fpdot1 ; expo>0 use 0.1 ; $983>>
+    288  3     97F4 20   05               bra     EXIT ; $97FB
+   1771  2     97F6 C6   0A             ldb  #10    ; expo<0 use 10
+   1772  8     97F8 BD   9106           jsr  fpldbnz
+   1774  2     97FB 4F                clra          ; build positive expo
+   1775  4+0   97FC E6   E4           ldb   ,s
+   1776  8     97FE BD   9385         jsr   fppowd  ; .1^(sign. dec. expo)
+   1777                           * make num "normalized" between 1 and 256>>
+   1778  8     9801 BD   922C         jsr   fpmul
+   1779  7     9804 8D   4B           bsr   fpwrnorm ; $9851
+   1780                           * print digits before decimal place
+   1781  4+1   9806 E6   41           ldb   1,u     ; get 1st big digit
+   1782  2     9808 4F                clra          ; no leading 0
+   1783  7     9809 8D   73           bsr   fpwrb   ; write it ; $987E
+   1784                           * handle decimals if any
+   1785  5+1   980B EC   42           ldd   2,u     ; any fract. value ?
+    278  3     980D 27   08               beq     EXIT ; $9817
+   1787  2     980F C6   2E             ldb   #'.   ; yes => write with
+   1788  4+2   9811 E7   A0             stb   ,y+   ; 4 decimal places
+   1789  7     9813 8D   2A             bsr   fpwrnxt2 ; $983F
+   1790  7     9815 8D   28             bsr   fpwrnxt2 ; $983F
+   1792                           * print exponent if not nul
+   1793  5+2   9817 35   06           puls  d       ; get exponent & sign
+   1794  2     9819 4D                tsta          ; expo==0 ? no print
+    278  3     981A 27   15               beq     EXIT ; $9831
+   1796  2     981C 5D                  tstb        ; setup expo sign
+    278  3     981D 2A   04               bpl     EXIT ; $9823
+   1798  2     981F C6   2D               ldb #'-
+    288  3     9821 20   02               bra     EXIT ; $9825
+   1800  2     9823 C6   2B               ldb #'+
+   1802  4+1   9825 E7   21             stb   1,y   ; store sign mark
+   1803  2     9827 C6   45             ldb   #'E   ; write E mark
+   1804  4+3   9829 E7   A1             stb   ,y++  ; skip over sign
+   1805  6     982B 1F   89             tfr   a,b
+   1806  2     982D 4F                  clra        ; no leading 0 please
+   1807  8     982E BD   987E           jsr   fpwrb ; write expo
+   1810  6+0   9831 6F   A4         clr   ,y        ; end of string
+   1811  4     9833 7E   90BC       jmp   fpdrop    ; fix stack
+   1812                           * ( -- 0.1 )
+   1813        9836               fpdot1
+   1814  3     9836 CC   3F19       ldd   #$3f19
+   1815  3     9839 8E   999A       ldx   #$999a
+   1816  5+4   983C 36   16         pshu  d,x
+   1817  5     983E 39              rts
+   1818                           * extract and write next 2 fractionnal
+   1819                           * digits (if any)
+   1820        983F               fpwrnxt2
+   1821  7     983F 8D   00         bsr   fpwrnxt   ; fall through! ; $9841>>
+   1822                           * extract and write next fractionnal
+   1823                           * digit (if any)
+   1824        9841               fpwrnxt
+   1825  5+1   9841 EC   42         ldd   2,u       ; any fractionnal ?
+    278  3     9843 27   0B               beq     EXIT ; $9850
+   1827  6+1   9845 6F   41           clr   1,u     ; clear int value
+   1828  8     9847 BD   91F3         jsr   fp_m10  ; get nxt digit
+   1829  4+1   984A E6   41           ldb   1,u     ; get next digit
+   1830  2     984C CB   30           addb  #'0     ; convert to ascii
+   1831  4+2   984E E7   A0           stb   ,y+     ; update string
+   1833  5     9850 39              rts
+   1834                           * make num have expo==0, fixing decimal e>>
+   1835        9851               fpwrnorm
+   1837  4+0   9851 E6   C4           ldb   ,u      ; get biased expo
+   1838  2     9853 C1   40           cmpb  #$40    ; signed-expo <= 0 ?
+   1839  3     9855 23   11           bls   EXIT    ; yes => done ; $9868
+   1840  7     9857 8D   DD           bsr   fpdot1 ; $9836
+   1841  8     9859 BD   922C         jsr   fpmul   ; no => divide by 10
+   1842  4+1   985C E6   63           ldb   3,s     ; and update dec. exp
+    278  3     985E 2B   04               bmi     EXIT ; $9864
+   1844  6+1   9860 6C   62             inc   2,s   ; +1 if >0
+    288  3     9862 20   02               bra     EXIT ; $9866
+   1846  6+1   9864 6A   62             dec   2,s   ; -1 if <0
+    288  3     9866 20   E9               bra     REDO ; $9851
+   1850  4+0   9868 E6   C4           ldb   ,u      ; 1 <= num < 256 ?
+   1851  2     986A C1   40           cmpb  #$40
+   1852  3     986C 24   0F           bhs   EXIT    ; yes => done ; $987D
+   1853  8     986E BD   91F3         jsr   fp_m10  ; no => mul 10
+   1854  4+1   9871 E6   63           ldb   3,s     ; and update dec. exp
+    278  3     9873 2B   04               bmi     EXIT ; $9879
+   1856  6+1   9875 6A   62             dec   2,s   ; -1 if >0
+    288  3     9877 20   02               bra     EXIT ; $987B
+   1858  6+1   9879 6C   62             inc   2,s   ; +1 if <0
+    288  3     987B 20   EB               bra     REDO ; $9868
+   1861  5     987D 39              rts
+   1862
+   1863                           * write b in decimal to string pointed
+   1864                           * by y. If a!=0, then leading 0 are
+   1865                           * added.
+   1866        987E               fpwrb
+   1867  5+2   987E 34   06         pshs  d         ; prepare stack:
+   1868  2     9880 4F              clra            ; lead0-flag, $00
+   1869  4+1   9881 A7   61         sta   1,s       ;
+   1870  2     9883 58              lslb            ; get b's msbit
+   1871  2     9884 5C              incb            ; inject sentinel
+   1873  4+2   9885 A7   E2           sta   ,-s     ; rotate A with carry
+   1874  4+2   9887 A9   E0           adca  ,s+
+   1875  2     9889 19                daa           ; make it decimal
+   1876  6+1   988A 69   61           rol   1,s     ; rotate 1st digit
+   1877  2     988C 58                lslb          ; rotate b
+    278  3     988D 26   F6               bne     REDO ; $9885
+   1879  4+0   988F E6   E4         ldb   ,s        ; load lead0 flag
+   1880  4+1   9891 EA   61         orb   1,s       ; combine with digit
+    278  3     9893 27   08               beq     EXIT ; $989D
+   1882  4+0   9895 E7   E4           stb   ,s      ; if non zero, prints
+   1883  4+1   9897 E6   61           ldb   1,s     ; ensure flag is !=0
+   1884  2     9899 CB   30           addb  #'0     ; to write all digits
+   1885  4+2   989B E7   A0           stb   ,y+     ; and write 1st digit
+   1887  4+1   989D A7   61         sta   1,s       ; save digits 2 & 3
+   1888  2     989F 84   F0         anda  #$F0      ; isolate 2nd digit
+   1889  4+0   98A1 AA   E4         ora   ,s        ; combine with lead0
+    278  3     98A3 27   09               beq     EXIT ; $98AE
+   1891  4+1   98A5 A6   61           lda   1,s     ; ifn 0 => write it
+   1892  2     98A7 C6   10           ldb   #$10    ; A<<4 faster than
+   1893  11    98A9 3D                mul           ; with rotations
+   1894  2     98AA 8B   30           adda  #'0
+   1895  4+2   98AC A7   A0           sta   ,y+
+   1897  4+1   98AE A6   61         lda   1,s       ; get last 2 digits
+   1898  2     98B0 84   0F         anda  #$0F      ; isolate 3rd digit
+   1899  2     98B2 8B   30         adda  #'0       ; convert to ascii
+   1900  4+2   98B4 A7   A0         sta   ,y+       ; write it
+   1901  5+4   98B6 35   86         puls  d,pc      ; restore stack, done
+   1902
+----------------
+19831 cycle(s)
+2232 byte(s)
+----------------
+   1904
+   1905                           * =====================================
+   1906                           * interactive calculator
+   1907                           * =====================================
+   1908
+   1909        98B8               main
+   1910  5+10  98B8 34   7F         pshs  d,x,y,u,dp,cc
+   1911  5     98BA F6   6073       ldb   $6073     ; backup buzz
+   1912  5+1   98BD 34   04         pshs  b
+   1913  7     98BF 7F   6073       clr   $6073     ; disable buzz
+   1914  8     98C2 BD   9BE2       jsr   timeInit  ; init timer
+   1915  3     98C5 CE   A1A6       ldu   #fpstack  ; setup fpu stack
+   1916  3     98C8 8E   9D37       ldx   #welcome  ; prints welcome
+   1917  8     98CB BD   9AD6       jsr   puts      ; message
+   1918  2     98CE 5C              incb            ; flag interpreter
+   1919  5     98CF F7   9DA0       stb   running
+   1920
+   1922  7     98D2 8D   37           bsr   prPrompt ; $990B
+   1923  3     98D4 8E   9DA6         ldx   #inpbuf
+   1924  4     98D7 108E 9EA6         ldy   #inpend
+   1925  8     98DB BD   9A49         jsr   gets
+   1927  8     98DE BD   99C0           jsr   nxtToken
+   1928  4+0   98E1 E6   84             ldb   ,x
+   1929  3     98E3 27   0F             beq   EXIT  ; no more tokens ; $98F>>
+   1930  7     98E5 8D   6E             bsr   findCmd ; $9955
+   1931  4+0   98E7 E6   A4             ldb   ,y
+    278  3     98E9 2A   04               bpl     EXIT ; $98EF
+   1933  7     98EB 8D   35               bsr tryFlt  ; no cmd => try float>>
+    288  3     98ED 20   03               bra     EXIT ; $98F2
+   1935  8     98EF BD   9994             jsr doExec  ; got cmd => exec
+    288  3     98F2 20   EA               bra     REDO ; $98DE
+   1938  5     98F4 F6   9DA0         ldb   running
+    278  3     98F7 26   D9               bne     REDO ; $98D2
+   1940  5+1   98F9 35   04         puls  b
+   1941  5     98FB F7   6073       stb   $6073
+   1942  8     98FE BD   9BF3       jsr   timeExit
+   1943  3     9901 8E   9D5D       ldx   #bye
+   1944  8     9904 BD   9ACE       jsr   println
+   1945  5+10  9907 35   7F         puls  d,x,y,u,dp,cc
+   1946  19    9909 3F              swi
+   1947  5     990A 39              rts
+   1948
+   1949                           * build a nnn> prompt. nnn representing
+   1950                           * representing current stack depth
+   1951        990B               prPrompt
+   1952  3     990B 8E   9EA6       ldx   #outbuf   ; make x&y point
+   1953  4+0   990E 31   84         leay  ,x        ; to output buffer
+   1954  8     9910 BD   99CB       jsr   stksize   ; getstack size
+   1955  2     9913 8A   FF         ora   #255      ; print leading 0s
+   1956  8     9915 BD   987E       jsr   fpwrb     ; write nnnn
+   1957  3     9918 CC   3E20       ldd   #32+256*'>
+   1958  5+3   991B ED   A1         std   ,y++      ; add '> '
+   1959  6+0   991D 6F   A4         clr   ,y        ; end of string
+   1960  4     991F 7E   9AD6       jmp   puts      ; print prompt
+   1961
+   1962                           * try parsing a float at string pointed
+   1963                           * by x
+   1964        9922               tryFlt
+   1965  8     9922 BD   9722       jsr   fprdx     ; read float
+   1966  4+0   9925 E6   84         ldb   ,x        ; get last unread char
+   1967  2     9927 C1   20         cmpb  #32       ; <=' ' ?
+    278  3     9929 22   01               bhi     EXIT ; $992C
+   1969  5     992B 39                rts           ; yes => done
+   1971  8     992C BD   90BC       jsr   fpdrop
+   1972  4     992F 108E 9D6C       ldy   #syntaxErr  ; red
+   1973                           * bra   prError   ; print syntax error
+   1974
+   1975                           * prints the error message pointed by
+   1976                           * y. Then print the current token
+   1977                           * (pointed by x). Then make x point to
+   1978                           * end of string to stop executing any
+   1979                           * other command in the buffer.
+   1980        9933               prError
+   1981  7     9933 7F   9DA2       clr   timeEn    ; clear timing flag
+   1982  8     9936 1E   12         exg   x,y
+   1983  8     9938 BD   9AD6       jsr   puts      ; prints error msg
+   1985  4+2   993B E6   A0           ldb   ,y+     ; adv. to next tok
+   1986  2     993D C1   20           cmpb  #32     ; end of tok reached?
+   1987  3     993F 23   05           bls   EXIT    ; yes => quit ; $9946
+   1988  8     9941 BD   9ADB         jsr   putc    ; no => print tok chr
+    288  3     9944 20   F5               bra     REDO ; $993B
+   1990  2     9946 5D              tstb            ; end of string?
+   1992  3     9947 27   04           beq   EXIT    ; yes => exit loop ; $9>>
+   1993  4+2   9949 E6   A0           ldb   ,y+     ; get next char
+    288  3     994B 20   FA               bra     REDO ; $9947
+   1995  4+1   994D 30   3F         leax  -1,y      ; make x point to 0
+   1996  8     994F BD   9ACE       jsr   println   ; prints crlf
+   1997  4+1   9952 30   3F         leax  -1,y      ; make x point to 0
+   1998  5     9954 39              rts
+   1999
+   2000                           * given a string pointed by x, findCmd
+   2001                           * a cmd descriptor (pointed by y) which
+   2002                           * match the current token started at x.
+   2003                           * If a cmd is found then ",y" contains
+   2004                           * the arity (number of required params
+   2005                           * on stack) for the command, and "1,y"
+   2006                           * contains the execution adress of the
+   2007                           * cmd. If no cmd matches, then "1,y"
+   2008                           * contains -1.
+   2009        9955               findCmd
+   2010  4     9955 108E 9C0B       ldy   #cmds     ; load command desc.
+   2012  5+2   9959 34   10           pshs    x     ; save token ptr
+   2014  4+0   995B E6   84             ldb   ,x    ; get next char
+   2015  2     995D C1   20             cmpb  #32
+   2016  3     995F 23   14             bls   EXIT  ; none => done loop ; $>>
+   2018  2     9961 C1   41               cmpb  #'A ; make lower case
+   2019  3     9963 25   06               blo   EXIT ; $996B
+   2020  2     9965 C1   5A               cmpb  #'Z
+   2021  3     9967 22   02               bhi   EXIT ; $996B
+   2022  2     9969 CB   20               addb  #'a-'A
+   2024  4+0   996B E1   A4             cmpb  ,y    ; cmp with curr
+   2025  3     996D 26   06             bne   EXIT  ; cmd. no match=>next ;>>
+   2026  4+1   996F 30   01             leax  1,x   ; match: advance both
+   2027  4+1   9971 31   21             leay  1,y   ; pointers
+    288  3     9973 20   E6               bra     REDO ; $995B
+   2030  4+0   9975 E6   84             ldb   ,x    ; input token fully
+   2031  2     9977 C1   20             cmpb  #32   ; read ?
+   2032  3     9979 22   0A             bhi   EXIT  ; no => try next cmd ; >>
+   2033  4+0   997B E6   A4             ldb   ,y    ; curr cmd symbol
+   2034  2     997D C1   0A             cmpb  #10   ; fully read?
+   2035  3     997F 24   04             bhs   EXIT  ; no => try next cmd ; >>
+   2036  5+0   9981 AF   E4             stx   ,s    ; cmd found! return x
+   2037  5+4   9983 35   90             puls  x,pc  ; stack fixup&ereturn
+   2039  5+2   9985 35   10           puls    x     ; reset input ptr
+   2041  4+2   9987 E6   A0             ldb   ,y+   ; read whole cmd
+   2042  2     9989 C1   0A             cmpb  #10   ; descriptor
+    278  3     998B 24   FA               bcc     REDO ; $9987
+   2044  4+1   998D 31   22           leay    2,y   ; skip addr
+   2045  4+0   998F E6   A4           ldb     ,y    ; loop if cmd valid
+    278  3     9991 2A   C6               bpl     REDO ; $9959
+   2047  5     9993 39              rts
+   2048
+   2049                           * execute cmd pointed by y
+   2050        9994               doExec
+   2051  5+2   9994 34   10         pshs  x         ; saves the token ptr
+   2052  8     9996 BD   99CB       jsr   stksize   ; get stack size
+   2053  4+2   9999 E1   A0         cmpb  ,y+       ; enough arg on stck?
+    278  3     999B 24   0C               bcc     EXIT ; $99A9
+   2055  5+2   999D 35   10           puls  x       ; not enough params
+   2056  7     999F 8D   16           bsr   prvToken ; $99B7
+   2057  4     99A1 108E 9D66         ldy   #stackErr
+   2058  3     99A5 20   8C           bra   prError ; print stack err msg ;>>
+    288  3     99A7 20   0C               bra     EXIT ; $99B5
+   2060  5     99A9 F6   9DA2         ldb   timeEn  ; timing enabled?
+    278  3     99AC 27   05               beq     EXIT ; $99B3
+   2062  7     99AE 8D   27           bsr   doTiming  ; yes => do time ; $9>>
+   2063  7     99B0 7F   9DA2         clr   timeEn    ; clear time flag
+   2065  7+3   99B3 AD   B4           jsr   [,y]    ; execute cmd
+   2067  5+4   99B5 35   90         puls  x,pc      ; restore token ptr
+   2068
+   2069                           * rewind to start of last token
+   2070        99B7               prvToken
+   2072  4+2   99B7 E6   82           ldb   ,-x     ; read prev char
+   2073  2     99B9 C1   20           cmpb  #32     ; token separatpr?
+    278  3     99BB 22   FA               bhi     REDO ; $99B7
+   2075  4+1   99BD 30   01         leax  1,x       ; fixup x
+   2076  5     99BF 39              rts
+   2077
+   2078                           * advance to next token
+   2079        99C0               nxtToken
+   2081  4+2   99C0 E6   80           ldb   ,x+     ; read next char
+   2082  3     99C2 27   04           beq   EXIT    ; end of string=>exit ;>>
+   2083  2     99C4 C1   20           cmpb  #32     ; token separator ?
+    278  3     99C6 23   F8               bls     REDO ; $99C0
+   2085  4+1   99C8 30   1F         leax    -1,x    ; comensate x
+   2086  5     99CA 39              rts
+   2087
+   2088                           * returns the fp-stack length in reg D
+   2089        99CB               stksize
+   2090  3     99CB CC   A1A6       ldd   #fpstack  ; load top of stack
+   2091  5+2   99CE 34   40         pshs  u
+   2092  6+3   99D0 A3   E1         subd  ,s++      ; subtract current
+     74  2     99D2 44                    lsra
+     75  2     99D3 56                    rorb
+     74  2     99D4 44                    lsra
+     75  2     99D5 56                    rorb
+   2095  5     99D6 39              rts
+   2096
+   2097                           * mesure the average time used by a cmd
+   2098                           * to do so, iterate the cmd again and
+   2099                           * again on a clone of the stack for
+   2100                           * TIMELP/10 seconds. The average time
+   2101                           * for the cmd is time/(#iteration*10)
+   2102                           * in second.
+   2103                  0096     TIMELP  equ     150
+   2104        99D7               doTiming
+   2105  3     99D7 8E   9D72       ldx   #timingStr
+   2106  8     99DA BD   9AD6       jsr   puts      ; prints a wait msg
+   2107  2     99DD 4F              clra
+   2108  2     99DE 5F              clrb
+   2109  5     99DF F7   9DA1       stb   putcEn    ; disable print
+   2110  6     99E2 FD   9DA3       std   timeCt    ; clear clock counter
+   2111  3     99E5 8E   0096       ldx   #TIMELP   ; timeout
+   2113  7     99E8 8D   48           bsr   doDryExec ; $9A32
+   2114  4     99EA C3   0001         addd  #1      ; +1 excution
+    278  3     99ED 26   05               bne     EXIT ; $99F4
+   2116  3     99EF CC   FFFF           ldd #-1     ; wrapped!
+   2117  3     99F2 20   05             bra EXIT2   ; stop looping ; $99F9
+   2119  7     99F4 BC   9DA3         cmpx  timeCt  ; timeout reached ?
+    278  3     99F7 24   EF               bcc     REDO ; $99E8
+   2121  8     99F9 BD   90F0       jsr   fplddu    ; -- #iter
+   2122  6     99FC FC   9DA3       ldd   timeCt    ;
+   2123  8     99FF BD   90F0       jsr   fplddu    ; -- #iter time
+   2124                           * compute average time in ms
+   2125  8     9A02 BD   90DB       jsr   fpover
+   2126  8     9A05 BD   91F3       jsr   fp_m10
+   2127  8     9A08 BD   90DB       jsr   fpover
+   2128  8     9A0B BD   922A       jsr   fpdiv
+   2129  8     9A0E BD   90A9       jsr   fprrot
+   2130                           * compute flops
+   2131  8     9A11 BD   91F3       jsr   fp_m10
+   2132  8     9A14 BD   91F3       jsr   fp_m10
+   2133  8     9A17 BD   90BF       jsr   fpswap
+   2134  8     9A1A BD   922A       jsr   fpdiv
+   2135
+   2136  7     9A1D 7C   9DA1       inc   putcEn    ; enable print
+   2137  3     9A20 8E   9D86       ldx   #timeResStr
+   2138  8     9A23 BD   9AD6       jsr   puts      ; print result msg
+   2139  8     9A26 BD   9AE4       jsr   doDot     ; prints avg time
+   2140  3     9A29 8E   9D94       ldx   #flopsResStr
+   2141  8     9A2C BD   9AD6       jsr   puts      ; prints flops msg
+   2142  4     9A2F 7E   9AE4       jmp   doDot     ; print flops
+   2143
+   2144                           * execute the command without affecting
+   2145                           * the stack
+   2146        9A32               doDryExec
+   2147  5+6   9A32 34   56         pshs  d,x,u     ; preserve regs
+   2148  4+1   9A34 E6   3F         ldb   -1,y      ; get arity
+    278  3     9A36 27   0D               beq     EXIT ; $9A45
+   2151  2     9A38 5A                  decb        ; arg-index
+   2152  4+2   9A39 E7   E2             stb   ,-s   ; preserve
+   2153  4+1   9A3B E6   3F             ldb   -1,y
+   2154  2     9A3D 5A                  decb        ; push arg-1
+   2155  8     9A3E BD   909D           jsr   fppick
+   2156  4+2   9A41 E6   E0             ldb   ,s+
+    278  3     9A43 26   F3               bne     REDO ; $9A38
+   2159  7+3   9A45 AD   B4         jsr   [,y]      ; execute cmd
+   2160  5+8   9A47 35   D6         puls  d,x,u,pc
+   2161
+   2162                           * given a buffer in x (ending in y-1), re>>
+   2163                           * result is a nul-terminated string
+   2164        9A49               gets
+   2165  4+1   9A49 31   3F         leay  -1,y      ; y=end of buffer-1
+   2166  5+6   9A4B 34   36         pshs  d,y,x     ; preserve values
+   2167  6+0   9A4D 6F   A4         clr   ,y        ; mark end of buf
+   2169  8     9A4F BD   E806         jsr   $E806   ; read a char
+   2170  2     9A52 5D                tstb          ; got it ?
+   2171  3     9A53 27   FA           beq   REDO    ; no=>read again ; $9A4>>
+   2172
+   2173  2     9A55 C1   0D           cmpb  #13     ; return?
+   2174  3     9A57 27   51           beq   EXIT    ; yes=>exit loop ; $9AA>>
+   2175
+   2176  2     9A59 C1   08           cmpb  #8      ; back
+    278  3     9A5B 26   0D               bne     EXIT ; $9A6A
+   2178  6+1   9A5D AC   62             cmpx  2,s   ; already at start?
+    278  3     9A5F 27   07               beq     EXIT ; $9A68
+   2180  4+1   9A61 30   1F               leax  -1,x
+   2181  3     9A63 CC   0001             ldd   #1
+   2182  7     9A66 8D   48               bsr   backsp ; $9AB0
+   2184  3     9A68 20   E5             bra   REDO2 ; $9A4F
+   2186
+   2187  2     9A6A C1   09           cmpb  #9      ; right
+    278  3     9A6C 26   0C               bne     EXIT ; $9A7A
+   2189  4+2   9A6E E6   80             ldb   ,x+
+    278  3     9A70 26   04               bne     EXIT ; $9A76
+   2191  4+1   9A72 30   1F               leax -1,x ; yes => get back
+   2192  2     9A74 C6   07               ldb   #7  ; beep
+   2194  7     9A76 8D   63             bsr   putc  ; print char ; $9ADB
+   2195  3     9A78 20   D5             bra   REDO2 ; $9A4F
+   2197
+   2198  2     9A7A C1   0A           cmpb  #10     ; down-->reset line
+    278  3     9A7C 26   0A               bne     EXIT ; $9A88
+   2200  6     9A7E 1F   10             tfr   x,d
+   2201  6+1   9A80 A3   62             subd  2,s
+   2202  7     9A82 8D   2C             bsr   backsp ; $9AB0
+   2203  5+1   9A84 AE   62             ldx   2,s
+   2204  3     9A86 20   C7             bra   REDO2 ; $9A4F
+   2206
+   2207  2     9A88 C1   0B           cmpb  #11     ; up --> print prev
+    278  3     9A8A 26   06               bne     EXIT ; $9A92
+   2209  7     9A8C 8D   48             bsr   puts ; $9AD6
+   2210  4+1   9A8E 30   1F             leax  -1,x
+   2211  3     9A90 20   BD             bra   REDO2 ; $9A4F
+   2213
+   2214  2     9A92 C1   20           cmpb  #32     ; < ' '
+   2215  3     9A94 25   B9           blo   REDO    ; yes => ignore ; $9A4F>>
+   2216  2     9A96 C1   7F           cmpb  #127    ; > 127
+   2217  3     9A98 22   B5           bhi   REDO    ; yes => ignore ; $9A4F>>
+   2218  6+1   9A9A AC   64           cmpx  4,s     ; at end of buffer ?
+    278  3     9A9C 25   06               bcs     EXIT ; $9AA4
+   2220  2     9A9E C6   07             ldb   #7    ; beep
+   2221  7     9AA0 8D   39             bsr   putc ; $9ADB
+   2222  3     9AA2 20   AB             bra   REDO2 ; $9A4F
+   2224  4+2   9AA4 E7   80           stb   ,x+
+   2225  7     9AA6 8D   33           bsr   putc ; $9ADB
+    288  3     9AA8 20   A5               bra     REDO ; $9A4F
+   2227  6+0   9AAA 6F   84         clr   ,x        ; end of string
+   2228  7     9AAC 8D   20         bsr   println   ; prints crlf ; $9ACE
+   2229  5+8   9AAE 35   B6         puls  d,x,y,pc
+   2230
+   2231                           * prints a backspace of length "n"
+   2232                           * (in reg D)
+   2233        9AB0               backsp
+   2234  5+2   9AB0 34   10         pshs  x         ; save regs
+   2235  6     9AB2 1F   01         tfr   d,x       ; x=n
+    278  3     9AB4 27   0C               beq     EXIT ; $9AC2
+   2237  2     9AB6 C6   08           ldb   #8      ; print backspace
+   2238  7     9AB8 8D   0A           bsr   backsp2 ; n times ; $9AC4
+   2239  2     9ABA C6   20           ldb   #32     ; print space n
+   2240  7     9ABC 8D   06           bsr   backsp2 ; times ; $9AC4
+   2241  2     9ABE C6   08           ldb   #8      ; then backspace
+   2242  7     9AC0 8D   02           bsr   backsp2 ; n times again ; $9AC4>>
+   2244  5+4   9AC2 35   90         puls  x,pc
+   2245                           * prints a char (in B reg) n times
+   2246                           * (in X reg)
+   2247        9AC4               backsp2
+   2248  5+2   9AC4 34   10         pshs    x
+   2250  7     9AC6 8D   13           bsr   putc ; $9ADB
+   2251  4+1   9AC8 30   1F           leax  -1,x
+    278  3     9ACA 26   FA               bne     REDO ; $9AC6
+   2253  5+4   9ACC 35   90         puls    x,pc
+   2254
+   2255                           * prints a line pointed by x (trashed)
+   2256        9ACE               println
+   2257  7     9ACE 8D   06         bsr   puts ; $9AD6
+   2258  3     9AD0 8E   9D5A       ldx   #crlf
+     98        9AD3 8C                    fcb     $8C     ; SKIP2 (CMPX #N)>>
+   2260
+   2261                           * prints a nul-terminated string
+   2263  7     9AD4 8D   05           bsr   putc    ; print char ; $9ADB
+   2264        9AD6               puts
+   2265  4+2   9AD6 E6   80           ldb   ,x+     ; load next char
+    278  3     9AD8 26   FA               bne     REDO ; $9AD4
+   2267  5     9ADA 39              rts
+   2268
+   2269                           * prints a char
+   2270        9ADB               putc
+   2271  7     9ADB 7D   9DA1       tst   putcEn    ; print enabled?
+    278  3     9ADE 26   01               bne     EXIT ; $9AE1
+   2273  5     9AE0 39                rts           ; no => do nothing
+   2275  4     9AE1 7E   E803       jmp   $E803     ; yes => rom routine
+   2276
+   2277                           * prints current float in outbuf
+   2278        9AE4               doDot
+   2279  3     9AE4 8E   9EA6       ldx   #outbuf
+   2280                           * write current float in buf pointed
+   2281                           * by x and prints outbuf
+   2282        9AE7               doDot2
+   2283  8     9AE7 BD   97C0       jsr   fpwrx
+   2284  3     9AEA 8E   9EA6       ldx   #outbuf
+   2285  3     9AED 20   DF         bra   println ; $9ACE
+   2286
+   2287                           * prints full stack
+   2288        9AEF               doDotS
+   2289  8     9AEF BD   99CB       jsr   stksize   ; B=stack size (% 256)
+   2290  5+5   9AF2 34   34         pshs  b,x,y
+    278  3     9AF4 27   21               beq     EXIT ; $9B17
+   2293  2     9AF6 5A                  decb
+   2294  4+2   9AF7 E7   E2             stb   ,-s
+   2295  2     9AF9 53                  comb
+   2296  4+1   9AFA EB   61             addb  1,s
+   2297  4     9AFC 108E 9EA6           ldy   #outbuf
+   2298  2     9B00 86   01             lda   #1
+   2299  8     9B02 BD   987E           jsr   fpwrb
+   2300  3     9B05 CC   3A20           ldd   #32+256*': ; add ': '
+   2301  5+3   9B08 ED   A1             std   ,y++
+   2302  4+0   9B0A E6   E4             ldb   ,s
+   2303  8     9B0C BD   909D           jsr   fppick
+   2304  4+0   9B0F 30   A4             leax  ,y
+   2305  7     9B11 8D   D4             bsr   doDot2 ; $9AE7
+   2306  4+2   9B13 E6   E0             ldb   ,s+
+    278  3     9B15 26   DF               bne     REDO ; $9AF6
+   2309  5+7   9B17 35   B4         puls  b,x,y,pc
+   2310
+   2311                           * quit the interpreter
+   2312        9B19               doQuit
+   2313  7     9B19 7F   9DA0       clr   running   ; clear flag
+   2314  6+0   9B1C 6F   84         clr   ,x        ; kill token buffer
+   2315  5     9B1E 39              rts
+   2316
+   2317                           * do nothing
+   2318        9B1F               doNop
+   2319  5     9B1F 39              rts
+   2320
+   2321                           * reset fpu stack
+   2322        9B20               doZ
+   2323  3     9B20 CE   A1A6       ldu   #fpstack
+   2324  5     9B23 39              rts
+   2325
+   2326                           * prints the list of possible commands
+   2327                           * the arity is indicated in text
+   2328                           * font
+   2329        9B24               doHelp
+   2330  3     9B24 8E   9C0B       ldx   #cmds     ; cmd list
+   2331  7     9B27 7F   9B73       clr   putcAttr  ; no attribute by def
+   2333  7     9B2A 8D   2B           bsr   doHelpAttr ; $9B57
+   2334  2     9B2C 86   08           lda   #8      ; max cmd len
+   2336  4+0   9B2E E6   84             ldb   ,x    ; get next cmd char
+   2337  2     9B30 C1   0A             cmpb  #10   ; arity reached?
+    278  3     9B32 25   04               bcs     EXIT ; $9B38
+   2339  4+1   9B34 30   01               leax  1,x
+    288  3     9B36 20   05               bra     EXIT ; $9B3D
+   2341  2     9B38 C6   20               ldb   #32 ; yes=>output space
+   2342  7     9B3A 7F   9B73             clr   putcAttr ; clear attrib
+   2344  7     9B3D 8D   2B             bsr   attrPutc ; $9B6A
+   2345  2     9B3F 4A                  deca
+    278  3     9B40 26   EC               bne     REDO ; $9B2E
+   2347  7     9B42 8D   0C           bsr   doHelpArity ; $9B50
+   2348  4+1   9B44 30   02           leax  2,x     ; skip over exec addr
+   2349  4+0   9B46 E6   84           ldb   ,x
+    278  3     9B48 2A   E0               bpl     REDO ; $9B2A
+   2351  3     9B4A 8E   9D5A       ldx   #crlf
+   2352  4     9B4D 7E   9AD6       jmp   puts
+   2353                           * loop till arity reached
+   2354        9B50               doHelpArity
+   2356  4+2   9B50 E6   80           ldb   ,x+     ; got arity?
+   2357  2     9B52 C1   0A           cmpb  #10     ; not yet=>loop
+    278  3     9B54 24   FA               bcc     REDO ; $9B50
+   2359  5     9B56 39              rts
+   2360                           * determine a text attribute according
+   2361                           * to the arity of the cmd pointd by y
+   2362        9B57               doHelpAttr
+   2363  5+2   9B57 34   10         pshs  x
+   2364  7     9B59 8D   F5         bsr   doHelpArity ; $9B50
+   2365  3     9B5B 8E   9B65       ldx   #arityAttrb
+   2366  4+1   9B5E E6   85         ldb   b,x
+   2367  5     9B60 F7   9B73       stb   putcAttr
+   2368  5+4   9B63 35   90         puls  x,pc
+   2369                  0000     NONE  equ   %0000 ; no attribute
+   2370                  0001     BOLD  equ   %0001 ; display bold
+   2371                  0002     ITAL  equ   %0010 ; italics
+   2372                  0004     UNDL  equ   %0100 ; underline
+   2373                  0008     RVID  equ   %1000 ; reverse video
+   2374        9B65               arityAttrb
+   2375        9B65 00              fcb   NONE
+   2376        9B66 01              fcb   BOLD
+   2377        9B67 08              fcb   RVID
+   2378        9B68 09              fcb   RVID+BOLD
+   2379        9B69 0B              fcb   RVID+ITAL+BOLD
+   2380                           * a modified vesion of putc that can
+   2381                           * apply text attribute to printed
+   2382                           * char
+   2383        9B6A               attrPutc
+   2384  5+4   9B6A 34   16         pshs  x,d       ; preserve regs
+   2385  6     9B6C BE   605A       ldx   $605A     ; get cur addr on scr
+   2386  8     9B6F BD   9ADB       jsr   putc      ; print char
+   2387  2     9B72 C6   00         ldb   #0        ; get curr. attribute
+    108                  9B73     putcAttr      set     *-1
+   2389
+   2390  2     9B74 54              lsrb            ; bold flag set ?
+    278  3     9B75 24   19               bcc     EXIT ; $9B90
+   2392  7     9B77 8D   06           bsr   bold    ; make char bold ; $9B7>>
+   2393  4+4   9B79 30   89 0140      leax  320,x   ; go down 8 lines
+   2394  3     9B7D 20   11           bra   EXIT    ; skip local routine ; >>
+   2395        9B7F               bold
+   2396  7     9B7F 8D   00           bsr   *+2     ; repeat 8 ; $9B81
+   2397  7     9B81 8D   00           bsr   *+2 ; $9B83
+   2398  7     9B83 8D   00           bsr   *+2 ; $9B85
+   2399  4+0   9B85 A6   84           lda   ,x      ; get video byte
+   2400  2     9B87 44                lsra          ; shift add
+   2401  4+0   9B88 AA   84           ora   ,x      ; merge it with
+   2402  4+0   9B8A A7   84           sta   ,x      ; previous
+   2403  4+1   9B8C 30   88 D8        leax  -40,x   ; go up 1 line
+   2404  5     9B8F 39                rts
+   2406
+   2407  2     9B90 54              lsrb            ; italic flag set ?
+    278  3     9B91 24   14               bcc     EXIT ; $9BA7
+   2409  6+0   9B93 68   84           lsl ,x        ; yes => left shift
+   2410  6+1   9B95 68   88 D8        lsl -1*40,x   ; 3 bottom lines and
+   2411  6+1   9B98 68   88 B0        lsl -2*40,x   ; right shift 3 top
+   2412  6+4   9B9B 64   89 FF38      lsr -5*40,x   ; lines
+   2413  6+4   9B9F 64   89 FF10      lsr -6*40,x
+   2414  6+4   9BA3 64   89 FEE8      lsr -7*40,x
+   2416
+   2417  2     9BA7 54              lsrb            ; underline flag set?
+    278  3     9BA8 24   02               bcc     EXIT ; $9BAC
+   2419  6+0   9BAA 63   84           com   ,x      ; yes => compl. video
+   2421
+   2422
+   2423  2     9BAC 54              lsrb            ; reverse video set?
+    278  3     9BAD 24   14               bcc     EXIT ; $9BC3
+   2425  7     9BAF 8D   06           bsr   invvid  ; reverse char ; $9BB7
+   2426  4+4   9BB1 30   89 0140      leax  320,x   ; 8 line down
+   2427  3     9BB5 20   0C           bra   EXIT    ; skip local routine ; >>
+   2428        9BB7               invvid
+   2429  7     9BB7 8D   00           bsr   *+2     ; repeat 8 times ; $9BB>>
+   2430  7     9BB9 8D   00           bsr   *+2 ; $9BBB
+   2431  7     9BBB 8D   00           bsr   *+2 ; $9BBD
+   2432  6+0   9BBD 63   84           com   ,x      ; complement video
+   2433  4+1   9BBF 30   88 D8        leax  -40,x   ; 1 line up
+   2434  5     9BC2 39                rts
+   2436  5+6   9BC3 35   96         puls  x,d,pc    ; done
+   2437
+   2438                           * compare 2 floats and print < = >
+   2439                           * accordingly
+   2440        9BC5               doCmp
+   2441  8     9BC5 BD   9147       jsr   fpcmp     ; compare
+    278  3     9BC8 26   04               bne     EXIT ; $9BCE
+   2443  2     9BCA C6   3D           ldb #'=
+    288  3     9BCC 20   08               bra     EXIT ; $9BD6
+    278  3     9BCE 23   04               bls     EXIT ; $9BD4
+   2446  2     9BD0 C6   3E             ldb #'>
+    288  3     9BD2 20   02               bra     EXIT ; $9BD6
+   2448  2     9BD4 C6   3C             ldb #'<
+   2451  8     9BD6 BD   9ADB       jsr   putc      ; print sylbol
+   2452  8     9BD9 BD   90BA       jsr   fp2drop   ; drop 2 chars
+   2453  3     9BDC 8E   9D5A       ldx   #crlf     ; new line
+   2454  4     9BDF 7E   9AD6       jmp   puts
+   2455
+   2456                           * init timer isr
+   2457        9BE2               timeInit
+   2458  3     9BE2 8E   9BFC       ldx   #timeIt     ; activate timer
+   2459  6     9BE5 BF   6027       stx   $6027
+   2460                           * stx   $6021
+   2461  5     9BE8 B6   6019       lda   $6019
+   2462  2     9BEB 8A   20         ora   #32
+   2463  5     9BED B7   6019       sta   $6019
+   2464  3     9BF0 1C   AF         andcc #255-$50
+   2465  5     9BF2 39              rts
+   2466
+   2467                           * stop timer isr
+   2468        9BF3               timeExit
+   2469  5     9BF3 B6   6019       lda   $6019
+   2470  2     9BF6 84   DF         anda  #255-32
+   2471  5     9BF8 B7   6019       sta   $6019
+   2472  5     9BFB 39              rts
+   2473
+   2474                           * timer isr
+   2475        9BFC               timeIt
+   2476  7     9BFC 7C   9DA4       inc   timeCt+1
+    278  3     9BFF 26   03               bne     EXIT ; $9C04
+   2478  7     9C01 7C   9DA3         inc timeCt
+   2480  4     9C04 7E   E830       jmp   $E830
+   2481
+   2482                           * flag timed operation
+   2483        9C07               timeOn
+   2484  7     9C07 7C   9DA2       inc   timeEn
+   2485  5     9C0A 39              rts
+   2486
+   2487                           * =====================================
+   2488                           CMD MACRO
+   2489                             fcc   \0          ; name
+   2490                             fcb   \2          ; arity < 10
+   2491                             fdb   \1          ; fonction pointer
+   2492                               ENDM
+   2493        9C0B               cmds
+   2489        9C0B 3F              fcc   /?/          ; name
+   2490        9C0C 00              fcb   0          ; arity < 10
+   2491        9C0D 9B24            fdb   doHelp          ; fonction pointe>>
+   2489        9C0F 68 65 6C 70     fcc   /help/          ; name
+   2490        9C13 00              fcb   0          ; arity < 10
+   2491        9C14 9B24            fdb   doHelp          ; fonction pointe>>
+   2489        9C16 71 75 69 74     fcc   /quit/          ; name
+   2490        9C1A 00              fcb   0          ; arity < 10
+   2491        9C1B 9B19            fdb   doQuit          ; fonction pointe>>
+   2489        9C1D 74 69 6D 65     fcc   /time/          ; name
+   2490        9C21 00              fcb   0          ; arity < 10
+   2491        9C22 9C07            fdb   timeOn          ; fonction pointe>>
+   2489        9C24 2E 73           fcc   /.s/          ; name
+   2490        9C26 00              fcb   0          ; arity < 10
+   2491        9C27 9AEF            fdb   doDotS          ; fonction pointe>>
+   2499
+   2489        9C29 70 69           fcc   /pi/          ; name
+   2490        9C2B 00              fcb   0          ; arity < 10
+   2491        9C2C 96AB            fdb   fppi          ; fonction pointer
+   2489        9C2E 6E 2E 6E 6E     fcc   /n.nnE+n/          ; name
+               9C32 45 2B 6E
+   2490        9C35 00              fcb   0          ; arity < 10
+   2491        9C36 9B1F            fdb   doNop          ; fonction pointer>>
+   2502
+   2489        9C38 2B              fcc   /+/          ; name
+   2490        9C39 02              fcb   2          ; arity < 10
+   2491        9C3A 9183            fdb   fpadd          ; fonction pointer>>
+   2489        9C3C 2D              fcc   /-/          ; name
+   2490        9C3D 02              fcb   2          ; arity < 10
+   2491        9C3E 9181            fdb   fpsub          ; fonction pointer>>
+   2489        9C40 2A              fcc   /*/          ; name
+   2490        9C41 02              fcb   2          ; arity < 10
+   2491        9C42 922C            fdb   fpmul          ; fonction pointer>>
+   2489        9C44 2F              fcc   %/%          ; name
+   2490        9C45 02              fcb   2          ; arity < 10
+   2491        9C46 922A            fdb   fpdiv          ; fonction pointer>>
+   2489        9C48 25              fcc   /%/          ; name
+   2490        9C49 02              fcb   2          ; arity < 10
+   2491        9C4A 92D6            fdb   fpmod          ; fonction pointer>>
+   2489        9C4C 72 65 6D        fcc   /rem/          ; name
+   2490        9C4F 02              fcb   2          ; arity < 10
+   2491        9C50 92E5            fdb   fprem          ; fonction pointer>>
+   2489        9C52 2A 2A           fcc   /**/          ; name
+   2490        9C54 02              fcb   2          ; arity < 10
+   2491        9C55 9589            fdb   fppow          ; fonction pointer>>
+   2510
+   2489        9C57 2A 32           fcc   /*2/          ; name
+   2490        9C59 01              fcb   1          ; arity < 10
+   2491        9C5A 91FD            fdb   fpshl          ; fonction pointer>>
+   2489        9C5C 2F 32           fcc   %/2%          ; name
+   2490        9C5E 01              fcb   1          ; arity < 10
+   2491        9C5F 92B8            fdb   fpshr          ; fonction pointer>>
+   2489        9C61 31 2F           fcc   %1/%          ; name
+   2490        9C63 01              fcb   1          ; arity < 10
+   2491        9C64 91F0            fdb   fpinv          ; fonction pointer>>
+   2514
+   2489        9C66 61 62 73        fcc   /abs/          ; name
+   2490        9C69 01              fcb   1          ; arity < 10
+   2491        9C6A 9175            fdb   fpabs          ; fonction pointer>>
+   2489        9C6C 2A 2A 32        fcc   /**2/          ; name
+   2490        9C6F 01              fcb   1          ; arity < 10
+   2491        9C70 9226            fdb   fpsqr          ; fonction pointer>>
+   2489        9C72 73 71 72 74     fcc   /sqrt/          ; name
+   2490        9C76 01              fcb   1          ; arity < 10
+   2491        9C77 92F0            fdb   fpsqrt          ; fonction pointe>>
+   2489        9C79 31 2F 73 71     fcc   %1/sqrt%          ; name
+               9C7D 72 74
+   2490        9C7F 01              fcb   1          ; arity < 10
+   2491        9C80 9480            fdb   fpinvsqrt          ; fonction poi>>
+   2489        9C82 73 69 6E        fcc   /sin/          ; name
+   2490        9C85 01              fcb   1          ; arity < 10
+   2491        9C86 95F3            fdb   fpsin          ; fonction pointer>>
+   2489        9C88 63 6F 73        fcc   /cos/          ; name
+   2490        9C8B 01              fcb   1          ; arity < 10
+   2491        9C8C 95E3            fdb   fpcos          ; fonction pointer>>
+   2489        9C8E 74 61 6E        fcc   /tan/          ; name
+   2490        9C91 01              fcb   1          ; arity < 10
+   2491        9C92 95D6            fdb   fptan          ; fonction pointer>>
+   2489        9C94 61 74 61 6E     fcc   /atan/          ; name
+   2490        9C98 01              fcb   1          ; arity < 10
+   2491        9C99 9663            fdb   fpatan          ; fonction pointe>>
+   2489        9C9B 6C 6E           fcc   /ln/          ; name
+   2490        9C9D 01              fcb   1          ; arity < 10
+   2491        9C9E 9548            fdb   fpln          ; fonction pointer
+   2489        9CA0 65 78 70        fcc   /exp/          ; name
+   2490        9CA3 01              fcb   1          ; arity < 10
+   2491        9CA4 9591            fdb   fpexp          ; fonction pointer>>
+   2489        9CA6 21              fcc   /!/          ; name
+   2490        9CA7 01              fcb   1          ; arity < 10
+   2491        9CA8 96D8            fdb   fpgammap1          ; fonction poi>>
+   2526
+   2489        9CAA 74 72 75 6E     fcc   /trunc/          ; name
+               9CAE 63
+   2490        9CAF 01              fcb   1          ; arity < 10
+   2491        9CB0 9325            fdb   fptrunc          ; fonction point>>
+   2489        9CB2 66 72 61 63     fcc   /frac/          ; name
+   2490        9CB6 01              fcb   1          ; arity < 10
+   2491        9CB7 92F9            fdb   fpfrac          ; fonction pointe>>
+   2489        9CB9 66 6C 6F 6F     fcc   /floor/          ; name
+               9CBD 72
+   2490        9CBE 01              fcb   1          ; arity < 10
+   2491        9CBF 9337            fdb   fpfloor          ; fonction point>>
+   2489        9CC1 63 65 69 6C     fcc   /ceil/          ; name
+   2490        9CC5 01              fcb   1          ; arity < 10
+   2491        9CC6 934D            fdb   fpceil          ; fonction pointe>>
+   2489        9CC8 72 6F 75 6E     fcc   /round/          ; name
+               9CCC 64
+   2490        9CCD 01              fcb   1          ; arity < 10
+   2491        9CCE 9355            fdb   fpround          ; fonction point>>
+   2532
+   2489        9CD0 63 6D 70        fcc   /cmp/          ; name
+   2490        9CD3 02              fcb   2          ; arity < 10
+   2491        9CD4 9BC5            fdb   doCmp          ; fonction pointer>>
+   2489        9CD6 2E              fcc   /./          ; name
+   2490        9CD7 01              fcb   1          ; arity < 10
+   2491        9CD8 9AE4            fdb   doDot          ; fonction pointer>>
+   2535
+   2489        9CDA 7A              fcc   /z/          ; name
+   2490        9CDB 00              fcb   0          ; arity < 10
+   2491        9CDC 9B20            fdb   doZ          ; fonction pointer
+   2489        9CDE 6E 6F 70        fcc   /nop/          ; name
+   2490        9CE1 00              fcb   0          ; arity < 10
+   2491        9CE2 9B1F            fdb   doNop          ; fonction pointer>>
+   2489        9CE4 64 72 6F 70     fcc   /drop/          ; name
+   2490        9CE8 01              fcb   1          ; arity < 10
+   2491        9CE9 90BC            fdb   fpdrop          ; fonction pointe>>
+   2489        9CEB 64 75 70        fcc   /dup/          ; name
+   2490        9CEE 01              fcb   1          ; arity < 10
+   2491        9CEF 90DE            fdb   fpdup          ; fonction pointer>>
+   2489        9CF1 73 77 61 70     fcc   /swap/          ; name
+   2490        9CF5 02              fcb   2          ; arity < 10
+   2491        9CF6 90BF            fdb   fpswap          ; fonction pointe>>
+   2489        9CF8 32 64 72 6F     fcc   /2drop/          ; name
+               9CFC 70
+   2490        9CFD 02              fcb   2          ; arity < 10
+   2491        9CFE 90BC            fdb   fpdrop          ; fonction pointe>>
+   2489        9D00 32 64 75 70     fcc   /2dup/          ; name
+   2490        9D04 02              fcb   2          ; arity < 10
+   2491        9D05 90D9            fdb   fp2dup          ; fonction pointe>>
+   2489        9D07 6F 76 65 72     fcc   /over/          ; name
+   2490        9D0B 02              fcb   2          ; arity < 10
+   2491        9D0C 90DB            fdb   fpover          ; fonction pointe>>
+   2489        9D0E 72 6F 74        fcc   /rot/          ; name
+   2490        9D11 03              fcb   3          ; arity < 10
+   2491        9D12 90B2            fdb   fplrot          ; fonction pointe>>
+   2489        9D14 2D 72 6F 74     fcc   /-rot/          ; name
+   2490        9D18 03              fcb   3          ; arity < 10
+   2491        9D19 90A9            fdb   fprrot          ; fonction pointe>>
+   2546
+   2489        9D1B 31 2F 2F        fcc   %1//%          ; name
+   2490        9D1E 01              fcb   1          ; arity < 10
+   2491        9D1F 93CA            fdb   fpinv_vnrd          ; fonction po>>
+   2489        9D21 31 2F 2F 2F     fcc   %1///%          ; name
+   2490        9D25 01              fcb   1          ; arity < 10
+   2491        9D26 942B            fdb   fpinv_goldschmidt          ; fonc>>
+   2489        9D28 31 2F 2F 2F     fcc   %1////%          ; name
+               9D2C 2F
+   2490        9D2D 01              fcb   1          ; arity < 10
+   2491        9D2E 93B7            fdb   fpinv_quake          ; fonction p>>
+   2489        9D30 72 6E 64        fcc   %rnd%          ; name
+   2490        9D33 00              fcb   0          ; arity < 10
+   2491        9D34 96B4            fdb   fprnd          ; fonction pointer>>
+   2551
+   2552        9D36 FF              fcb   -1      ; end of cmds
+   2553
+   2554        9D37               welcome
+   2555        9D37 52 50 4E 20     fcc   /RPN calc/
+               9D3B 63 61 6C 63
+   2556        9D3F 2C 20 62 79     fcc   /, by Samuel DEVULDER/
+               9D43 20 53 61 6D
+               9D47 75 65 6C 20
+               9D4B 44 45 56 55
+               9D4F 4C 44 45 52
+   2557        9D53 20 32 30 31     fcc   / 2019/
+               9D57 39
+   2558        9D58               coloroff
+   2559        9D58 1B 68           fcb   $1B,$68
+   2560        9D5A               crlf
+   2561        9D5A 0D 0A 00        fcb   13,10,0
+   2562
+   2563        9D5D               bye
+   2564        9D5D 42 79 65 2E     fcc   /Bye.../
+               9D61 2E 2E
+   2565        9D63               coloron
+   2566        9D63 1B 69           fcb   $1B,$69
+   2567        9D65 00              fcb   0
+   2568
+   2569        9D66               stackErr
+   2570        9D66 21 21 21 20     fcc   %!!! %
+   2571        9D6A 07 00           fcb   7,0
+   2572
+   2573        9D6C               syntaxErr
+   2574        9D6C 3F 3F 3F 20     fcc   /??? /
+   2575        9D70 07 00           fcb   7,0
+   2576
+   2577        9D72               timingStr
+   2578        9D72 74 69 6D 69     fcc   /timing for /
+               9D76 6E 67 20 66
+               9D7A 6F 72 20
+   2579        9D7D 31              fcb   (TIMELP/100)+'0
+   2580        9D7E 35              fcb   ((TIMELP/10)%10)+'0
+   2581        9D7F 2E              fcc   /./
+   2582        9D80 30              fcb   TIMELP%10+'0
+   2583        9D81 73 2E 2E 2E     fcc   /s.../
+   2584        9D85 00              fcb   0
+   2585
+   2586        9D86               timeResStr
+   2587        9D86 0D 18           fcb   13,$18
+   2588        9D88 74 69 6D 65     fcc   /time(ms) = /
+               9D8C 28 6D 73 29
+               9D90 20 3D 20
+   2589        9D93 00              fcb   0
+   2590
+   2591        9D94               flopsResStr
+   2592        9D94 66 6C 6F 70     fcc   /flops    = /
+               9D98 73 20 20 20
+               9D9C 20 3D 20
+   2593        9D9F 00              fcb   0
+   2594
+   2595                           * =====================================
+   2596
+   2597        9DA0               running
+   2598        9DA0 FF              fcb   -1  ; still interpret ?
+   2599        9DA1               putcEn
+   2600        9DA1 FF              fcb   -1  ; putc enabled ?
+   2601        9DA2               timeEn
+   2602        9DA2 00              fcb   0   ; timing enabled ?
+   2603        9DA3               timeCt
+   2604        9DA3 0000            fdb   0   ; timer counter
+   2605
+   2606                           * =====================================
+   2607
+   2608        9DA5 00              fcb   0   ; sentinel
+   2609        9DA6               inpbuf
+   2610        9DA6                 rmb   256,0
+   2611        9EA6               inpend
+   2612
+   2613        9EA6               outbuf
+   2614        9EA6                 rmb   256
+   2615        9FA6               outend
+   2616
+   2617        9FA6               fpstackend
+   2618        9FA6                 rmb   128*4
+   2619        A1A6               fpstack
+   2620
+   2621                  98B8       end   main
+
+000000 Total Errors
+
+000571 Total Symbols
+     1x          Label 9B65 arityAttrb
+     0x          Macro 0003 asrd
+     1x          Label 9B6A attrPutc
+     2x          Label 9AB0 backsp
+     3x          Label 9AC4 backsp2
+     3x          Equ   0001 BOLD
+     1x          Label 9B7F bold
+     1x          Label 9D5D bye
+     2x          Label 94DE chkchg
+     3x          Macro 0001 clrd
+    49x          Macro 001D CMD
+     2x          Label 9C0B cmds
+     4x          Label 9160 cmpmag
+     0x          Label 9D58 coloroff
+     0x          Label 9D63 coloron
+     3x          Label 9D5A crlf
+   132x          Macro 0012 DO
+ 21903x          Set   0000 DO1def
+  4812x          Set   0000 DO2def
+  1428x          Set   0000 DO3def
+   264x          Set   0000 DO4def
+   264x          Set   0000 DO5def
+   264x          Set   0000 DO6def
+   264x          Set   0000 DO7def
+   264x          Set   0000 DO8def
+   264x          Set   0000 DO9def
+     1x          Label 9BC5 doCmp
+     3x          Label 9AE4 doDot
+     1x          Label 9AE7 doDot2
+     1x          Label 9AEF doDotS
+     1x          Label 9A32 doDryExec
+    29x          Macro 001A DOELSE
+     3x          Set   949D DOENT001
+     1x          Set   99B7 DOENT002
+     3x          Set   912A DOENT01
+     1x          Set   9512 DOENT011
+     1x          Set   9A5F DOENT012
+     1x          Set   9159 DOENT02
+     1x          Set   9634 DOENT021
+     1x          Set   9AD4 DOENT022
+     3x          Set   91B0 DOENT03
+     1x          Set   9770 DOENT031
+     1x          Set   9B50 DOENT032
+     6x          Set   9279 DOENT04
+     1x          Set   97E2 DOENT041
+     1x          Set   9BD4 DOENT042
+     1x          Set   92BE DOENT05
+     3x          Set   9851 DOENT051
+     1x          Set   9368 DOENT06
+     1x          Set   98A3 DOENT061
+     1x          Set   93E8 DOENT07
+     9x          Set   9959 DOENT071
+     1x          Set   9056 DOENT1
+     1x          Set   949F DOENT101
+     1x          Set   99C0 DOENT102
+     1x          Set   912A DOENT11
+     1x          Set   9516 DOENT111
+     3x          Set   9A6C DOENT112
+     3x          Set   916A DOENT12
+     1x          Set   9644 DOENT121
+     1x          Set   9ADE DOENT122
+     1x          Set   91BE DOENT13
+     1x          Set   977A DOENT131
+     1x          Set   9B75 DOENT132
+     1x          Set   9279 DOENT14
+     1x          Set   97F0 DOENT141
+     1x          Set   9BFF DOENT142
+     1x          Set   92CF DOENT15
+     1x          Set   985E DOENT151
+     1x          Set   9373 DOENT16
+     5x          Set   98D2 DOENT161
+     1x          Set   942E DOENT17
+     3x          Set   995B DOENT171
+     1x          Set   9063 DOENT2
+     1x          Set   94A5 DOENT201
+     3x          Set   99E8 DOENT202
+     1x          Set   9130 DOENT21
+     1x          Set   952D DOENT211
+     1x          Set   9A70 DOENT212
+     1x          Set   916E DOENT22
+     1x          Set   966C DOENT221
+     3x          Set   9AF4 DOENT222
+     3x          Set   91D3 DOENT23
+     1x          Set   9796 DOENT231
+     1x          Set   9B91 DOENT232
+     5x          Set   9287 DOENT24
+     1x          Set   97F6 DOENT241
+     3x          Set   92FD DOENT25
+     1x          Set   9864 DOENT251
+     3x          Set   9385 DOENT26
+     3x          Set   98DE DOENT261
+     1x          Set   9449 DOENT27
+     1x          Set   9961 DOENT271
+     3x          Set   906F DOENT3
+     1x          Set   94AC DOENT301
+     1x          Set   99ED DOENT302
+     1x          Set   9134 DOENT31
+     1x          Set   954A DOENT311
+     1x          Set   9A7C DOENT312
+    13x          Set   9183 DOENT32
+     1x          Set   967A DOENT321
+     1x          Set   9AF6 DOENT322
+     1x          Set   91DD DOENT33
+     1x          Set   979E DOENT331
+     1x          Set   9BA8 DOENT332
+     3x          Set   928C DOENT34
+     1x          Set   980D DOENT341
+     1x          Set   9304 DOENT35
+     3x          Set   9868 DOENT351
+     1x          Set   9387 DOENT36
+     1x          Set   98E9 DOENT361
+     1x          Set   945D DOENT37
+     1x          Set   9975 DOENT371
+     1x          Set   9075 DOENT4
+     1x          Set   94BD DOENT401
+     3x          Set   9A36 DOENT402
+     1x          Set   9137 DOENT41
+     1x          Set   95BB DOENT411
+     1x          Set   9A8A DOENT412
+     1x          Set   9185 DOENT42
+     1x          Set   9688 DOENT421
+     5x          Set   9B2A DOENT422
+     3x          Set   9200 DOENT43
+     1x          Set   97BA DOENT431
+     1x          Set   9BAD DOENT432
+     1x          Set   9292 DOENT44
+     3x          Set   981A DOENT441
+     3x          Set   932D DOENT45
+     1x          Set   9873 DOENT451
+     3x          Set   9394 DOENT46
+     1x          Set   98EF DOENT461
+     1x          Set   9486 DOENT47
+     1x          Set   9987 DOENT471
+     1x          Set   9090 DOENT5
+     1x          Set   94E0 DOENT501
+     1x          Set   9A38 DOENT502
+     1x          Set   9143 DOENT51
+     1x          Set   9612 DOENT511
+     1x          Set   9A9C DOENT512
+     3x          Set   9196 DOENT52
+     1x          Set   96B7 DOENT521
+     3x          Set   9B2E DOENT522
+     1x          Set   9208 DOENT53
+     1x          Set   97CD DOENT531
+     1x          Set   9BC8 DOENT532
+     1x          Set   929D DOENT54
+     1x          Set   981D DOENT541
+     1x          Set   9330 DOENT55
+     1x          Set   9879 DOENT551
+     1x          Set   9398 DOENT56
+     1x          Set   9929 DOENT561
+     3x          Set   948F DOENT57
+     1x          Set   999B DOENT571
+     5x          Set   911F DOENT6
+     1x          Set   94EB DOENT601
+    15x          Set   9A4F DOENT602
+     1x          Set   914B DOENT61
+     1x          Set   9625 DOENT611
+     1x          Set   9AB4 DOENT612
+     1x          Set   919A DOENT62
+     3x          Set   9732 DOENT621
+     1x          Set   9B32 DOENT622
+     1x          Set   9240 DOENT63
+    13x          Set   97D5 DOENT631
+     3x          Set   9BCE DOENT632
+     1x          Set   92B1 DOENT64
+     1x          Set   9823 DOENT641
+     1x          Set   9344 DOENT65
+     1x          Set   9885 DOENT651
+     1x          Set   93AF DOENT66
+     1x          Set   993B DOENT661
+     1x          Set   9493 DOENT67
+     3x          Set   99A9 DOENT671
+     1x          Set   9123 DOENT7
+     1x          Set   94F6 DOENT701
+     3x          Set   9A5B DOENT702
+     3x          Set   9153 DOENT71
+     3x          Set   962C DOENT711
+     1x          Set   9AC6 DOENT712
+     1x          Set   91A2 DOENT72
+     1x          Set   973A DOENT721
+     1x          Set   9B38 DOENT722
+     8x          Set   925D DOENT73
+     1x          Set   97D5 DOENT731
+     1x          Set   9BCE DOENT732
+     3x          Set   92BB DOENT74
+     1x          Set   9843 DOENT741
+     3x          Set   9366 DOENT75
+     1x          Set   9893 DOENT751
+     1x          Set   93CD DOENT76
+     1x          Set   9947 DOENT761
+     1x          Set   9499 DOENT77
+     1x          Set   99AC DOENT771
+     1x          Label 9994 doExec
+  3260x          Macro 000E DOGEN
+     2x          Label 9B24 doHelp
+     2x          Label 9B50 doHelpArity
+     1x          Label 9B57 doHelpAttr
+    96x          Macro 0019 DOIF
+     0x          Macro 0015 DOLBR
+     3x          Set   94A7 DOLVE001
+     1x          Set   99BD DOLVE002
+     3x          Set   9132 DOLVE01
+     1x          Set   9516 DOLVE011
+     1x          Set   9A68 DOLVE012
+     1x          Set   915D DOLVE02
+     1x          Set   9638 DOLVE021
+     1x          Set   9ADA DOLVE022
+     3x          Set   91D3 DOLVE03
+     1x          Set   977A DOLVE031
+     1x          Set   9B56 DOLVE032
+     6x          Set   929A DOLVE04
+     1x          Set   97E5 DOLVE041
+     1x          Set   9BD6 DOLVE042
+     1x          Set   92CF DOLVE05
+     3x          Set   9868 DOLVE051
+     1x          Set   9373 DOLVE06
+     1x          Set   98AE DOLVE061
+     1x          Set   93ED DOLVE07
+     9x          Set   9993 DOLVE071
+     1x          Set   905B DOLVE1
+     1x          Set   94A5 DOLVE101
+     1x          Set   99C8 DOLVE102
+     1x          Set   9130 DOLVE11
+     1x          Set   951F DOLVE111
+     3x          Set   9A7A DOLVE112
+     3x          Set   9174 DOLVE12
+     1x          Set   9649 DOLVE121
+     1x          Set   9AE1 DOLVE122
+     1x          Set   91D1 DOLVE13
+     1x          Set   978C DOLVE131
+     1x          Set   9B90 DOLVE132
+     1x          Set   9287 DOLVE14
+     1x          Set   97F6 DOLVE141
+     1x          Set   9C04 DOLVE142
+     1x          Set   92D5 DOLVE15
+     1x          Set   9864 DOLVE151
+     1x          Set   9383 DOLVE16
+     5x          Set   98F9 DOLVE161
+     1x          Set   9433 DOLVE17
+     3x          Set   9975 DOLVE171
+     1x          Set   906A DOLVE2
+     1x          Set   94A7 DOLVE201
+     3x          Set   99F9 DOLVE202
+     1x          Set   9132 DOLVE21
+     1x          Set   9543 DOLVE211
+     1x          Set   9A76 DOLVE212
+     1x          Set   9174 DOLVE22
+     1x          Set   9671 DOLVE221
+     3x          Set   9B17 DOLVE222
+     3x          Set   91EB DOLVE23
+     1x          Set   979E DOLVE231
+     1x          Set   9BA7 DOLVE232
+     5x          Set   9296 DOLVE24
+     1x          Set   97FB DOLVE241
+     3x          Set   9324 DOLVE25
+     1x          Set   9866 DOLVE251
+     3x          Set   938F DOLVE26
+     3x          Set   98F4 DOLVE261
+     1x          Set   944E DOLVE27
+     1x          Set   996B DOLVE271
+     3x          Set   9081 DOLVE3
+     1x          Set   94B2 DOLVE301
+     1x          Set   99F4 DOLVE302
+     1x          Set   9135 DOLVE31
+     1x          Set   9554 DOLVE311
+     1x          Set   9A88 DOLVE312
+    13x          Set   91EB DOLVE32
+     1x          Set   9686 DOLVE321
+     1x          Set   9B17 DOLVE322
+     1x          Set   91E9 DOLVE33
+     1x          Set   97B6 DOLVE331
+     1x          Set   9BAC DOLVE332
+     3x          Set   9296 DOLVE34
+     1x          Set   9817 DOLVE341
+     1x          Set   9311 DOLVE35
+     3x          Set   987D DOLVE351
+     1x          Set   938D DOLVE36
+     1x          Set   98EF DOLVE361
+     1x          Set   947A DOLVE37
+     1x          Set   9985 DOLVE371
+     1x          Set   907D DOLVE4
+     1x          Set   94DB DOLVE401
+     3x          Set   9A45 DOLVE402
+     1x          Set   913D DOLVE41
+     1x          Set   95C0 DOLVE411
+     1x          Set   9A92 DOLVE412
+     1x          Set   918A DOLVE42
+     1x          Set   968D DOLVE421
+     5x          Set   9B4A DOLVE422
+     3x          Set   921A DOLVE43
+     1x          Set   97BF DOLVE431
+     1x          Set   9BC3 DOLVE432
+     1x          Set   9296 DOLVE44
+     3x          Set   9831 DOLVE441
+     3x          Set   9336 DOLVE45
+     1x          Set   9879 DOLVE451
+     3x          Set   93AB DOLVE46
+     1x          Set   98F2 DOLVE461
+     1x          Set   948B DOLVE47
+     1x          Set   998D DOLVE471
+     1x          Set   909B DOLVE5
+     1x          Set   94EB DOLVE501
+     1x          Set   9A45 DOLVE502
+     1x          Set   9146 DOLVE51
+     1x          Set   961F DOLVE511
+     1x          Set   9AA4 DOLVE512
+     3x          Set   91AC DOLVE52
+     1x          Set   96BE DOLVE521
+     3x          Set   9B42 DOLVE522
+     1x          Set   921A DOLVE53
+     1x          Set   97D5 DOLVE531
+     1x          Set   9BCE DOLVE532
+     1x          Set   92B1 DOLVE54
+     1x          Set   9823 DOLVE541
+     1x          Set   9334 DOLVE55
+     1x          Set   987B DOLVE551
+     1x          Set   939C DOLVE56
+     1x          Set   992C DOLVE561
+     3x          Set   949D DOLVE57
+     1x          Set   99A9 DOLVE571
+     5x          Set   9134 DOLVE6
+     1x          Set   94F1 DOLVE601
+    15x          Set   9AAA DOLVE602
+     1x          Set   9153 DOLVE61
+     1x          Set   962C DOLVE611
+     1x          Set   9AC2 DOLVE612
+     1x          Set   91A2 DOLVE62
+     3x          Set   9770 DOLVE621
+     1x          Set   9B38 DOLVE622
+     1x          Set   925D DOLVE63
+    13x          Set   9831 DOLVE631
+     3x          Set   9BD6 DOLVE632
+     1x          Set   92B7 DOLVE64
+     1x          Set   9825 DOLVE641
+     1x          Set   934C DOLVE65
+     1x          Set   988F DOLVE651
+     1x          Set   93B4 DOLVE66
+     1x          Set   9946 DOLVE661
+     1x          Set   9499 DOLVE67
+     3x          Set   99B5 DOLVE671
+     1x          Set   912A DOLVE7
+     1x          Set   94FB DOLVE701
+     3x          Set   9A6A DOLVE702
+     3x          Set   915F DOLVE71
+     3x          Set   963C DOLVE711
+     1x          Set   9ACC DOLVE712
+     1x          Set   91AA DOLVE72
+     1x          Set   9760 DOLVE721
+     1x          Set   9B3D DOLVE722
+     8x          Set   92B7 DOLVE73
+     1x          Set   97DB DOLVE731
+     1x          Set   9BD4 DOLVE732
+     3x          Set   92D5 DOLVE74
+     1x          Set   9850 DOLVE741
+     3x          Set   9385 DOLVE75
+     1x          Set   989D DOLVE751
+     1x          Set   93D2 DOLVE76
+     1x          Set   994D DOLVE761
+     1x          Set   949B DOLVE77
+     1x          Set   99B3 DOLVE771
+   132x          Macro 0013 DONE
+     2x          Label 9B1F doNop
+   132x          Macro 000D DOPOP
+   132x          Macro 000C DOPUSH
+     1x          Label 9B19 doQuit
+   264x          Macro 0011 DOSET
+   598x          Macro 000F DOSET1
+   322x          Macro 0010 DOSET2
+     1x          Macro 000B DOSTCK
+     1x          Label 99D7 doTiming
+     1x          Label 9B20 doZ
+   156x          Macro 0017 DO_br
+  2340x          Macro 0016 DO_br_
+   173x          Set   0024 DO_cc
+  3103x          Set   00A1 DO_cpt
+   157x          Set   0025 DO_cs
+   157x          Set   0027 DO_eq
+   157x          Set   002C DO_ge
+   157x          Set   002E DO_gt
+   173x          Set   0022 DO_hi
+    33x          Set   0024 DO_hs
+  2496x          Set   0000 DO_lbr
+   157x          Set   002F DO_le
+     1x          Set   0025 DO_lo
+   173x          Set   0023 DO_ls
+   157x          Set   002D DO_lt
+   157x          Set   002B DO_mi
+   333x          Set   0026 DO_ne
+     9x          Macro 0014 DO_neg
+   221x          Set   002A DO_pl
+   781x          Set   0020 DO_ra
+   157x          Set   0021 DO_rn
+   173x          Set   0028 DO_vc
+   157x          Set   0029 DO_vs
+     0x          Set   0025 DO__cc
+   160x          Set   0024 DO__cs
+   416x          Set   0026 DO__eq
+     0x          Set   002D DO__ge
+     0x          Set   002F DO__gt
+    32x          Set   0023 DO__hi
+    48x          Set   0025 DO__hs
+     0x          Set   002E DO__le
+    32x          Set   0024 DO__lo
+    64x          Set   0022 DO__ls
+     0x          Set   002C DO__lt
+   320x          Set   002A DO__mi
+   352x          Set   0027 DO__ne
+    80x          Set   002B DO__pl
+     0x          Set   0021 DO__ra
+     0x          Set   0020 DO__rn
+     0x          Set   0029 DO__vc
+    32x          Set   0028 DO__vs
+   152x          Set   9C04 EXIT
+     1x          Set   9BD6 EXIT2
+     1x          Set   9B4A EXIT3
+     1x          Label 9040 fclr
+     0x          Label 9046 fdbl
+     0x          Label 9002 fdrp
+     0x          Label 9035 fdup
+     0x          Label 903C fhlf
+     1x          Label 9955 findCmd
+     0x          Label 9007 fldb
+     0x          Label 9008 fldd
+     0x          Label 900F fldx
+     1x          Label 9D94 flopsResStr
+     0x          Label 905E fneg
+     2x          Label 903B fnop
+     0x          Label 906D fnrm
+     0x          Label 9005 fone
+     2x          Label 904B fovf
+     1x          Label 90BA fp2drop
+     4x          Label 90D9 fp2dup
+     2x          Label 9366 fp2tod
+     1x          Label 9175 fpabs
+    11x          Label 9183 fpadd
+     1x          Label 9663 fpatan
+     1x          Label 968E fpatantab
+     1x          Label 934D fpceil
+     2x          Label 91EC fpclr
+     1x          Label 9147 fpcmp
+     2x          Label 95E3 fpcos
+     6x          Label 922A fpdiv
+     3x          Label 9836 fpdot1
+     9x          Label 90BC fpdrop
+     8x          Label 90DE fpdup
+     1x          Label 9591 fpexp
+     1x          Label 95C1 fpexptab
+     3x          Label 9337 fpfloor
+     4x          Label 92F9 fpfrac
+     1x          Label 96D8 fpgammap1
+     1x          Label 9711 fpgammap1tab
+     1x          Label 90A2 fpindxb
+     5x          Label 91F0 fpinv
+     3x          Label 9480 fpinvsqrt
+     1x          Label 942B fpinv_goldschmidt
+     1x          Label 93B7 fpinv_quake
+     2x          Label 93CA fpinv_vnrd
+     1x          Label 941E fpinv_vnrd_tab
+     3x          Label 9104 fpld0
+     7x          Label 90FD fpld1
+     4x          Label 9101 fpldb
+     5x          Label 9106 fpldbnz
+     1x          Label 910E fpldd
+     4x          Label 90F0 fplddu
+     1x          Label 90F3 fplddunz
+     3x          Macro 001B fplds
+     4x          Label 90E0 fpldx
+     2x          Label 9548 fpln
+     1x          Label 956C fplntab
+     2x          Label 90B2 fplrot
+     1x          Label 92D6 fpmod
+    23x          Label 922C fpmul
+     1x          Label 9246 fpmultb
+    11x          Label 917B fpneg
+     4x          Label 90D0 fpnip
+     3x          Label 94F2 fpnorm
+    11x          Label 90DB fpover
+     3x          Label 9418 fpovermul
+     9x          Label 921B fpovf
+     2x          Label 96AB fppi
+     2x          Label 909D fppick
+     6x          Label 9526 fppoly
+     3x          Label 9589 fppow
+     3x          Label 9385 fppowd
+     2x          Label 978D fprdi
+     1x          Label 9722 fprdx
+     1x          Label 972C fprdy
+     1x          Label 92E5 fprem
+     1x          Label 96B4 fprnd
+     0x          Label 9082 fproll
+     1x          Label 9355 fpround
+     2x          Label 90A9 fprrot
+     1x          Set   96B5 FPSEED
+     5x          Label 91FD fpshl
+     5x          Label 92B8 fpshr
+     3x          Label 95F3 fpsin
+     1x          Label 964A fpsintab
+     5x          Label 9226 fpsqr
+     1x          Label 92F0 fpsqrt
+     5x          Label 91ED fpsta
+     3x          Label A1A6 fpstack
+     0x          Label 9FA6 fpstackend
+     4x          Label 9322 fpstb
+     4x          Label 911B fpstd
+     2x          Macro 001C fpsts
+     0x          Label 90E7 fpstx
+    10x          Label 9181 fpsub
+    22x          Label 90BF fpswap
+     1x          Label 95D6 fptan
+     4x          Label 9325 fptrunc
+     1x          Label 9140 fptst
+     2x          Label 90D6 fptuck
+     4x          Label 987E fpwrb
+     1x          Label 9851 fpwrnorm
+     1x          Label 9841 fpwrnxt
+     2x          Label 983F fpwrnxt2
+     1x          Label 97C0 fpwrx
+     1x          Label 97CA fpwry
+     6x          Label 91F3 fp_m10
+     0x          Label 9018 fstx
+     1x          Label 9024 fswp
+     0x          Label 9000 ftck
+     0x          Label 9021 ftst
+     1x          Label 9A49 gets
+     1x          Label 9DA6 inpbuf
+     1x          Label 9EA6 inpend
+     1x          Label 9BB7 invvid
+     1x          Equ   0002 ITAL
+     7x          Macro 0005 lsld
+     3x          Macro 0004 lsrd
+     1x          Label 98B8 main
+     6x          Macro 0002 negd
+     1x          Equ   0000 NONE
+     1x          Label 99C0 nxtToken
+     4x          Label 9EA6 outbuf
+     0x          Label 9FA6 outend
+     1x          Label 9933 prError
+     4x          Label 9ACE println
+     1x          Label 990B prPrompt
+     1x          Label 99B7 prvToken
+     8x          Label 9ADB putc
+     3x          Set   9B73 putcAttr
+     3x          Label 9DA1 putcEn
+    10x          Label 9AD6 puts
+    34x          Set   9BFF REDO
+     5x          Set   9BCE REDO2
+     0x          Set   9B2A REDO3
+     0x          Macro 0007 rold
+     2x          Macro 0006 rord
+     3x          Label 9DA0 running
+     3x          Equ   0008 RVID
+     0x          Macro 0009 SKIP1
+     5x          Macro 0008 SKIP2
+     1x          Label 9D66 stackErr
+     3x          Label 99CB stksize
+     1x          Label 9D6C syntaxErr
+     6x          Label 9DA3 timeCt
+     4x          Label 9DA2 timeEn
+     1x          Label 9BF3 timeExit
+     1x          Label 9BE2 timeInit
+     1x          Label 9BFC timeIt
+     4x          Equ   0096 TIMELP
+     1x          Label 9C07 timeOn
+     1x          Label 9D86 timeResStr
+     1x          Label 9D72 timingStr
+     1x          Label 9922 tryFlt
+     0x          Equ   0004 UNDL
+     2x          Macro 000A VAR
+     1x          Label 9D37 welcome
+    31x          Macro 0018 WHILE
+
