@@ -333,59 +333,6 @@ DO1def  SET     DO_cpt
 DO_lbr  SET     0
         ENDM
 
-fmul
-finv
-fdiv
-
-
-fsub
-  bsr fneg
-
-fadd
-  ldb   2,u
-  subb  5,u
-  stb   ,-s
-  DOLBR
-  DOIF ne
-    DOIF gt
-      ldd ,u
-      DOIF ne
-        lsld
-        DOIF vs
-          rord
-          bra EXIT2
-        DONE
-        dec ,s
-        bne REDO+2
-      DONE
-      std ,u
-    DOELSE
-      ldd 3,u
-      DOIF ne
-        lsld
-        DOIF vs
-          rord
-          bra EXIT2
-        DONE
-        inc ,s
-        bne REDO+2
-      DONE
-      std 3,u
-    DONE
-    
-    tst ,s ; zzz
-  DONE
-  ldd   ,u
-  addd  3,u
-  DOIF cs
-    rord
-    inc 5,u
-    bvs fovf
-  DONE
-  leau  3,u
-  std   ,u
-  puls b,pc
-  
 ftck
   bsr fswp
 
