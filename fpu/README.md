@@ -39,7 +39,7 @@ construct. Inside each block there exist an `EXIT` and `REDO` label. This mean y
 ```
 DO
    JSR GETC ; reads a key
-   CMPB #10 ; look for NL
+   CMPB #10 ; look for new-line caracter
    BNE REDO
 DONE
 ```
