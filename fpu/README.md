@@ -88,8 +88,6 @@ The label is followed by a (before -- after) resprentation to show how it operat
 
 ### Transcendental operations
 
-* fpinvsqrt ( f -- 1/sqrt(abs(f)) )
-
 * fpln ( f -- ln(f) ) 
   Natural logarithm.
 
@@ -121,6 +119,8 @@ The label is followed by a (before -- after) resprentation to show how it operat
 
 * fprnd ( -- rnd ) 0 < rnd <1 period:65535
   Pushes a random value beween 0 and 1 (both excluded). 
+
+* fpinvsqrt ( f -- 1/sqrt(abs(f)) )
 
 # Structed ASM 
 In the implementation I work with a structed ASM build on block of code using macros which will generate the appropriates labels to perform various block-type. This helps writing structured ASM not poluted by bady-named labels. If you look at `fpu.ass` you'll only see global labels. The local ones usually present to implements loops and conditionnal code are all hidden inside the blocks.
