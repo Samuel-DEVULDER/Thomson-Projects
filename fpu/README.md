@@ -28,7 +28,99 @@ For speed reasons the X and D registers can be trashed.
 
 ## List of implemented operations
 
+The label is followed by a (before -- after) resprentation to show how it operates on the stack.
 
+### Arithmetic
+
+* fpabs ( f -- |f| ) 
+  Absolute value.
+
+* fpneg ( f -- -f )
+  Additive inverse.
+
+* fpsub ( f g -- f-g )
+  Subtraction.
+
+* fpadd ( f g -- f+g )
+  Addition.
+
+* fpmul ( f g -- f*g )
+  Multiplication.
+
+* fm_m10 ( f -- 10*f )
+  Quickly multiply by 10. This is useful for I/O operations.
+
+* fpshl ( f -- 2*f ) 
+  Quickly double a value.
+  
+* fpinv ( f -- 1/f )
+  Multiplicative inverse. The multiplicative inverse of 0 is +/- the biggest float available.
+
+* fpdiv ( f g -- f/g )
+  Division.
+
+* fpmod ( f g -- f % g )
+  Modulo.
+
+* fprem ( f g -- f rem g )
+  Remainder.
+
+* fpsqr ( f -- f^2 )
+  Squares a value.
+
+* fpsqrt ( f -- sqrt(f) )
+  Square root.
+
+* fpfrac ( f -- frac(f) ) 
+  Removes integer part (sign is kept).
+
+* fptrunc ( f -- trunc(f) ) 
+  Removes fractionnal part.
+
+* fpfloor ( f -- floor(f) ) 
+  Rounds to -infinity.
+
+* fpceil ( f -- ceil(f) ) 
+  Rounds to +infinity.
+
+* fpround ( f -- round(f) ) 
+  Round to nearest integer.
+
+### Transcendental operations
+
+* fpinvsqrt ( f -- 1/sqrt(abs(f)) )
+
+* fpln ( f -- ln(f) ) 
+  Natural logarithm.
+
+* fppow ( f g -- f**g )
+  Power function.
+
+* fpexp ( f -- exp(x) )
+  Exponentiation.
+
+* fptan ( f -- tan(f) )
+  Tangent operation.
+  
+* fpcos ( f -- cos(f) )
+  Cosine.
+
+* fpsine ( f -- sin(f) )
+  Sine.
+
+* fpatan ( f -- atan(f) )
+  Reciprocal of tangent.
+
+* fpgammap1 ( f -- gamma(f+1) ) 
+  Approximate factorial via Ramanujan formula
+  
+### Misc
+
+* fppi ( -- pi )
+  Pushes PI on the stack.
+
+* fprnd ( -- rnd ) 0 < rnd <1 period:65535
+  Pushes a random value beween 0 and 1 (both excluded). 
 
 # Structed ASM 
 In the implementation I work with a structed ASM build on block of code using macros which will generate the appropriates labels to perform various block-type. This helps writing structured ASM not poluted by bady-named labels. If you look at `fpu.ass` you'll only see global labels. The local ones usually present to implements loops and conditionnal code are all hidden inside the blocks.
