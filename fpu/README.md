@@ -28,6 +28,8 @@ For speed reasons the X and D registers can be trashed.
 
 ## List of implemented operations
 
+
+
 # Structed ASM 
 In the implementation I work with a structed ASM build on block of code using macros which will generate the appropriates labels to perform various block-type. This helps writing structured ASM not poluted by bady-named labels. If you look at `fpu.ass` you'll only see global labels. The local ones usually present to implements loops and conditionnal code are all hidden inside the blocks.
 
@@ -96,7 +98,7 @@ DOIF ne
   JSR PUTC ; beep
 DONE
 ```
-Notice here that the condition is inverted. We perform the beep only if B is not-equal to 10.
+Notice here that the condition is inverted. We perform the beep only if B is not equal to 10.
 
 Of course sometimes we want to perform something **else** when a condition is not met. This is done using the DOELSE block
 ```
@@ -107,6 +109,7 @@ DOELSE
 DONE
 ```
 which is a short-cut for
+```
 DO
    DO
      B<not-cc> EXIT
