@@ -1,1 +1,1 @@
-In this project I play around a software implementation of a FPU for the 6809.
+In this project I play around a "new" floating-point representation that is relatively compact and fast for the mc6809.
