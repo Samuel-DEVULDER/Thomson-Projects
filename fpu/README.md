@@ -94,7 +94,7 @@ DONE
 ```
 Notice here that the condition is inverted. We perform the beep only if B is not-equal to 10.
 
-Of course sometimes we want to perform something different when a condition is met or not. This is the typical IF/ELSE/ENDIF construct. This is performed using the
+Of course sometimes we want to perform something **else** when a condition is not met. This is done using the DOELSE block
 ```
 DOIF cc
    PERFORM 1
@@ -102,18 +102,7 @@ DOELSE
    PERFORM 2
 DONE
 ```
-This is a short-cut for
-```
-DO
-   DOIF cc
-     PERFORM 1
-     BRA EXIT2
-   DONE
-   PERFORM 2
-DONE
-```
-which is itself a short-cut for
-```
+which is a short-cut for
 DO
    DO
      B<not-cc> EXIT
@@ -123,9 +112,9 @@ DO
    PERFORM 2
 DONE
 ```
-Notice how we use the EXIT2 label to get out of two DO/DONE blocks.
+Notice how we use the EXIT2 label to get out of two nested blocks.
 
-Sometimes we can have another DOIF in the ELSE..DONE block. Instead of nesting DOIF which makes the code sometimes unreadable, a DOELIF cc. For example
+Sometimes we can have another DOIF in the ELSE..DONE block. Instead of nesting DOIF which makes the code somehow unreadable, a DOELIF cc block is provided. For example
 ```
 ASLB
 DOIF vs
@@ -150,7 +139,7 @@ lab3
    Well register B has just been doubled
 lab4
 ```
-Please note that the condition refers to the one present at the DOIF. Any CC modification in the blocks doesn't affer the various tests.
+Please note that the condition refers to the one present at the DOIF. Any CC modification in the blocks doesn't affect other IFs.
 
 ## How is is working
-The DO/DOC blocks construct uses a stack of 16 bits values. These is implemented using the capababilites of the Macro-processor. The stack is limited in depth. Current maximum depth is 10 values pushed. It seem to be sufficient for merly complex code like thiso one implementing a floating-point library.
+The DO/DONE blocks construct uses a stack of 16 bits values. These is implemented using the capababilites of the Macro-processor. The stack is limited in depth. Current maximum depth is 10 values pushed. It seem to be sufficient for merly complex code like thiso one implementing a floating-point library. A stack-overflow message will be printed during the compilation if the maximal stack depth is too small.
