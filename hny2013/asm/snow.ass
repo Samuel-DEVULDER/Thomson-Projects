@@ -1,0 +1,2779 @@
+(main)SNOW
+****************************************
+* Greeting PULS 2013:
+*
+*   Chute de neige + Musique (buzzer)
+*   en tache de fond.
+*
+* Lancer sur le label "ini"
+*
+* Samuel Devulder, Janvier 2013
+****************************************
+       org    $6200
+*      org    $9000
+
+N      set    150     ; nb de flocons
+
+TO7    equ    1       ; 1 si TO7
+DBG    equ    0       ; 1 si debug
+
+ACCMAP equ    1        ; decomp rapide?
+
+  
+ini
+*      pshs   x,y,d,u,dp
+
+       lds    #ini
+
+       setdp  $E7
+       lda    #$E7
+       tfr    a,dp
+  
+*      jsr    initram
+       jsr    initvid
+       jsr    plintro 
+       jsr    initzik
+       jsr    playsnw
+       jsr    exitzik
+
+       clr    $60FE   ; COLD RESET
+       jmp    [$FFFE]
+*      swi
+*      puls   x,y,d,u,dp,pc
+  
+       includ HAPPYNY.ASM
+  
+last   set    *
+       end    ini
+(include)HAPPYNY.ASM
+****************************************
+* Chute de neige
+*
+* Samuel Devulder, Decembre 2012
+****************************************
+  
+KTST   equ    $E809
+GETC   equ    $E806
+PUTC   equ    $E803
+
+***************************************
+* boucle:
+*      REPEAT
+*      ....
+*      WHILE  condition
+***************************************
+REPEAT macro
+loop   set    *
+       endm
+WHILE  macro
+       b\0    loop
+       endm
+
+***************************************
+* variable dans code auto-modifiable
+*
+*      VAR    label,size,opcode
+***************************************
+VAR    macro
+       \2     #0
+\0     set    *-\1
+       endm
+
+***************************************
+* jeu neige
+***************************************
+playsnw set   *
+       REPEAT
+       jsr    dpyimg
+       jsr    etoiles
+       jsr    prepsnw
+       jsr    newflks
+       bsr    movflks  ; anim
+       bcc    playsnw
+       bsr    getc
+       cmpb   #3  ; ctrl-c=>sortie
+       WHILE  ne
+       rts
+  
+***************************************
+* Lecture touche clavier. Etrangement
+* sur TO7 (MESS) il faut empecher les 
+* interruptions parce que durant
+* l'interruption on perturbe l'algo
+* de décodage clavier ce qui trash
+* la pile. La suppression des inter.
+* provoque un leger glitch son, aussi
+* on desactive les interruptions pour
+* les TO7 et TO770.
+***************************************
+getc   pshs   cc
+       ldb    $FFF0
+       decb
+       bge    *+4
+       orcc   #$50
+       jsr    GETC
+       puls   cc,pc
+  
+***************************************
+* bouge tous les flocons
+* sortie: D,X,Y,U trash
+*         Z=1 si plus de flocons
+*         C=1 si touche appuyée
+***************************************
+movflks set   *
+
+movf0  ldu    #tabflk
+       REPEAT
+       pulu   a,b,y   ; recup data
+  
+OFFS   set    tabsol-$4000
+       bita   OFFS,y  ; si t deja au 
+       bne    newpx   ; sol=>nouv pt
+  
+       pshs   a,y     ; sauv
+  
+       incb           ; incr. temps
+       andb   #127    ; b=0..127
+       ldx    #tabsin  
+       tst    b,x
+*      ldb    #-1
+       bsr    movpnt  ; depl. px
+  
+       leax   40,y    ; avance ligne
+       leay   OFFS,x
+  
+       bita   ,y      ; collision?
+       beq    movf1   ; non=>updt px
+* collision: test a gauche
+       bsr    movlft
+       bita   ,y
+       beq    movf1   ; rien=>updt px
+* collision: test a droite
+       bsr    movrgt
+       bsr    movrgt
+       bita   ,y  
+       beq    movf1   ; rien=>updt px
+* collision: bloque
+       ldb    ,s
+       puls   a,x
+       ora    OFFS,x  ; ajoute px sol
+       sta    OFFS,x
+       orb    ,x
+       stb    ,x
+* sol blanc
+       dec    $E7C3
+       lda    #15*8
+       ora    ,x
+       sta    ,x
+       inc    $E7C3
+* nouveau point
+newpx  set    *
+       VAR    cycflk,2,ldd
+       subd   #1
+       std    cycflk
+       beq    movf3
+  
+       jsr    KTST
+       bcs    movf3
+  
+       ldx    #$4001
+       bsr    newflk
+       ora    ,x      ; affichage pix
+       sta    ,x
+  
+       bra    movf2
+* mise a jour pix
+movf1  std    -4,u    ; pshs+lea=14
+       stx    -2,u    ; std+stx=12
+  
+       puls   b,y     ; eff. pix prec
+       comb
+       andb   ,y
+       stb    ,y
+  
+       ora    ,x      ; Z=0
+       sta    ,x      ; affichage pix
+
+movf2  cmpu   #tabflk+4*N
+       WHILE  ne
+       bsr    snwman
+       bra    movf0
+movf3  rts  
+***************************************
+* Suivant les valeurs de Z,N decale
+* A et Y,X
+***************************************
+movpnt beq    movxit
+       bgt    movrgt
+movlft lsla           ; depl. gauche
+       bcc    movxit
+       rola
+       leay   -1,y
+       leax   -1,x
+movxit rts            ; pas depl.
+movrgt lsra           ; depl. droit
+       bcc    movxit
+       rora
+       leay   1,y
+       leax   1,x
+       rts
+***************************************
+* Genere un nombre pseudo aleatoire sur
+* 8 bit. C'est une version modifiee
+* du multiply with carry. La periode
+* de la sequence est 31870. Compact
+* et rapide, que demander de plus?
+***************************************
+rnd    ldd    #3*256+249
+       mul
+rnd1   addd   #0
+       sta    rnd1+2  ;,pcr
+       stb    rnd+1   ;,pcr
+       rts
+***************************************
+* Initialise tous les flocons
+***************************************
+newflks pshs  x,u,d
+
+       ldu    #tabflk+4*N
+       REPEAT  
+       bsr    rnd
+       lda    #198
+       mul            ; a=0..197
+       ldb    #40
+       mul
+       addd   #$4001
+       tfr    d,x     ; x=debut lin
+       bsr    newflk
+  
+       bita   OFFS,x   ; deja occupe?
+       WHILE  ne       ; oui: nouveau
+
+       ora    ,x       ; affich. ecran
+       sta    ,x
+  
+       leau   -4,u
+       cmpu   #tabflk
+       WHILE  ne
+
+       puls   x,u,d,pc
+****************************************
+* Nouveau flocon.
+*
+* U = pointeur flocon+4
+* X = pointeur ligne ram ecran+1
+* A = masque
+* B = trash
+****************************************
+newflk bsr    rnd
+       stb    -3,u    ; temps
+  
+       bsr    rnd
+       lda    #38
+       mul            ; a=0..37
+       leax   a,x     ; x=off. lin
+       stx    -2,u
+  
+       bsr    rnd
+       andb   #7  
+  
+       clra           ; calcul a=1<<b
+       comb
+       REPEAT
+       rola
+       incb
+       WHILE  ne
+       sta    -4,u
+       rts
+***************************************
+* Deplace les yeux du bonhomme de
+* neige
+***************************************
+snwman ldx    #yeux+1
+       dec    -1,x
+       bne    snwman2
+       bsr    rnd
+       lsrb
+       stb    -1,x
+*      bsr    rnd
+       andb   #12
+       abx
+       ldd    ,x
+yoff   set    $4000+165*40+17
+       sta    yoff
+       stb    yoff+40
+       lda    2,x
+       sta    yoff+80
+snwman2 rts
+****************************************
+* - copie ecran 
+* - place des protections aux bords
+* - initialise le nb de flocons totaux.
+****************************************
+prepsnw pshs  x,y,d
+       ldu    #tabsol+8000
+       ldx    #$4000+8000
+       REPEAT
+       ldy    ,--x
+       ldd    ,--x
+       pshu   d,y
+       cmpx   #$4000
+       WHILE  ne
+* ajout protection gauche
+       ldb    #200
+       REPEAT
+       lda    ,u
+       ora    #128
+       sta    ,u
+       leau   40,u
+       decb
+       WHILE  ne
+* protection sol
+       leau   -40,u
+       ldb    #40
+       lda    #255
+       REPEAT
+       sta    ,u+
+       decb
+       WHILE  ne
+* protection droite
+       leau   -1,u
+       ldb    #200
+       REPEAT
+       lda    ,u
+       ora    #1
+       sta    ,u
+       leau   -40,u
+       decb
+       WHILE  ne
+
+* nombre de flocons: random
+       jsr    rnd
+       lda    #40
+       mul
+       addd   #5760   ; 5760...16000
+       std    cycflk
+
+       puls   x,y,d,pc
+****************************************
+* delta-sinusoide
+****************************************
+tabsin fcb    0,0,1,0,1,0,0,1
+       fcb    0,0,1,0,0,1,0,0
+       fcb    1,0,0,0,1,0,0,0
+       fcb    0,1,0,0,0,0,0,0
+       fcb    0,0,0,0,0,0,0,0
+       fcb    -1,0,0,0,0,-1,0,0
+       fcb    0,-1,0,0,-1,0,0,-1
+       fcb    0,0,-1,0,0,-1,0,-1
+       fcb    0,0,-1,0,-1,0,0,-1
+       fcb    0,0,-1,0,0,-1,0,0
+       fcb    -1,0,0,0,-1,0,0,0
+       fcb    0,-1,0,0,0,0,0,0
+       fcb    0,0,0,0,0,0,0,0
+       fcb    1,0,0,0,0,1,0,0
+       fcb    0,1,0,0,1,0,0,1
+       fcb    0,0,1,0,0,1,0,1
+****************************************
+* etoiles
+****************************************
+etoiles ldb   #16     ; nouv. etoiles
+       REPEAT
+       bsr    etoile
+       decb
+       WHILE  ne
+       rts
+etoile pshs   d
+      jsr     rnd
+      lda     #160
+      mul
+      ldb     #37
+      mul
+      addd    #$4001+120
+      tfr     d,x
+      jsr     rnd
+      lda     #40
+      mul
+      leax    a,x     ; coord etoile
+      ldb     -120,x
+*     orb     -80,x
+      orb     -40,x
+      orb     ,x
+      orb     40,x
+*     orb     80,x
+      orb     120,x  
+      bne     etoile1 ; déja occupe?
+      dec     $E7C3  ; couleur
+      jsr     rnd
+      lslb
+      lslb
+      lslb
+      orb     #128
+      stb     -120,x
+*     stb     -80,x
+      stb     -40,x
+      stb     ,x
+      stb     40,x
+*     stb     80,x
+      stb     120,x
+      inc     $E7C3
+      ldb     #%10101010
+      stb     ,x
+      ldb     #%00010000
+      stb     -40,x
+      stb     -120,x
+      stb     40,x
+      stb     120,x
+*     ldb     #%01000100
+*     stb     -80,x
+*     stb     80,x
+etoile1 puls d,pc
+****************************************
+* Musiques
+****************************************
+initzik bsr   InitSnd
+       ldd    #Tones
+       jmp    PlaySnd
+exitzik bra   ExitSnd
+
+       includ PLAYZIK.ASM
+       includ IMAGE.ASM
+       includ INTRO.ASM
+  
+Tones  set  *
+       includ TONES.ASM
+       fcb    cGoto   ; boucle infinie
+       fdb    Tones
+***************************************
+* Efface la RAM
+***************************************
+* inutile
+*initram ldx  #$6100
+*      REPEAT
+*      clr    ,x+
+*      cmpx   #ini
+*      WHILE  ne
+*      ldx    #bss
+*      REPEAT
+*      clr    ,x+
+*      cmpx   #$DFFF
+*      WHILE  ne
+*      rts
+bss    set    *
+****************************************
+* flocons
+****************************************
+tabflk rmb    4*N
+****************************************
+* Ecran "sol"
+****************************************
+tabsol rmb    40*200
+last   set    *
+       end    ini
+(include)INTRO.ASM
+***************************************
+* Intro: apparition progressive 
+* d'images N&B.
+***************************************
+plintro pshs  d,x,y,u,dp,cc
+       orcc   #$50
+* tour, fond: noir. forme : blanc
+       dec    $E7C3
+       ldb    #7*8+64+128
+       jsr    fillscr
+       inc    $E7C3    
+* 1ere image
+       ldx    #xintro1
+       ldu    #tabsol  
+       ldb    #4      ; pause
+       jsr    decomp
+       bsr    display
+* 2eme image
+       ldx    #xintro2
+       jsr    decomp
+       bsr    display
+* 3eme image
+       ldx    #xintro3
+       jsr    decomp
+       bsr    display
+* ecran noir sur noir
+       dec    $E7C3
+       ldb    #0*8+64+128
+       jsr    fillscr
+       inc    $E7C3  
+       puls   d,x,y,u,dp,cc,pc
+***************************************
+* fait une pause proportionelle a B
+***************************************  
+pause  pshs   x,b
+       ldx    #0
+paus1  leax   -1,x
+       bne    paus1
+       decb
+       bne    paus1
+       puls   x,b,pc
+***************************************
+* fait apparaitre progressivement 
+* l'image pointée par U dans la ram
+* video  
+***************************************
+display lda   #63
+       REPEAT
+       bsr    dith
+       bsr    disp
+       deca
+       WHILE  ge
+       bsr    pause
+       lda    #63
+       REPEAT
+       bsr    dith
+       bsr    disp
+       deca
+       WHILE  ge
+       rts
+  
+disp   pshs   d,x,y,u
+       ldb    #7
+       subb   dith3a+1
+       ldx    #mask
+       abx
+       lda    #40
+       mul
+       leau   d,u
+       adda   #$40
+       tfr    d,y
+       lda    ,x
+       sta    disp5+3
+       sta    disp5+5
+       leax   40,y
+       stx    disp6+1
+       leax   ,y
+disp5  pulu   d
+       anda   #0
+       andb   #0
+       std    ,x++
+disp6  cmpx   #0
+       bne    disp5
+       leau   40*7,u
+       leax   40*8,x
+       stx    disp6+1
+       leax   -40,x
+       cmpx   #$5F40
+       bls    disp5
+       puls   d,x,y,u,pc
+
+mask   fcb    0,0,0,0,0,0,0,0
+
+dith   pshs   d,x,u
+       ldx    #dith3a+1
+       ldu    #mask
+       clrb
+       lsla
+       anda   #$AA
+       eora   ,s
+       lsra
+       rolb  
+       clr    ,x
+       lsra
+       rol    ,x
+       lsra
+       rolb
+       lsra
+       rol    ,x
+       lsra
+       rolb
+       lsra
+       rol    ,x
+       clr    4,x
+       coma
+dith2  rol    4,x
+       decb
+       bge    dith2
+       ldb    #7
+dith3  lda    ,u
+dith3a cmpb   #00
+       bne    dith4
+       eora   #1
+dith4  sta    ,u+
+       decb
+       bge    dith3
+       puls   d,x,u,pc
+
+***************************************  
+* image d'intro
+***************************************  
+xintro1 
+       incbin xintro1.mpa
+xintro2
+       incbin xintro2.mpa
+xintro3
+       incbin xintro3.mpa
+(include)IMAGE.ASM
+***************************************
+* Initialisation ecran. Tour en noir,
+* ecran noir sur noir, passage en mode
+* forme a la sortie.
+***************************************
+initvid bsr   w8vbl
+       ldu    #scrdat
+       REPEAT
+       ldb    ,u+
+       jsr    PUTC
+       WHILE  ne
+       ldb    $E7C3
+       andb   #254
+       stb    $E7C3
+       ldu    #$5F40
+       ldb    #0*8+64+128
+       bsr    fillscr
+       inc    $E7C3
+       clrb
+       bra    fillscr
+scrdat fcb    $14,$1B,$60,0
+***************************************
+* Attente du retour VBL
+***************************************
+w8vbl  set    *       ; $FCD6 sur TO8
+       REPEAT
+       tst    $E7E7
+       WHILE  pl
+       REPEAT
+       tst    $E7E7
+       WHILE  mi
+       rts
+***************************************
+* affichage image chalet
+***************************************
+dpyimg ldx    #img_forme
+       ldu    #$4000
+       bsr    decomp
+       dec    $E7C3
+       ldx    #img_fond
+       bsr    decomp
+       inc    $E7C3
+       rts
+***************************************
+* Copie 8000 octets de U à X
+* Paradoxalement, de la facon dont elle
+* utilise S, cette routine peut etre
+* interrompue jusqu'a quelques octets
+* avant d'atteindre la ROM. Ceci est
+* important pour ne pas avoir de glitch
+* sonore.
+***************************************
+fast8k pshs   d,x,y,u,dp,cc
+       sts    fastsp
+       leas   8000,x
+       leau   8000-7,u
+       leax   13,x
+       stx    fastcp1
+       REPEAT
+       pulu   d,x,y,dp
+       leau   -2*7,u
+       pshs   d,x,y,dp
+       VAR    fastcp1,2,cmps
+       WHILE  ne
+       orcc   #$50    ; 13 restants
+       pulu   d,x,y,dp 
+       pshs   d,x,y,dp
+       leau   -7-6,u
+       pulu   d,x,y
+       pshs   d,x,y
+       VAR    fastsp,2,lds
+       puls   d,x,y,u,dp,cc,pc
+***************************************
+* Remplissage de l'ecran avec la valeur
+* contendue dans le registre B.
+*
+* On bloque les interruptions un
+* minimum de temps pour assurer
+* un son continu.
+***************************************
+fillscr pshs  d,x,y,u,dp,cc
+       sts    fillSP
+       tfr    b,dp
+       tfr    b,a
+       tfr    d,x
+       leay   ,x
+       leau   ,x
+       lds    #$5F40
+       lda    #199
+       REPEAT
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       deca
+       WHILE  ne
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       orcc   #$50
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       VAR    fillSP,2,lds
+       puls  d,x,y,u,dp,cc,pc
+***************************************
+* Decompresse le fichier MAP pointe
+* par X dans l'ecran virtuel pointe
+* par U (8Ko).
+***************************************
+decomp pshs   d,x,y,u
+       ldd    ,x++
+       incb
+       pshs   d
+       ldb    ,x+
+       incb
+       lda    #8
+       mul
+       tfr    d,y
+       lda    1,s
+       pshs   a,y,u
+decm3  ldb    ,x+
+       bne    decm7
+       ldb    ,x+
+decm4  set    *
+       if     ACCMAP
+       cmpb   #6
+       bls    decm41
+       cmpy   #6
+       bls    decm41
+       leay   -6,y    ; deroule
+       subb   #6      ; l'algo
+       lda    ,x      ; pour
+       sta    ,u      ; traiter 7
+       lda    1,x     ; lignes
+       sta    40,u    ; d'un coup
+       lda    2,x
+       sta    80,u
+       lda    3,x
+       leau   120,u
+       sta    ,u
+       lda    4,x
+       sta    40,u
+       lda    5,x
+       sta    80,u
+       leax   6,x
+       leau   120,u
+decm41 set    *
+       endc
+       lda    ,x+
+       sta    ,u
+       leau   40,u
+       leay   -1,y
+       beq    decm6
+decm5  decb
+       bne    decm4
+       bra    decm3
+decm6  puls   a,y,u
+       leau   1,u
+       deca
+       pshs   a,y,u
+       bne    decm5
+       bra    decm10
+decm7  lda    ,x
+       if     ACCMAP
+       cmpb   #6  
+       bls    decm71
+       cmpy   #6
+       bls    decm71
+       subb   #6
+       leay   -6,y  
+       sta    ,u      ; deroule l'algo
+       sta    40,u    ; pour avoir
+       sta    80,u    ; 7 lignes d'un
+       leau   120,u   ; coup
+       sta    ,u
+       sta    40,u
+       sta    80,u
+       leau   120,u
+decm71 set    *
+       endc
+       sta    ,u
+       leau   40,u
+       leay   -1,y
+       beq    decm9
+decm8  decb
+       bne    decm7
+       leax   1,x
+       jmp    decm3
+decm9  puls   a,y,u
+       leau   1,u
+       deca
+       pshs   a,y,u
+       bne    decm8
+       leax   1,x
+decm10 puls   a,y,u
+       leas   2,s
+       puls   d,x,y,u,pc
+***************************************
+* images
+***************************************
+yeux   fcb    127     ; compteur
+       fcb    %10011111
+       fcb    %10011001
+       fcb    %11111001
+       fcb    %00001111
+  
+       fcb    %10011111
+       fcb    %10011111
+       fcb    %11111001
+       fcb    %00001111
+  
+       fcb    %11111111
+       fcb    %10011111
+       fcb    %11111001
+       fcb    %00001111
+  
+       fcb    %11111111
+       fcb    %10011001
+       fcb    %11111001
+       fcb    %00001111
+  
+img_fond
+       incbin xHappyNY.mpb
+img_forme
+       incbin xHappyNY.mpa
+(include)PLAYZIK.ASM
+***************************************
+* MusicPlayer Asynchone.
+*
+* Samuel Devulder, Juillet 2012
+****************************************
+
+STATUS equ    $6019
+TIMEPT equ    $6027
+
+* 6848
+CRC    equ    $E7C1  ; ctrl port C
+DDRC   equ    $E7C2  ; sens port C
+PRC    equ    $E7C3  ; data port C
+
+TCR    equ    $E7C5  ; reg cont timer
+TMSB   equ    $E7C6  ; compteur timer
+
+* 6821 musique et jeux
+PRA    equ    $E7CC  ; data port A
+PRB    equ    $E7CD  ; data port B
+CRA    equ    $E7CE  ; ctrl port A
+CRB    equ    $E7CF  ; ctrl port B
+    
+* code:
+* 0xxx xxxx Note
+* 100x xxxx Duree
+* 110x xxxx ForI
+* 111x xxxx ForJ
+* 1011 xxxx staccato
+* 1010 0000 BMP
+* 1010 0001 End
+* 1010 0010 Goto
+* 1010 1xxx ForK
+
+cGoto  equ    %10100010
+cEnd   equ    %10100001
+cBPM   equ    %10100000
+cForI  equ    %11000000
+cNxtI  equ    cForI
+cForJ  equ    %11100000
+cNxtJ  equ    cForJ
+cForK  equ    %10101000
+cNxtK  equ    cForK
+STAC_  equ    %10110000
+STAC   equ    STAC_+8
+  
+***************************************
+* Initialise la gestion du son
+***************************************
+InitSnd pshs  d,cc
+       orcc   #$50
+  
+       lda    STATUS
+       sta    StatusFlg
+       anda   #255-32
+       sta    STATUS
+
+       bsr    InitTmr
+  
+       ldd    TIMEPT
+       std    TimerPtr
+       ldd    #SndIntr
+       std    TIMEPT
+  
+       ldd    #$1c*256+120 ; 120BPM
+       ldx    #$9c38
+       jsr    Div24
+       std    TckTime
+       std    TckTRef
+       clr    SndMsk  ; Mute
+  
+       sta    $6073   ; buzz clavier: off
+  
+* Pour le TO8: force le port B en sortie
+       ldb    $FFF0
+       cmpb   #3
+       bne    InitSn0
+       clr    CRB
+       ldd    #$043F
+       stb    PRB
+       sta    CRB
+       lsrb
+       stb    PRB     ; volume 1/2
+InitSn0 set   *
+
+       puls   d,cc,pc
+  
+***************************************
+* Initialise le timer avec les valeurs
+* par defaut.
+***************************************
+InitTmr ldd   #12499  
+        std   <TMSB
+        lda   #$42
+        sta   <TCR
+        rts
+	
+***************************************
+* Termine la gestion du son
+***************************************
+ExitSnd pshs  d,cc
+        orcc  #$50  ; pas d'interr
+  
+* TO8: port B en entree
+        ldb   $FFF0
+        cmpb  #3
+        bne   ExitSn0
+        clr   PRB
+        clr   CRB
+ExitSn0 set   *
+  
+        bsr   InitTmr
+  
+        VAR   TimerPtr,2,ldd
+        std   TIMEPT  ; resto interr
+  
+        lda   STATUS  ; resto status
+        anda  #255-32
+        sta   ,-s
+        VAR   StatusFlg,1,lda
+        anda  #32
+        ora   ,s+
+        sta   STATUS
+  
+IntrOn  ldb   ,s      ; force int.
+        andb  #255-$50
+        stb   ,s
+  
+        puls  cc,d,pc
+  
+***************************************
+* Teste si on est en train de jouer un 
+* morceau.
+***************************************
+TstPlay pshs  a
+       lda    STATUS
+       bita   #32
+       puls   a,pc
+  
+***************************************
+* Joue le morceau pointé par D (ecras.)
+***************************************
+PlaySnd pshs  d,cc
+       orcc   #$50
+       std    SongPtr
+       clra
+       clrb
+       sta    SndMsk
+       std    TckTime
+       std    TckTRef
+       inca
+       sta    NoteTck
+       sta    MuteTck
+       nega
+       decb           ; D=-1
+       std    PerIntr
+       lda    #32
+       ora    STATUS
+       sta    STATUS
+  
+       lda    #8
+       sta    SndMsk
+  
+       bra   IntrOn
+  
+***************************************
+* Debug: change la couleur du tour
+***************************************
+       if     DBG
+dbg    sta    ,-s
+       ifeq   TO7     ; to8
+       lda    #7
+       eora   $E7DD
+       sta    $E7DD  
+       else           ; to7
+       lda    #7*16
+       eora   $E7C3
+       sta    $E7C3
+       endc
+       puls   a,pc
+       endc
+
+***************************************
+* Interruption timer
+***************************************  
+* bug: sous TO7/70 DP ne vaut pas 
+* toujours $E7
+*      setdp  $E7
+       setdp  $00
+
+
+SndIntr set   *
+* le moniteur du TO8 force b3=0 en
+* $E7C1 a chaque fois que $60DC
+* tombe a zero (il est decremente
+* a chaque interruption). On lui
+* donne donc une valeur != 1.
+* Ici a l'entree de l'interrupt
+* A contient $6019 qui ne peut
+* etre nul.
+       sta    $60DC   ; un truc!=1
+       VAR    SndMsk,1,lda  
+       eora   >CRC    ; creneau
+       sta    >CRC
+  
+* debug leger: changement tour
+       if     DBG
+       bsr    dbg
+       endc
+  
+* decompte du temps tick
+       VAR    TckTime,2,ldd
+       VAR    PerIntr,2,subd
+       bcs    TickTO
+       std    TckTime
+EndIntr set   *
+       if     DBG
+       bsr    dbg
+       endc
+       lda    >TMSB   ; clear TCO
+       rti
+  
+* time-out du tick
+TickTO set    *
+       VAR    TckTRef,2,addd
+       std    TckTime ; corrige overflow
+
+* passage en direct page pour les commandes
+*      setdp  *<-8
+*      lda    #*<-8
+*      tfr    a,dp
+  
+* decompte du compteur de duree note
+       dec    NoteTck
+       VAR    NoteTck,1,lda
+       beq    NewCmd
+       VAR    MuteTck,1,cmpa
+       bne    EndIntr
+       clr    SndMsk
+       bra    EndIntr
+  
+* nouvelle commande/note
+NewCmd set    *
+       VAR    SongPtr,2,ldu
+NxtCmd ldb    ,u+     ; A = 0
+       lslb
+       bcs    CmdXXX
+**************************************
+* 0xxx xxxxx HAUTEUR
+**************************************
+       bne    FrqNZ
+       ldx    TckTRef
+       bra    Frq6846
+FrqNZ  ldx    #tPeriod
+       abx
+       ldx    ,x      ; x = count+1
+       ldb    #8
+* ecriture dans le timer
+Frq6846 stb   SndMsk
+       VAR    NoteMute,2,ldd
+       sta    NoteTck ; ticks pour note
+       stb    MuteTck ; ticks pour stacc
+       stx    PerIntr
+       leax   -1,x
+       stu    SongPtr
+       lda    #$42
+* inutile
+*      inc    TCR
+
+* MESS ne prends pas en compte 
+* l'ecriture en $E7C5 si on utilise
+* pshu.
+*      ldu    #TMSB+2
+*      pshu   a,x
+       stx    >TMSB
+       sta    >TCR
+       bra    EndIntr
+**************************************
+* 0xxx xxxx Commandes
+**************************************
+CmdXXX bitb   #%11000000
+       bmi    CmdFor
+       bne    CmdExtra
+**************************************
+* 100x xxxxx DUREE
+**************************************
+CmdLen ldx    #numTcks
+       lsrb
+       lda    b,x
+       ldb    b,x
+       std    NoteMute
+       bra    NxtCmd
+**************************************
+* 110x xxxxx ForI
+* 111x xxxxx ForJ
+**************************************
+CmdFor ldx    #ForDat
+       lsrb
+       bitb   #%00100000
+       beq    CmdFor2
+       leax   3,x
+CmdFor2 andb  #%00011111
+CmdFor4 bne   CmdFor3
+       dec    ,x
+       beq    NxtCmd
+       ldu    1,x
+       bra    NxtCmd
+CmdFor3 stb   ,x
+       stu    1,x
+       bra    NxtCmd
+**************************************
+* 101x xxxx EXTRA
+**************************************
+CmdExtra  
+       lslb
+       lslb  
+       lslb          ; CC=x B=xxxx0000
+       bcs    CmdSTAC
+       beq    CmdBPM
+       bmi    CmdForK
+       cmpb   #2*16
+       beq    CmdGoto
+       bra    CmdEnd
+**************************************
+* 1010 0010 Goto
+**************************************
+CmdGoto ldu   ,u
+       bra    NxtCmd
+**************************************
+* 1011 xxxx STACCATO
+**************************************
+CmdSTAC lda   NoteMute
+       mul
+       sta    NoteMute+1
+       bra    NxtCmd
+**************************************
+* 1010 1xxx ForK
+**************************************
+CmdForK ldx   #ForDat+6
+       ldb    -1,u
+       andb   #%00000111
+       bra    CmdFor4
+**************************************
+* 1010 0000 BMP
+**************************************
+CmdBPM ldb    ,u+
+       lda    #$1c
+       ldx    #$9c38
+       bsr    Div24
+       std    TckTime
+       std    TckTRef
+       jmp    NxtCmd
+**************************************
+* 1010 0001 End
+**************************************
+CmdEnd lda    STATUS
+       anda   #255-32
+       sta    STATUS
+       clr    SndMsk
+       jmp    EndIntr
+
+ForDat fcb    0,0,0   ; I,PTRI
+       fcb    0,0,0   ; J,PTRJ
+       fcb    0,0,0   ; K,PTRK
+  
+* BPM = nb de noires par minute 
+* 1 noire = 32*ticks
+* 32*BPM = nb de ticks par minute
+* 60 000 000/(32*BPM) = periode du tick
+* 1 875 000/BPM = periode du tick
+* 30 bpm ==> 62 500 cycles / ticks
+* 40     ==> 46 875
+* 50     ==> 37 500
+* 105    ==> 17 857
+* 120    ==> 15 625
+* 150    ==> 12 500
+* 225    ==>  8 333
+* 255    ==>  7 352
+
+**************************************
+* Division 24 bits
+* A:X divise' par B resultat dans D
+**************************************
+Div24  pshs   a,b,x
+       lda    #25
+       clrb
+       bra    Div241
+Div242 rolb
+       subb   1,s
+       bcc    Div241
+       addb   1,s
+Div241 rol    3,s
+       rol    2,s
+       rol    ,s
+       deca
+       bne    Div242
+       leas   2,s
+       puls   a,b
+       coma
+       comb
+       rts
+
+* Speed (100x xxxx)
+TICKsi set    %10000000
+TICKS  macro
+\1     equ    TICKsi
+TICKsi set    TICKsi+1      
+       fcb    \0
+       endm
+
+* le tick est à 1/32 de noire
+numTcks set   *
+        TICKS %10000000,s1    ; ronde
+        TICKS %11000000,s1d   ; .
+        TICKS %11100000,s1dd  ; ..
+        TICKS %11110000,s1ddd ; ...
+        TICKS %01000000,s2    ; blanc
+        TICKS %01100000,s2d   ; .
+        TICKS %01110000,s2dd  ; ..
+        TICKS %01111000,s2ddd ; ...
+        TICKS %00100000,s4    ; noire
+        TICKS %00110000,s4d   ; .
+        TICKS %00111000,s4dd  ; ..
+        TICKS %00111100,s4ddd ; ...
+        TICKS %00010000,s8    ; croche
+        TICKS %00011000,s8d   ; .
+        TICKS %00011100,s8dd  ; ..
+        TICKS %00011110,s8ddd ; ...
+        TICKS %00001000,s16   ; 2croch
+        TICKS %00001100,s16d  ; .
+        TICKS %00001110,s16dd ; ..
+        TICKS %00001111,s16ddd
+        TICKS %00000100,s32   ; 4croch
+        TICKS %00000110,s32d  ; .
+        TICKS %00000111,s32dd ; ..
+        TICKS %00000010,s64   ; 8croc
+        TICKS %00000011,s64d  ; .
+        TICKS %00000001,s128  ; 16croc
+  
+* Demi periode pour l'octave 0. Echelle
+* temperee.
+nP     equ    $0000   ; pause
+nC     equ    30581   ; do
+nCs    equ    28860   ; do#
+nD     equ    27240   ; re
+nDs    equ    25713   ; re#
+nE     equ    24271   ; mi
+nF     equ    22909   ; fa
+nFs    equ    21621   ; fa#
+nG     equ    20408   ; sol
+nGs    equ    19264   ; sol#
+nA     equ    18181   ; la
+nAs    equ    17161   ; la#
+nB     equ    16196   ; si
+OCTAVi set    1
+OCTAVE macro  
+nC\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nC<-\0)
+nCs\0  equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nCs<-\0)
+nD\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nD<-\0)
+nDs\0  equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nDs<-\0)
+nE\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nE<-\0)
+nF\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nF<-\0)
+nFs\0  equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nFs<-\0)
+nG\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nG<-\0)
+nGs\0  equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nGs<-\0)
+nA\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nA<-\0)
+nAs\0  equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nAs<-\0)
+nB\0   equ    OCTAVi
+OCTAVi set    OCTAVi+1
+       fdb    (nB<-\0)
+       endm
+
+* demi-periode timer de chaque note
+tPeriod fdb   0
+PTCLA  equ    0
+       ifeq   PTCLA
+       OCTAVE 0
+       OCTAVE 1
+       endc
+       OCTAVE 2
+       OCTAVE 3
+       OCTAVE 4
+       OCTAVE 5
+       OCTAVE 6
+       ifeq   PTCLA
+       OCTAVE 7    
+       endc
+(include)TONES.ASM
+***************************************
+Tannenbaum
+***************************************
+* Intro
+        fcb     cBPM,100
+        fcb     s8,nC3
+
+* Refrain
+        fcb     cForI+2
+        fcb     s8d,STAC,nF3,s16,STAC
+        fcb     nF3,s4,nF3,s8,nP,nG3
+        fcb     s8d,STAC,nA3,s16,STAC
+        fcb     nA3,s4,nA3,s8,nP,nA3
+        fcb     nG3,nA3,s4,nAs3,nE3,nG3
+        fcb     nF3,s8,nP,nC4,nC4,nA3
+        fcb     s4d,nD4,s8,STAC,nC4,s8
+        fcb     nC4,s8,STAC,nAs3,s4
+        fcb     nAs3,s8,nP,s8,STAC,nAs3
+        fcb     s8,nAs3,nG3,s4d,nC4,s8
+        fcb     STAC,nAs3,s8,nAs3,s8
+        fcb     STAC,nA3,s4,nA3,s8,nP
+        fcb     nC3,s8d,STAC,nF3,s16
+        fcb     STAC,nF3,s4,nF3,s8,nP
+        fcb     nG3,s8d,STAC,nA3,s16
+        fcb     STAC,nA3,s4,nA3,s8,nP
+        fcb     nA3,nG3,nA3,s4,nAs3,nE3
+        fcb     nG3,nF3,s8,nP,nC3
+        fcb     cNxtI
+
+* Ending
+        fcb     s4,nG3,nF3
+
+***************************************
+JingleBells
+***************************************
+* Intro
+        fcb     cBPM,180
+        fcb     s4,nD3,nB3,nA3,nG3,s2d
+        fcb     STAC,nD3,s8,STAC,nD3
+        fcb     nD3,s4,nD3,nB3,nA3,nG3
+        fcb     s1,STAC,nE3,s4,nE3,nC4
+        fcb     nB3,nA3,s1,nFs3,s4,STAC
+        fcb     nD4,nD4,s4,nC4,nA3,s2
+        fcb     nB3,nP,s4,nD3,nB3,nA3
+        fcb     nG3,s1,STAC,nD3,s4,nD3
+        fcb     nB3,nA3,nG3,s2d,STAC
+        fcb     nE3,s4,STAC,nE3,s4,nE3
+        fcb     nC4,nB3,nA3,s4,STAC
+        fcb     cForI+4
+        fcb     nD4
+        fcb     cNxtI
+        fcb     s4,nE4,nD4,nC4,nA3,nG3
+        fcb     nP,s2,nD4
+
+* Refrain
+        fcb     cForI+2
+        fcb     cForJ+2
+        fcb     s4,STAC,nB3,nB3,s2,STAC
+        fcb     nB3
+        fcb     cNxtJ
+        fcb     s4,nB3,nD4,s4d,nG3,s8
+        fcb     nA3,s1,nB3,s4,STAC
+        fcb     cForJ+4
+        fcb     nC4
+        fcb     cNxtJ
+        fcb     s4,nC4,s4,STAC,nB3,nB3
+        fcb     nB3,s4,nB3,s4,STAC,nA3
+        fcb     nA3,nB3,s2,nA3,nD4
+        fcb     cNxtI
+
+* Ending
+        fcb     s4,STAC,nD4,s4,nD4,nC4
+        fcb     nA3,s2,nG3,nP
+
+***************************************
+HereComesSantaClaus
+***************************************
+        fcb     cBPM,210
+        fcb     cForI+2
+        fcb     s4,nC4,s128
+        fcb     cForJ+11
+        fcb     nF4,nA4,nC4
+        fcb     cNxtJ
+        fcb     cForJ+10
+        fcb     nE4,nG4,nC4
+        fcb     cNxtJ
+        fcb     nE4
+        fcb     cForJ+10
+        fcb     nF4,nC4,nD4
+        fcb     cNxtJ
+        fcb     nF4
+        fcb     cNxtI
+        fcb     s4,nC4,s128
+        fcb     cForI+21
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4
+        fcb     cForI+10
+        fcb     nE4,nA4,nC4
+        fcb     cNxtI
+        fcb     nE4,nA4
+        fcb     cForI+21
+        fcb     nAs4,nD4,nF4
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nB3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+16
+        fcb     nA4,nC5,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nC4,nGs4,nB4
+        fcb     cNxtI
+        fcb     nC4,nGs4
+        fcb     cForI+16
+        fcb     nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nF4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nE4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nDs4,nA4,nC5
+        fcb     cNxtI
+        fcb     s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nA4,nD5
+        fcb     cNxtI
+        fcb     nF5,nA4,s4,nE5,s128
+        fcb     cForI+16
+        fcb     nGs4,nD5
+        fcb     cNxtI
+        fcb     s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nG4,nC5
+        fcb     cNxtI
+        fcb     nE5,nG4,s4,nD5,s128
+        fcb     cForI+16
+        fcb     nFs4,nC5
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+16
+        fcb     nF4,nAs4
+        fcb     cNxtI
+        fcb     cForI+7
+        fcb     nD5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+8
+        fcb     nC5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+6
+        fcb     nG4,nAs4,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nA4,s128
+        fcb     cForI+11
+        fcb     nF3,nE4,nA4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG3,nD4,nA4
+        fcb     cNxtI
+        fcb     nG3
+        fcb     cForI+10
+        fcb     nC4,nA4,nF3
+        fcb     cNxtI
+        fcb     nC4,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nAs4,nD5
+        fcb     cNxtI
+        fcb     nF5,nAs4,s4,nE5,s128
+        fcb     cForI+10
+        fcb     nF4,nGs4,nD5
+        fcb     cNxtI
+        fcb     nF4,nGs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nA4,nC5
+        fcb     cNxtI
+        fcb     nE5,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nC4,nFs4,nA4
+        fcb     cNxtI
+        fcb     nC4,nFs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4
+        fcb     cForI+16
+        fcb     cForJ+2
+        fcb     nA3,nC4,nF4
+        fcb     cNxtJ
+        fcb     cNxtI
+        fcb     s4,nP
+        fcb     cForI+2
+        fcb     nC4,s128
+        fcb     cForJ+11
+        fcb     nF4,nA4,nC4
+        fcb     cNxtJ
+        fcb     cForJ+10
+        fcb     nE4,nG4,nC4
+        fcb     cNxtJ
+        fcb     nE4
+        fcb     cForJ+10
+        fcb     nF4,nC4,nD4
+        fcb     cNxtJ
+        fcb     nF4,s4
+        fcb     cNxtI
+        fcb     nC4,s128
+        fcb     cForI+21
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4
+        fcb     cForI+10
+        fcb     nE4,nA4,nC4
+        fcb     cNxtI
+        fcb     nE4,nA4
+        fcb     cForI+21
+        fcb     nAs4,nD4,nF4
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nB3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+16
+        fcb     nA4,nC5,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nC4,nGs4,nB4
+        fcb     cNxtI
+        fcb     nC4,nGs4
+        fcb     cForI+16
+        fcb     nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nF4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nE4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nDs4,nA4,nC5
+        fcb     cNxtI
+        fcb     s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nA4,nD5
+        fcb     cNxtI
+        fcb     nF5,nA4,s4,nE5,s128
+        fcb     cForI+16
+        fcb     nGs4,nD5
+        fcb     cNxtI
+        fcb     s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nG4,nC5
+        fcb     cNxtI
+        fcb     nE5,nG4,s4,nD5,s128
+        fcb     cForI+16
+        fcb     nFs4,nC5
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+16
+        fcb     nF4,nAs4
+        fcb     cNxtI
+        fcb     cForI+7
+        fcb     nD5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+8
+        fcb     nC5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+6
+        fcb     nG4,nAs4,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nA4,s128
+        fcb     cForI+11
+        fcb     nF3,nE4,nA4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG3,nD4,nA4
+        fcb     cNxtI
+        fcb     nG3
+        fcb     cForI+10
+        fcb     nC4,nA4,nF3
+        fcb     cNxtI
+        fcb     nC4,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nAs4,nD5
+        fcb     cNxtI
+        fcb     nF5,nAs4,s4,nE5,s128
+        fcb     cForI+10
+        fcb     nF4,nGs4,nD5
+        fcb     cNxtI
+        fcb     nF4,nGs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nA4,nC5
+        fcb     cNxtI
+        fcb     nE5,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nC4,nFs4,nA4
+        fcb     cNxtI
+        fcb     nC4,nFs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4
+        fcb     cForI+21
+        fcb     nA3,nC4,nF4
+        fcb     cNxtI
+        fcb     nA3
+        fcb     cForI+10
+        fcb     nA4,nC5,nF5
+        fcb     cNxtI
+        fcb     nA4,nC5,s4,nF2
+        fcb     cForI+2
+        fcb     nC4,s128
+        fcb     cForJ+11
+        fcb     nF4,nA4,nC4
+        fcb     cNxtJ
+        fcb     cForJ+10
+        fcb     nE4,nG4,nC4
+        fcb     cNxtJ
+        fcb     nE4
+        fcb     cForJ+10
+        fcb     nF4,nC4,nD4
+        fcb     cNxtJ
+        fcb     nF4,s4
+        fcb     cNxtI
+        fcb     nC4,s128
+        fcb     cForI+21
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4
+        fcb     cForI+10
+        fcb     nE4,nA4,nC4
+        fcb     cNxtI
+        fcb     nE4,nA4
+        fcb     cForI+21
+        fcb     nAs4,nD4,nF4
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nB3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+16
+        fcb     nA4,nC5,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nC4,nGs4,nB4
+        fcb     cNxtI
+        fcb     nC4,nGs4
+        fcb     cForI+16
+        fcb     nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nF4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nE4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nDs4,nA4,nC5
+        fcb     cNxtI
+        fcb     s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nA4,nD5
+        fcb     cNxtI
+        fcb     nF5,nA4,s4,nE5,s128
+        fcb     cForI+16
+        fcb     nGs4,nD5
+        fcb     cNxtI
+        fcb     s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nG4,nC5
+        fcb     cNxtI
+        fcb     nE5,nG4,s4,nD5,s128
+        fcb     cForI+16
+        fcb     nFs4,nC5
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+16
+        fcb     nF4,nAs4
+        fcb     cNxtI
+        fcb     cForI+7
+        fcb     nD5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+8
+        fcb     nC5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+6
+        fcb     nG4,nAs4,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nA4,s128
+        fcb     cForI+11
+        fcb     nF3,nE4,nA4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG3,nD4,nA4
+        fcb     cNxtI
+        fcb     nG3
+        fcb     cForI+10
+        fcb     nC4,nA4,nF3
+        fcb     cNxtI
+        fcb     nC4,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nAs4,nD5
+        fcb     cNxtI
+        fcb     nF5,nAs4,s4,nE5,s128
+        fcb     cForI+10
+        fcb     nF4,nGs4,nD5
+        fcb     cNxtI
+        fcb     nF4,nGs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nA4,nC5
+        fcb     cNxtI
+        fcb     nE5,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nC4,nFs4,nA4
+        fcb     cNxtI
+        fcb     nC4,nFs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4
+        fcb     cForI+16
+        fcb     cForJ+2
+        fcb     nA3,nC4,nF4
+        fcb     cNxtJ
+        fcb     cNxtI
+        fcb     s4,nP
+        fcb     cForI+2
+        fcb     nC4,s128
+        fcb     cForJ+11
+        fcb     nF4,nA4,nC4
+        fcb     cNxtJ
+        fcb     cForJ+10
+        fcb     nE4,nG4,nC4
+        fcb     cNxtJ
+        fcb     nE4
+        fcb     cForJ+10
+        fcb     nF4,nC4,nD4
+        fcb     cNxtJ
+        fcb     nF4,s4
+        fcb     cNxtI
+        fcb     nC4,s128
+        fcb     cForI+21
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4
+        fcb     cForI+10
+        fcb     nE4,nA4,nC4
+        fcb     cNxtI
+        fcb     nE4,nA4
+        fcb     cForI+21
+        fcb     nAs4,nD4,nF4
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nB3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nC4,s128
+        fcb     cForI+16
+        fcb     nA4,nC5,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nC4,nGs4,nB4
+        fcb     cNxtI
+        fcb     nC4,nGs4
+        fcb     cForI+16
+        fcb     nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nF4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+11
+        fcb     nE4,nA4,nC5
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nDs4,nA4,nC5
+        fcb     cNxtI
+        fcb     s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nA4,nD5
+        fcb     cNxtI
+        fcb     nF5,nA4,s4,nE5,s128
+        fcb     cForI+16
+        fcb     nGs4,nD5
+        fcb     cNxtI
+        fcb     s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nG4,nC5
+        fcb     cNxtI
+        fcb     nE5,nG4,s4,nD5,s128
+        fcb     cForI+16
+        fcb     nFs4,nC5
+        fcb     cNxtI
+        fcb     s4,nAs4,s128
+        fcb     cForI+16
+        fcb     nF4,nAs4
+        fcb     cNxtI
+        fcb     cForI+7
+        fcb     nD5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+8
+        fcb     nC5,nAs3,nE4
+        fcb     cNxtI
+        fcb     cForI+6
+        fcb     nG4,nAs4,nE4
+        fcb     cNxtI
+        fcb     nG4,s4,nA4,s128
+        fcb     cForI+11
+        fcb     nF3,nE4,nA4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG3,nD4,nA4
+        fcb     cNxtI
+        fcb     nG3
+        fcb     cForI+10
+        fcb     nC4,nA4,nF3
+        fcb     cNxtI
+        fcb     nC4,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nF5,nAs4,nD5
+        fcb     cNxtI
+        fcb     nF5,nAs4,s4,nE5,s128
+        fcb     cForI+10
+        fcb     nF4,nGs4,nD5
+        fcb     cNxtI
+        fcb     nF4,nGs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nE5,nA4,nC5
+        fcb     cNxtI
+        fcb     nE5,nA4,s4,nD5,s128
+        fcb     cForI+10
+        fcb     nC4,nFs4,nA4
+        fcb     cNxtI
+        fcb     nC4,nFs4,s4,nC5,s128
+        fcb     cForI+10
+        fcb     nD4,nF4,nAs4
+        fcb     cNxtI
+        fcb     nD4,nF4
+        fcb     cForI+11
+        fcb     nA4,nC4,nE4
+        fcb     cNxtI
+        fcb     cForI+10
+        fcb     nG4,nAs3,nE4
+        fcb     cNxtI
+        fcb     nG4
+        fcb     cForI+21
+        fcb     nA3,nC4,nF4
+        fcb     cNxtI
+        fcb     nA3
+        fcb     cForI+10
+        fcb     nA4,nC5,nF5
+        fcb     cNxtI
+        fcb     nA4,nC5,s4,nF2
+* 1123 octets
+
+***************************************
+Mario
+***************************************
+* Intro
+        fcb     cBPM,100
+        fcb     s16,STAC,nE5,nE5,s16,nP
+        fcb     nE5,nP,nC5,nE5,nP,nG5
+        fcb     s8d,nP,s16,nG4,s8d,nP
+
+* Refrain
+        fcb     cForI+2
+        fcb     s16,nC5,s8,nP,s16,nG4
+        fcb     s8,nP,s16,nE4,s8,nP,s16
+        fcb     nA4,nP,nB4,nP,nAs4,nA4
+        fcb     nP
+        fcb     cBPM,150
+        fcb     s8,nG4,nE5,nG5
+        fcb     cBPM,100
+        fcb     s16,nA5,nP,nF5,nG5,nP
+        fcb     nE5,nP,nC5,nD5,nB4,s8
+        fcb     nP
+        fcb     cNxtI
+
+* Refrain 2
+        fcb     cForI+2
+        fcb     s8,nC3,s16,nG5,nFs5,nF5
+        fcb     nDs5,nC4,nE5,nF3,nGs4
+        fcb     nA4,nC5,nP,nA4,nC5,nD5
+        fcb     s8,nC3,s16,nG5,nFs5,nF5
+        fcb     nDs5,nC4,nE5,nP,nC6,nP
+        fcb     s16,STAC,nC6,s16,nC6,nP
+        fcb     s8,nG3,nC3,s16,nG5,nFs5
+        fcb     nF5,nDs5,nC4,nE5,nF3
+        fcb     nGs4,nA4,nC5,nP,nA4,nC5
+        fcb     nD5,s8,nC3,s16,nDs5,s8
+        fcb     nP,s16,nD5,s8,nP,nC5,s4
+        fcb     nP
+        fcb     cNxtI
+
+* Refrain 3
+        fcb     s16,STAC,nC5,s16,nC5,nP
+        fcb     nC5,nP,nC5,nD5,nP,nE5
+        fcb     nC5,nP,nA4,nG4,s8d,nP
+        fcb     s16,STAC,nC5,s16,nC5,nP
+        fcb     nC5,nP,nC5,nD5,nE5,s2
+        fcb     nP,s16,STAC,nC5,s16,nC5
+        fcb     nP,nC5,nP,nC5,nD5,nP
+        fcb     nE5,nC5,nP,nA4,nG4,s8d
+        fcb     nP,s16,STAC,nE5,nE5,s16
+        fcb     nP,nE5,nP,nC5,nE5,nP
+        fcb     nG5,s8d,nP,s16,nG4,s8d
+        fcb     nP,s16,nE4,s8,STAC,nD5
+        fcb     s16,STAC,nD5,s8,nD5,s16
+        fcb     nF4,s8,STAC,nDs5,s16
+        fcb     STAC,nDs5,s8,nDs5,s16
+        fcb     nFs4,s8,STAC,nE5,s16
+        fcb     STAC,nE5,s8,nE5,s8,STAC
+        fcb     nF5,s8,nF5,s16,STAC,nC5
+        fcb     s16,nC5,nP,nC5,nP,nC5
+        fcb     nD5,nP,nE5,nC5,nP,nA4
+        fcb     nG4,s8d,nP,s16,STAC,nC5
+        fcb     s16,nC5,nP,nC5,nP,nC5
+        fcb     nD5,nE5,s2,nP,s16,STAC
+        fcb     nC5,s16,nC5,nP,nC5,nP
+        fcb     nC5,nD5,nP,nE5,nC5,nP
+        fcb     nA4,nG4,s8d,nP,s16,STAC
+        fcb     nE5,nE5,s16,nP,nE5,nP
+        fcb     nC5,nE5,nP,nG5,s8d,nP
+        fcb     s16,nG4,s8d,nP,s16,nB4
+        fcb     nF5,nP,s16,STAC,nF5
+        fcb     cBPM,150
+        fcb     s8,nF5,nE5,nD5
+        fcb     cBPM,100
+        fcb     s16,nC5,nE3,nP,nE4,nC3
+        fcb     s8d,nP
+
+***************************************
+Tetris
+***************************************
+        fcb     cBPM,180
+
+* Intro
+        fcb     cForI+2
+        fcb     nE5,s8,nB4,nC5,nD5,s16
+        fcb     nE5,nD5,s8,nC5,nB4,s4
+        fcb     nA4,s8,nA4,nC5,s4,nE5
+        fcb     s8,nD5,nC5,s4d,nB4,s8
+        fcb     nC5,s4,nD5,nE5,nC5,nA4
+        fcb     s2,nA4,s8,nP,s4,nD5,s8
+        fcb     nF5,s4,nA5,s8,nG5,nF5
+        fcb     s4d,nE5,s8,nC5,s4,nE5
+        fcb     s8,nD5,nC5,s4,nB4,s8
+        fcb     nB4,nC5,s4,nD5,nE5,nC5
+        fcb     nA4,nA4,nP
+        fcb     cNxtI
+
+* Bridge
+        fcb     s2,nE4,nC4,nD4,nB3,nC4
+        fcb     nA3,nGs3,s4,nB3,nP,s2
+        fcb     nE4,nC4,nD4,nB3,s4,nC4
+        fcb     nE4,s2,nA4,nGs4,nP
+
+***************************************
+Zelda
+***************************************
+        fcb     cBPM,90
+
+* Intro
+        fcb     nAs4,s8,STAC,nF4,s8,nF4
+        fcb     nAs4,s16,nGs4,nFs4,s8
+        fcb     nGs4,s2,nGs4,s4,nP,s2
+        fcb     nAs4,s8,STAC,nFs4,s8
+        fcb     nFs4,nAs4,s16,nA4,nG4
+        fcb     s8,nA4,s2d,nA4
+        fcb     cForI+2
+        fcb     s8d,nAs4,s16,nP,s4,nF4
+        fcb     s8,nP,s8,STAC,nAs4,s16
+        fcb     nAs4,nC5,nD5,nDs5,s4
+        fcb     nF5,nP,s2,nP
+        fcb     cNxtI
+
+* Refrain
+        fcb     cForI+2
+        fcb     s8d,nAs4,s16,nP,s4,nF4
+        fcb     s8,nP,s8,STAC,nAs4,s16
+        fcb     nAs4,nC5,nD5,nDs5,s2d
+        fcb     STAC,nF5,s16d,nF5,nFs5
+        fcb     s16,nGs5,s4,nAs5,s4d
+        fcb     nAs5,s16,STAC,nAs5,nAs5
+        fcb     s8,nAs5,s16,nGs5,nFs5
+        fcb     s8d,nGs5,s16,nFs5,s2
+        fcb     STAC,nF5,s8,nF5,nF5,s8d
+        fcb     nDs5,s16,nF5,s2,nFs5,s8
+        fcb     nF5,nDs5,s8,STAC,nCs5
+        fcb     s16,nCs5,nDs5,s2,nF5,s8
+        fcb     nDs5,nCs5,s8,STAC,nC5
+        fcb     s16,nC5,nD5,s2,nE5,s4
+        fcb     nG5,nF5,s4d,nP,s2,nP
+        fcb     s8d,nAs4,s16,nP,s4,nF4
+        fcb     s8,nP,s8,STAC,nAs4,s16
+        fcb     nAs4,nC5,nD5,nDs5,s2d
+        fcb     STAC,nF5,s16d,nF5,nFs5
+        fcb     s16,nGs5,s2d,nAs5,s4
+        fcb     nCs6,nC6,s2,nA5,s4,nF5
+        fcb     s2d,nFs5,s4,nAs5,nA5,s2
+        fcb     nF5,s4,nD5,s2d,nDs5,s4
+        fcb     nFs5,nF5,s2,nCs5,s4
+        fcb     nAs4,s8d,nC5,s16,nD5,s2
+        fcb     nE5,s4,nG5,s8,nF5,nP
+        fcb     s2d,nP
+        fcb     cNxtI
+
+***************************************
+ZombieNation
+***************************************
+        fcb     cBPM,138
+        fcb     cForI+8
+        fcb     s8,STAC,nAs2,nAs4,nCs5
+        fcb     nDs5,nF5,nAs3,nAs2,nAs3
+        fcb     nAs2,nAs4,nCs5,nDs5,nF5
+        fcb     nFs5,nF5,nCs5,nDs5,nDs4
+        fcb     nDs3,nDs4,nCs5,nF4,nF5
+        fcb     nAs4
+        fcb     cForJ+4
+        fcb     nAs2,nAs3
+        fcb     cNxtJ
+        fcb     cNxtI
+
+***************************************
+NyanCat
+***************************************
+        fcb     cBPM,142
+        fcb     cForI+2
+        fcb     s8,STAC,nFs5,nGs5,s16
+        fcb     STAC,nCs5,s8,STAC,nDs5
+        fcb     s16,STAC,nB4,nD5,nCs5
+        fcb     s8,STAC,nB4,nB4,nCs5
+        fcb     nD5,s16,STAC,nD5,nCs5
+        fcb     nB4,nCs5,nD5,nFs5,nGs5
+        fcb     nDs5,nFs5,nCs5,nDs5,nB4
+        fcb     s16,nCs5,s16,STAC,nB4
+        fcb     s8,STAC,nDs5,nFs5,s16
+        fcb     STAC,nGs5,nDs5,nFs5
+        fcb     nCs5,nDs5,nB4,nCs5,nDs5
+        fcb     nD5,nCs5,nB4,nCs5,s8
+        fcb     STAC,nD5,s16,STAC,nB4
+        fcb     nCs5,nDs5,nFs5,nCs5
+        fcb     nDs5,nCs5,nB4,s8,STAC
+        fcb     nCs5,s8,nB4,s8,STAC
+        fcb     nCs5,nFs5,nGs5,s16,STAC
+        fcb     nCs5,s8,STAC,nDs5,s16
+        fcb     STAC,nB4,nD5,nCs5,s8
+        fcb     STAC,nB4,nB4,nCs5,nD5
+        fcb     s16,STAC,nD5,nCs5,nB4
+        fcb     nCs5,nD5,nFs5,nGs5,nDs5
+        fcb     nFs5,nCs5,nDs5,nB4,s16
+        fcb     nCs5,s16,STAC,nB4,s8
+        fcb     STAC,nDs5,nFs5,s16,STAC
+        fcb     nGs5,nDs5,nFs5,nCs5
+        fcb     nDs5,nB4,nCs5,nDs5,nD5
+        fcb     nCs5,nB4,nCs5,s8,STAC
+        fcb     nD5,s16,STAC,nB4,nCs5
+        fcb     nDs5,nFs5,nCs5,nDs5
+        fcb     nCs5,nB4,s8,STAC,nCs5
+        fcb     s8,nB4,s8,STAC,nB4,nB4
+        fcb     s16,STAC,nFs4,nGs4,s8
+        fcb     STAC,nB4,s16,STAC,nFs4
+        fcb     nGs4,nB4,nCs5,nDs5,nB4
+        fcb     nE5,nDs5,nE5,nFs5,s8
+        fcb     STAC,nB4,nB4,s16,STAC
+        fcb     nFs4,nGs4,nB4,nFs4,nE5
+        fcb     nDs5,nCs5,nB4,nFs4,nDs4
+        fcb     s16,nE4,s16,STAC,nFs4
+        fcb     cForJ+2
+        fcb     s8,STAC,nB4,s16,STAC
+        fcb     nFs4,nGs4
+        fcb     cNxtJ
+        fcb     nB4,nB4,nCs5,nDs5,nB4
+        fcb     nFs4,nGs4,nFs4,s8,STAC
+        fcb     nB4,s16,STAC,nB4,nAs4
+        fcb     nB4,nFs4,nGs4,nB4,nE5
+        fcb     nDs5,nE5,nFs5,s8,nB4,s8
+        fcb     STAC,nAs4,nFs5,nGs5,s16
+        fcb     STAC,nCs5,s8,STAC,nDs5
+        fcb     s16,STAC,nB4,nD5,nCs5
+        fcb     s8,STAC,nB4,nB4,nCs5
+        fcb     nD5,s16,STAC,nD5,nCs5
+        fcb     nB4,nCs5,nD5,nFs5,nGs5
+        fcb     nDs5,nFs5,nCs5,nDs5,nB4
+        fcb     s16,nCs5,s16,STAC,nB4
+        fcb     s8,STAC,nDs5,nFs5,s16
+        fcb     STAC,nGs5,nDs5,nFs5
+        fcb     nCs5,nDs5,nB4,nCs5,nDs5
+        fcb     nD5,nCs5,nB4,nCs5,s8
+        fcb     STAC,nD5,s16,STAC,nB4
+        fcb     nCs5,nDs5,nFs5,nCs5
+        fcb     nDs5,nCs5,nB4,s8,STAC
+        fcb     nCs5,s8,nB4,s8,STAC
+        fcb     nCs5
+        fcb     cNxtI
+
+* RickDangerous
+        fcb     cBPM,180
+        fcb     s4d,nFs3,s4,nFs4,s4dd
+        fcb     nCs4,s16d,nAs3,s4,nB3
+        fcb     nCs4,s4dd,nDs4,s4d,nCs4
+        fcb     s4,nGs4,s4dd,nF4,s16d
+        fcb     nCs4,s4,nDs4,nF4,s4dd
+        fcb     nFs4,s4d,nFs3,s4,nFs4
+        fcb     s4dd,nCs4,s16d,nAs3,s4
+        fcb     nB3,nCs4,s2,nDs4,s4,nA4
+        fcb     nD4,nB4,nE4,nAs3,nCs4
+        fcb     s2,nFs3,s4,nDs4,nFs4,s2
+        fcb     nB4,nGs4,s4,nF4,nCs4
+        fcb     nDs4,nFs4,s2,nB4,nCs5
+        fcb     s4,nF4,nCs4,nDs4,nFs4
+        fcb     s2,nB4,nGs4,s4,nF4,nCs4
+        fcb     nDs4,nFs4,s2,nB4,nCs5
+        fcb     s4,nF4,s8d,nCs4,s4d
+        fcb     nFs3,s4,nFs4,s4dd,nCs4
+        fcb     s16d,nAs3,s4,nB3,nCs4
+        fcb     s4dd,nDs4,s4d,nCs4,s4
+        fcb     nGs4,s4dd,nF4,s16d,nCs4
+        fcb     s4,nDs4,nF4,s4dd,nFs4
+        fcb     s4d,nFs3,s4,nFs4,s4dd
+        fcb     nCs4,s16d,nAs3,s4,nB3
+        fcb     nCs4,s2,nDs4,s4,nD4,nA3
+        fcb     nE4,nB3,nAs3,nCs4,s2
+        fcb     nFs3,s4,nGs4,nB4,s2,nE5
+        fcb     nCs5,s4,nAs4,nFs4,nGs4
+        fcb     nB4,s2,nE5,nFs5,s4,nAs4
+        fcb     nFs4,nGs4,nB4,s2,nE5
+        fcb     nCs5,s4,nAs4,nFs4,nGs4
+        fcb     nB4,s2,nE5,nFs5,s4,nAs4
+        fcb     s8d,nFs4,s4d,nB3,s4,nB4
+        fcb     s4dd,nFs4,s16d,nDs4,s4
+        fcb     nE4,nFs4,s4dd,nGs4,s4d
+        fcb     nFs4,s4,nCs5,s4dd,nAs4
+        fcb     s16d,nFs4,s4,nGs4,nAs4
+        fcb     s4dd,nB4,s4d,nB3,s4,nB4
+        fcb     s4dd,nFs4,s16d,nDs4,s4
+        fcb     nE4,nFs4,s2,nGs4,s4,nG4
+        fcb     nG3,nA4,nA3,s1,nB3
+* 212 octets
+
+* Cauldron1_V1
+        fcb     cBPM,136
+        fcb     s16
+        fcb     cForI+2
+        fcb     nC3,nP,nC3
+        fcb     cForJ+6
+        fcb     nP,nC4
+        fcb     cNxtJ
+        fcb     nP
+        fcb     cNxtI
+        fcb     s4
+        fcb     cForI+2
+        fcb     nC3,s16
+        fcb     cForJ+5
+        fcb     nC4,nC3
+        fcb     cNxtJ
+        fcb     nC4,s4d,nC3,s16,nC4,nC3
+        fcb     nC4,nC3,nC4,nDs3,nC4
+        fcb     nDs3,nC4,nD3,nC4,s16d
+        fcb     nD3,s8ddd,nGs3,s16
+        fcb     cForJ+5
+        fcb     nC4,nGs3
+        fcb     cNxtJ
+        fcb     nC4,s16d,nGs3,s8ddd,nG3
+        fcb     s16
+        fcb     cForJ+5
+        fcb     nC4,nG3
+        fcb     cNxtJ
+        fcb     nC4,s16d,nG3,s8ddd
+        fcb     cNxtI
+        fcb     nF3,s16
+        fcb     cForI+5
+        fcb     nC4,nF3
+        fcb     cNxtI
+        fcb     nC4,s4d,nF3,s16,nC4,nF3
+        fcb     nC4,nF3,nC4,nG3,nC4,nG3
+        fcb     nC4,nGs3,nC4,s16d,nGs3
+        fcb     s8ddd,nD3,s16
+        fcb     cForI+4
+        fcb     nC4,nD3
+        fcb     cNxtI
+        fcb     nC4,nGs3,nC4,s16d,nGs3
+        fcb     s8ddd,nG3,s16
+        fcb     cForI+5
+        fcb     nC4,nG3
+        fcb     cNxtI
+        fcb     nC4,s16d,nG3,s8ddd,nD3
+        fcb     s16
+        fcb     cForI+5
+        fcb     nC4,nD3
+        fcb     cNxtI
+        fcb     nC4,s4d,nD3,s16
+        fcb     cForI+5
+        fcb     nC4,nD3
+        fcb     cNxtI
+        fcb     nC4,s16d,nD3,s8ddd,nG3
+        fcb     s16
+        fcb     cForI+5
+        fcb     nC4,nG3
+        fcb     cNxtI
+        fcb     nC4,s4d,nG3,s16
+        fcb     cForI+5
+        fcb     nC4,nG3
+        fcb     cNxtI
+        fcb     nC4,s16d,nG3,s8
+        fcb     cForI+2
+        fcb     cForJ+2
+        fcb     cForK+2
+        fcb     nC4,nDs4,nG4,nGs4,nC5
+        fcb     nGs4,nG4,nDs4
+        fcb     cNxtK
+        fcb     nGs4,nC5,nDs5,nG5,nGs5
+        fcb     nG5,nDs5,nC5,nG4,nGs4
+        fcb     nC5,nDs5,nG5,nDs5,nC5
+        fcb     nGs4
+        fcb     cNxtJ
+        fcb     cForJ+2
+        fcb     nF4,nGs4,nC5,nF5,nGs5
+        fcb     nF5,nC5,nGs4
+        fcb     cNxtJ
+        fcb     nFs4,nGs4,nC5,nDs5,nFs5
+        fcb     nDs5,nC5,nGs4,nG4,nAs4
+        fcb     nD5,nG5,nAs5,nG5,nD5
+        fcb     nAs4
+        fcb     cForJ+2
+        fcb     nFs4,nA4,nC5,nFs5,nA5
+        fcb     nFs5,nC5,nA4
+        fcb     cNxtJ
+        fcb     cForJ+2
+        fcb     nG4,nAs4,nD5,nG5,nAs5
+        fcb     nG5,nD5,nAs4
+        fcb     cNxtJ
+        fcb     cNxtI
+        fcb     s1ddd,nC3,s8,nC3
+
+* bubble-b
+        fcb     cBPM,228
+        fcb     s8ddd,nAs5,nA5,nG5
+        fcb     s16ddd,nAs2,nF5,s8ddd
+        fcb     nA5,nG5,nF5,nDs5,nG5
+        fcb     nF5,s16ddd,nDs5,s4d,nD5
+        fcb     s4ddd,nF5,s4d,nD5
+        fcb     s16ddd,nC5,s8ddd,nAs4
+        fcb     nC5,nD5,nDs5,s4d,nD5
+        fcb     nDs5,s8d,nF5,s32dd,nDs5
+        fcb     s8ddd,nF5,nG5,s16ddd
+        fcb     nA5,s8ddd,nF5,s16ddd
+        fcb     nG2,s8ddd,nAs5,s8d,nF5
+        fcb     s32dd,nP,s8d,nG5,s32dd
+        fcb     nP,s8d,nGs5,s32dd,nP
+        fcb     s1ddd,nA5,nAs5,nC6,nD6
+        fcb     s4ddd,nDs6,s8ddd,nDs2
+        fcb     s4ddd,nDs6,s8ddd,nD6
+        fcb     s4ddd,nC6,s2ddd,nD6
+        fcb     s8ddd,nD2,nD3,nD6,nD3
+        fcb     s2d,nC6,s8ddd,nG5,nF2
+        fcb     nD6,nF5,nD6,s2ddd,nAs5
+* 93 octets
+
+/
+* bombjack
+        fcb     cBPM,228
+        fcb     cForI+2
+        fcb     s2d,nB3,s8,nE3,nF3,s2d
+        fcb     nA4,s8,nC5,nD5,s4,nE5
+        fcb     s2,nC5,s1,nA4,s8,nC5
+        fcb     s4d,nE5,s2,nD5,s1,nA4
+        fcb     s8,nE5,s4d,nG5,s2,nF5
+        fcb     s4,nA4,nG5,nF5,nE5,nD5
+        fcb     nC5,nB4,nA4,nB4,s1ddd
+        fcb     nC5,s16ddd,nC5,s2d,nA4
+        fcb     s8,nC5,nD5,s4,nE5,s2
+        fcb     nC5,s1,nA4,s8,nC5,s4d
+        fcb     nE5,s2,nD5,s1,nA4,s8
+        fcb     nE5,s4d,nG5,s2,nF5,s4
+        fcb     nA4,nG5,nF5,nE5,nD5,nC5
+        fcb     nB4,nA4,nB4,s1ddd,nC5
+        fcb     s4d,nC5,s2,nF5,s8,nA5
+        fcb     nAs5,s4,nC6,s2d,nA5,s8
+        fcb     nC6,nD6,nC6,nAs5,nA5
+        fcb     nAs5,nA5,nG5,s4,nF5,nA5
+        fcb     s2d,nC5,s2,nF5,s8,nA5
+        fcb     nAs5,s4,nC6,s2d,nA5,s8
+        fcb     nC6,nD6,nC6,nAs5,nA5
+        fcb     nG5,nF5,nE5,s1,nF5,s4
+        fcb     nC5,s2,nF5,s8,nA5,nAs5
+        fcb     s4,nC6,s2d,nA5,s8,nC6
+        fcb     nD6,nC6,nAs5,nA5,nAs5
+        fcb     nA5,nG5,s4,nF5,nA5,s2d
+        fcb     nC5,s2,nF5,s8,nA5,nAs5
+        fcb     s4,nC6,s2d,nA5,s8,nC6
+        fcb     nD6,nC6,nAs5,nA5,nG5
+        fcb     nF5,nE5
+        fcb     cForJ+2
+        fcb     s1,nF5,s8,nF6,nD6,nAs5
+        fcb     nF5,nD5,nAs4,s2,nA4,s8
+        fcb     nC5,nF5,nA5,nC6,nF6,nA4
+        fcb     nE6,nF6,nE6,nD6,nC6
+        fcb     nAs5,nA5,nG5,s4,nA5
+        fcb     nAs5,s2,nC6,s8,nF6,nD6
+        fcb     nAs5,nF5,nD5,nAs4,s2
+        fcb     nA4,s8,nC5,nF5,nA5,nC6
+        fcb     nF6,nA4,nE6,nF6,nE6,nD6
+        fcb     nC6,nAs5,nA5,nG5
+        fcb     cNxtJ
+        fcb     s1,nF5
+        fcb     cNxtI
+* 232 octets
+/
+
+***************************************
+JamesBond
+***************************************
+
+* Intro
+        fcb     cBPM,145
+        fcb     s8,nE3,s4,STAC,nG3,s8
+        fcb     nDs4,s4d,nD4,s8,nG3
+        fcb     nAs3,s2d,nB3,s4,nG3,s16
+        fcb     nA3,nG3,s4d,nFs3,s8,nB2
+        fcb     nE3,s2dd,nCs3,s4,nP,s8
+        fcb     nE3,s4,STAC,nG3,s8,nDs4
+        fcb     s4d,nD4,s8,nG3,nAs3,s2d
+        fcb     nB3,s4,nG3,s16,nA3,nG3
+        fcb     s4d,nFs3,s8,nB2,nDs3
+        fcb     s2dd,nE3,s4,nP,s8,nE4
+        fcb     s4,STAC,nG4,s8,nDs5,s4d
+        fcb     nD5,s8,nG4,nAs4,s2d,nB4
+        fcb     s4,nG4,s16,nA4,nG4,s4d
+        fcb     nFs4,s8,nB3,nE4,s2dd
+        fcb     nCs4,s4,nP,s8,nE4,s4
+        fcb     STAC,nG4,s8,nDs5,s4d
+        fcb     nD5,s8,nG4,nAs4,s2d,nB4
+        fcb     s4,nG4,s16,nA4,nG4,s4d
+        fcb     nFs4,s8,nB3,nDs4,s2dd
+        fcb     nE4,s4,nP
+
+* Bridge
+        fcb     cForI+2
+        fcb     s8,STAC,nDs4,nE4,nP,nE4
+        fcb     nFs4,s8,nE4,s4,nFs4,s8
+        fcb     STAC,nG4,nG4,nP,nG4
+        fcb     nFs4,s8,nE4,s4,nFs4
+        fcb     cNxtI
+        fcb     cForI+2
+        fcb     s8,STAC,nE4,nE4,s2,STAC
+        fcb     nP
+        fcb     cNxtI
+        fcb     cForI+2
+        fcb     s16,STAC,nE4,s8,STAC
+        fcb     nE4
+        fcb     cNxtI
+        fcb     nE4
+        fcb     cForI+2
+        fcb     nE2,s16,STAC,nFs2,nFs2
+        fcb     s8,STAC,nFs2,s4,STAC
+        fcb     nFs2,s8,STAC
+        fcb     cForJ+4
+        fcb     nE2
+        fcb     cNxtJ
+        fcb     s16,STAC,nG2,nG2,s8
+        fcb     STAC,nG2,s4,STAC,nG2,s8
+        fcb     STAC,nFs2,nFs2,nFs2
+        fcb     cNxtI
+        fcb     nE2,s16,STAC,nFs2,nFs2
+        fcb     s8,STAC,nFs2,s4,STAC
+        fcb     nFs2,s8,STAC
+        fcb     cForI+4
+        fcb     nE2
+        fcb     cNxtI
+        fcb     s16,STAC,nG2,nG2,s8
+        fcb     STAC,nG2,s4,STAC,nG2,s8
+        fcb     STAC,nFs2,nF2,nE2
+
+* Ending
+        fcb     s8,nDs3,s2,nD3,s8,nD3
+        fcb     nB2,nA2,s1,nB2,s8,nE2
+        fcb     s4,STAC,nG2,s8,nDs3,s4
+        fcb     nD3,s8,nG2,nB2,nP,nFs3
+        fcb     s4,nF3,s8,nA2,nD3,nP
+        fcb     nAs3,s4,nA3,s8,nE3,nG3
+        fcb     nP,nDs4,s2d,nD4,s2,nP
+
+***************************************
+ImperialMarch
+***************************************
+* Intro
+        fcb     cBPM,105
+        fcb     s8d,nG3,s16,nP,s32,nG3
+        fcb     s16d,nP,s32,STAC,nG3
+        fcb     nG3,s32,nP,s32,STAC,nG3
+        fcb     nG3,s16d,nP,s32,STAC
+        fcb     nG3,nG3,s32,nP,nG3,s32
+        fcb     STAC,nDs4,s16,STAC,nDs4
+        fcb     s32,STAC,nDs4,s32,nP
+        fcb     nDs4,s8,nP,s64,nP,s8d
+        fcb     nG3,s16,nP,s32,nG3,s16d
+        fcb     nP,s32,STAC,nG3,nG3,s16
+        fcb     STAC,nG3,s32,STAC,nG3
+        fcb     s16d,nP,s32,nG3,nP,s32
+        fcb     STAC,nG3,s16,STAC,nG3
+        fcb     s32,STAC,nFs4,nFs4,s32
+        fcb     nP,s32,STAC,nFs4,nFs4
+        fcb     s16d,nP,s8d,nG3,s16,nP
+        fcb     s32,nG3,s16d,nP,s32
+        fcb     STAC,nG3,nG3,s32,nP,s32
+        fcb     STAC,nG3,nG3,s16d,nP
+        fcb     s32,STAC,nG3,nG3,s32,nP
+        fcb     nG3,s32,STAC,nDs4,s16
+        fcb     STAC,nDs4,s32,STAC,nDs4
+        fcb     s32,nP,nDs4,s16d,nP,s8d
+        fcb     nG3,s16,nP,s32,nG3,s16d
+        fcb     nP,s32,STAC,nG3,nG3,s32
+        fcb     nP,s32,STAC,nG3,nG3
+        fcb     s16d,nP,s32,STAC,nG3
+        fcb     nG3,s32,nP,nG3,s32,STAC
+        fcb     nFs4,s16,STAC,nFs4,s32
+        fcb     STAC,nFs4,s32,nP,nFs4
+        fcb     s16d,nP
+
+* Refrain
+        fcb     cBPM,90
+        fcb     cForI+3
+        fcb     s8d,nG4,s32,nP
+        fcb     cNxtI
+        fcb     s8,nDs4,s32,nP,nAs4,nP
+        fcb     s8d,nG4,s32,nP,s8,nDs4
+        fcb     s32,nP,nAs4,nP,s4d,nG4
+        fcb     cForI+3
+        fcb     s32,nP,s8d,nD5
+        fcb     cNxtI
+        fcb     s32,nP,s8,nDs5,s32,nP
+        fcb     nAs4,nP,s8d,nFs4,s32,nP
+        fcb     s8,nDs4,s32,nP,nAs4,nP
+        fcb     s4d,nG4,s32,nP,s8d,nG5
+        fcb     s32,nP,s8,nG4,s32,nP
+        fcb     nG4,nP,s8d,nG5,s32,nP
+        fcb     s8,nFs5,s32,nP,nF5,nE5
+        fcb     nP,nDs5,nP,nE5,s8d,nP
+        fcb     s32,nP,nGs4,s16d,nP,s8d
+        fcb     nCs5,s32,nP,s8,nC5,s32
+        fcb     nP,nB4,nP,nAs4,nP,nA4
+        fcb     nP,nAs4,s8d,nP,s32,nP
+        fcb     nDs4,s16d,nP,s8d,nFs4
+        fcb     s32,nP,s8,nDs4,s32,nP
+        fcb     nG4,nP,s8d,nAs4,s32,nP
+        fcb     s8,nG4,s32,nP,nAs4,nP
+        fcb     s4d,nD5,s32,nP,s8d,nG5
+        fcb     s32,nP,s8,nG4,s32,nP
+        fcb     nG4,nP,s8d,nG5,s32,nP
+        fcb     s8,nFs5,s32,nP,nF5,nE5
+        fcb     nP,nDs5,nP,nE5,s8d,nP
+        fcb     s32,nP,nGs4,s16d,nP,s8d
+        fcb     nCs5,s32,nP,s8,nC5,s32
+        fcb     nP,nB4,nP,nAs4,nP,nA4
+        fcb     nP,nAs4,s8d,nP,s32,nP
+        fcb     nDs4,s16d,nP,s8d,nFs4
+        fcb     s32,nP,s8,nDs4,s32,nP
+        fcb     nAs4,nP,s8d,nG4,s16,nP
+        fcb     s8,nDs4,s32,nP,nAs4,nP
+        fcb     s4d,nG4,s32,nP
+
+* alphaville_biginjap_mono
+        fcb     cBPM,200
+        fcb     s4,nAs4,nG4,nF4,s8,nG4
+        fcb     s1d,nAs4,s4,nG4,nF4,s8
+        fcb     nG4,s2d,nC5,nAs4,s4,nG4
+        fcb     nF4,s8,nG4,s4d,nAs4,s4
+        fcb     nG4,nF4,nG4,s1,nD5,nF5
+        fcb     s4,nAs4,nG4,nF4,s8,nG4
+        fcb     s4d,nAs4,s4,nG4,nF4,nG4
+        fcb     nAs4,nG4,nF4,s8,nG4,s2d
+        fcb     nC5,nAs4,s4,nG4,nF4,s8
+        fcb     nG4,s4d,nAs4,s4,nG4,nF4
+        fcb     nG4,s1d,nD5,s8,nC5,s4
+        fcb     nF5,s8,nC5,s2d,nD5,s2
+        fcb     nAs3,s8,nA3,s4,nAs3,s4d
+        fcb     nA3,s2d,nG3,s2,nAs3,s4
+        fcb     nC4,nAs3,s8,nA3,s2d
+        fcb     nAs3,s4d,nA3,s2d,nG3,s2
+        fcb     nF3,s4,nDs3,s1ddd,nD3
+        fcb     s8,nD3,s2,nAs3,s4,nA3
+        fcb     s8,nAs3,s4d,nA3,s2d,nG3
+        fcb     s2,nAs3,s4,nC4,nAs3,nA3
+        fcb     s2,nAs3,s4d,nA3,s2d,nG3
+        fcb     s2,nF3,nG3,s1ddd,nFs3
+        fcb     s8,nFs3,s2,nAs3,s8,nA3
+        fcb     s4,nG3,s4d,nF3,s4,nG3
+        fcb     s2,nF3,s4,nA3,nAs3,nA3
+        fcb     s8,nAs3,s4d,nA3,s4,nAs3
+        fcb     s2d,nDs3,s4,nF3,s2,nG3
+        fcb     s4,nA3,s2d,nAs3,s1ddd
+        fcb     nA3,s4,nA3,s2,nAs3,s8
+        fcb     nA3,s4,nG3,s4d,nF3,s4
+        fcb     nG3,s2,nF3,s8,nA3,s4
+        fcb     nAs3,s4d,nA3,s4,nAs3
+        fcb     nA3,nAs3,nA3,s2d,nG3,s4
+        fcb     nC4,nAs3,nA3,nG3,s8
+        fcb     nAs3,nA3,nG3,s1
+        fcb     cForI+2
+        fcb     nA3,s8,nAs3,nA3,nF3,nG3
+        fcb     s4,nG4,s8,nA4,s4d,nAs4
+        fcb     nAs3,nDs3,s8,nAs3,nA3
+        fcb     nG3,nA3,s4,nF4,s8,nG4
+        fcb     s4d,nA4,nA3,s2d,nD3,s8
+        fcb     nDs3,s4,nDs4,s8,nF4,nG4
+        fcb     s4d,nAs3,s8,nA3,s4,nG3
+        fcb     nA3,nAs3,s8,nG3,nA3,s4
+        fcb     nD4,s8,nDs4,s2d,nFs4,s8
+        fcb     nD4,nDs4,nFs4,nA4,nAs3
+        fcb     nA3,nF3,nG3,s4,nG4,s8
+        fcb     nA4,s4d,nAs4,s4,nD4,s8
+        fcb     nDs4,s4d,nG3,s4,nAs3,s8
+        fcb     nA3,s4d,nF3,s4,nA3,nAs3
+        fcb     nC4,s2d,nF3,s8,nA3,s4d
+        fcb     nAs3,s2,nG3,s4,nA3,s4d
+        fcb     nAs3,nA3,s4,nG3,s1d
+        fcb     cNxtI
+        fcb     nA3,s2d,nD5,s1,nG4,s8
+        fcb     nDs5,s1,nF5,nG5,s1d,nD5
+        fcb     s4d,nC5,s2,nG5,nF5,s4
+        fcb     nC5,s1ddd,nD5,s4,nD5,s1
+        fcb     nG4,s8,nG5,s1,nDs5,s8
+        fcb     nF5,s1,nG5,s1d,nD5,s4d
+        fcb     nC5,s2,nG5,nF5,s4,nC5
+        fcb     s4d,nD5,nF5,s2,nG5,s4
+        fcb     nAs5,s2d,nD5,s4d,nG4,s2
+        fcb     nAs3,s4,nC4,nAs3,s8,nA3
+        fcb     s1,nG3,s2,nAs3,s8,nC4
+        fcb     s4,nAs3,s4d,nA3,s2,nAs3
+        fcb     s4d,nA3,s2d,nG3,s4d,nF3
+        fcb     nDs3,s1ddd,nD3,s8,nD3
+        fcb     s4d,nAs3,nC4,s4,nAs3
+        fcb     nA3,s2d,nG3,s4d,nAs3
+        fcb     nC4,s4,nAs3,nA3,s4d
+        fcb     nAs3,s2d,nA3,s4d,nG3
+        fcb     s2d,nF3,s2,nDs3,s1ddd
+        fcb     nD3,s8,nD3,s2,nAs3,s8
+        fcb     nA3,s4,nG3,s4d,nF3,s4
+        fcb     nG3,s2,nF3,s4,nA3,nAs3
+        fcb     nA3,s8,nAs3,s4d,nA3,s4
+        fcb     nAs3,s2d,nDs3,s4,nF3,s2
+        fcb     nG3,s4,nA3,s2d,nAs3
+        fcb     s1ddd,nA3,s4,nA3,s2
+        fcb     nAs3,s8,nA3,s4,nG3,s4d
+        fcb     nF3,s4,nG3,s2,nF3,s8
+        fcb     nA3,s4,nAs3,s4d,nA3,s4
+        fcb     nAs3,nA3,nAs3,nA3,s2d
+        fcb     nG3,s4,nC4,nAs3,nA3,nG3
+        fcb     s8,nAs3,nA3,nG3,s1
+        fcb     cForI+2
+        fcb     nA3,s8,nAs3,nA3,nF3,nG3
+        fcb     s4,nG4,s8,nA4,s4d,nAs4
+        fcb     nAs3,nDs3,s8,nAs3,nA3
+        fcb     nG3,nA3,s4,nF4,s8,nG4
+        fcb     s4d,nA4,nA3,s2d,nD3,s8
+        fcb     nDs3,s4,nDs4,s8,nF4,nG4
+        fcb     s4d,nAs3,s8,nA3,s4,nG3
+        fcb     nA3,nAs3,s8,nG3,nA3,s4
+        fcb     nD4,s8,nDs4,s2d,nFs4,s8
+        fcb     nD4,nDs4,nFs4,nA4,nAs3
+        fcb     nA3,nF3,nG3,s4,nG4,s8
+        fcb     nA4,s4d,nAs4,s4,nD4,s8
+        fcb     nDs4,s4d,nG3,s4,nAs3,s8
+        fcb     nA3,s4d,nF3,s4,nA3,nAs3
+        fcb     nC4,s2d,nF3,s8,nA3,s4d
+        fcb     nAs3,s2,nG3,s4,nA3,s4d
+        fcb     nAs3,nA3,s4,nG3,s1d
+        fcb     cNxtI
+        fcb     nA3,s8,nAs3,nA3,nF3,nG3
+        fcb     s4
+        fcb     cForI+2
+        fcb     nAs4,nG4,nF4,s8,nG4,s4d
+        fcb     nAs4,s4,nG4,nF4,nG4
+        fcb     nAs4,nG4,nF4,s8,nG4,s2d
+        fcb     nC5,nAs4,s4,nG4,nF4,s8
+        fcb     nG4,s4d,nAs4,s4,nG4,nF4
+        fcb     nG4,s1d,nD5,s8,nC5,s4
+        fcb     nF5,s8,nC5,s4,nD5
+        fcb     cNxtI
+        fcb     nG4,s8,nA4,s4d,nAs4
+        fcb     nAs3,nDs3,s8,nAs3,nA3
+        fcb     nG3,nA3,s4,nF4,s8,nG4
+        fcb     s4d,nA4,nA3,s2d,nD3,s8
+        fcb     nDs3,s4,nDs4,s8,nF4,nG4
+        fcb     s4d,nAs3,s8,nA3,s4,nG3
+        fcb     nA3,nAs3,s8,nG3,nA3,s4
+        fcb     nD4,s8,nDs4,s2d,nFs4,s8
+        fcb     nD4,nDs4,nFs4,nA4,nAs3
+        fcb     nA3,nF3,nG3,s4,nG4,s8
+        fcb     nA4,s4d,nAs4,s4,nD4,s8
+        fcb     nDs4,s4d,nG3,s4,nAs3,s8
+        fcb     nA3,s4d,nF3,s4,nA3,nAs3
+        fcb     nC4,s2d,nF3,s8,nA3,s4d
+        fcb     nAs3,s2,nG3,s4,nA3,s4d
+        fcb     nAs3,nA3,s4,nG3,s1d,nA3
+        fcb     s8,nAs3,nA3,nF3,nG3,s4
+        fcb     nG4,s8,nA4,s4d,nAs4
+        fcb     nAs3,nDs3,s8,nAs3,nA3
+        fcb     nG3,nA3,s4,nF4,s8,nG4
+        fcb     s4d,nA4,nA3,s2d,nD3,s8
+        fcb     nDs3,s4,nDs4,s8,nF4,nG4
+        fcb     s4d,nAs3,s8,nA3,s4,nG3
+        fcb     nA3,nAs3,s8,nG3,nA3,s4
+        fcb     nD4,s8,nDs4,s2d,nFs4,s8
+        fcb     nD4,nDs4,nFs4,nA4,nAs3
+        fcb     nA3,nF3,nG3,s4,nG4,s8
+        fcb     nA4,s4d,nAs4,s4,nD4,s8
+        fcb     nDs4,s4d,nG3,s4,nAs3,s8
+        fcb     nA3,s4d,nF3,s4,nA3,nAs3
+        fcb     nC4,s2d,nF3,s8,nA3,s4d
+        fcb     nAs3,s2,nG3,s4,nA3,s4d
+        fcb     nAs3,nA3,s4,nG3,s1d,nA3
+        fcb     s8,nAs3,nA3,nF3,s1,nG3
+        fcb     nDs3,nF3,nD3,nDs3,nC3
+        fcb     s1ddd,nD3,s8,nD3,s1ddd
+        fcb     nF3,s8,nF3
+  

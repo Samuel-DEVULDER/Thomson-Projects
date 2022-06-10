@@ -1,0 +1,40 @@
+(main)BOOTBLK.ASM
+***************************************
+* Boot bloc. Il charge le 2eme
+* secteur de la diskette de boot en
+* $6300 et saute a cette adresse.
+*
+* Compilation avec:
+* - c6809 (-c -am -oOP)
+*   http://www.pulsdemos.com/c6809.html
+* - macro assembler 3.6 (A/IM)
+*   http://tinyurl.com/btqz57a
+*
+* Samuel Devulder Mars 2012-2021
+*
+* Revisions:
+* =========
+* Fev 2021 : evite l'usage de la pile 
+*            (tinyurl.com/j025x7f4)
+***************************************
+        setdp   $60
+
+        org     $6200
+
+init    ldd     #$6302  ! b=$02
+        stb     <$6048  ! commande=lecture
+        stb     <$604C  ! 2nd secteur
+        clrb            ! d=$6300
+        std     <$604F  ! addr. charg.
+        jsr     $E82A   ! load secteur
+        stb     <$6080  ! clear sema.
+        bcs     exit    ! erreur?
+        bsr     next    ! secteur suivant
+        bsr     next    ! secteur suivant
+        stb     <$6080  ! clear sema.
+        bcs     exit    ! erreur?
+        jmp     $6300   ! sinon jsr
+next    inc     <$604F  ! 256 oct. suivant
+        inc     <$604C  ! secteur suivant
+        jmp     $E82A   ! load secteur
+exit    jmp     [$001E] ! boot normal
