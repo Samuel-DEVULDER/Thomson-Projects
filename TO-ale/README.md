@@ -5,17 +5,23 @@ La diskette parait vide, et pourtant elle bouge. En effet tout tient dans le boo
 # Histoire
 
 Il m'arrive une bien curieuse histoire. Alors voilà: Ca fait longtemps que je n'avais pas touché à mon TO9 et de la poussière commençait sérieusement à s'accumuler dessus. J'avais honte de le laisser dans un tel état; alors récemment, je me suis décidé à l'allumer pour voir s'il fonctionnait encore. Et là, surprise, au boot du basic je suis tombé sur ceci:
+
 ![](images/TOale.gif)
+
 Cela se apparait que ce soit avec le basic 128 ou le basic 1.0, avec les menus 3/4 ou D/E. Impossible d'y échapper.
 
 J'étais bien en peine avec mon TO... un bug, une sorte d'araignée en fait, en avait pris possession et dessinait des toiles partout à l'écran. Super, mais comment je reprends la main? J'appuie sur le bouton RESET. Je retourne au menu, mais lorsque je reviens au basic, alors ca repart pour un tour! Zut alors.. Bon je tente le tout pour le tout et lorsque le dessin est fini, je reste appuyé sur ctrl-c et là... magie... le basic reprend la main comme si de rien était. Ouf, la machine peut donc encore être utilisée.
 
 Je me suis dit que puisque ce truc réagit au ctrl-c, c'était peut-être un programme basic, mais la diskette présente dans le lecteur ne contient aucun fichier. Mystère! Je contacte une connaissance qui bosse dans l'entomologie et je lui montre les photos d'écran. Elle me dit reconnaitre le type de toile laissé par une araignée d'écran à 8pattes^w bits. D'habitude les toiles sont assez rectiligne,
+
 ![figure de Moivre](https://i0.wp.com/amstrad.eu/uploads/fichiers/articles/amstradcpc/programmation/listings/moivres/moivre6.jpg?resize=341%2C333)
+
 mais celle-ci fait de bien curieux louvoiements. Cette araignée a un certain sens de la fantaisie, ce qui explique son nom savant: A.L.E (Araignée Loufoque d'Ecran ;) ). En plaçant la diskette dans un MO6, on constate que rien ne se passe. Cette ALE est donc spécifique à la gamme TO, aussi nous avons baptisée cette sous-espèce une TOALE (se prononce toile, un bon moyen mnémotechnique :langue: ).
 
 Normalement cette espèce vit non loin du secteur de boot, mais il me dit avoir dans son vivarium une espèce cousine résidant sur K7. Effectivement son comportement est très similaire à celle qui hante mon TO9:
+
 ![](images/penweb.gif)
+
 L'avantage c'est qu'elle est semi-apprivoisée et que son code génétique est disponible. Les première constatation sur cette cousine indique qu'elle est minuscule (moins de 255 octets), et s'est adaptée à toutes les machines de la gamme TO. Elle n'a pas de grande exigences mémoire, et se contente de se nourrir de 2 ou 3 routines du moniteur.
 
 Pour les curieux voici le code génétique de la bestiole apprivoisée
