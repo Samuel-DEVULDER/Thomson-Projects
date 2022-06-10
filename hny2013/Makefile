@@ -1,4 +1,4 @@
-# Makefile for HNYé013
+# Makefile for HNY2013
 
 DISK=hny2013.sap
 
@@ -27,17 +27,12 @@ $(SAPFS):
 	$(CC) "$<" -Ofast -o "$@"
 
 build/%.BIN: asm/%.ass
-	test -d build || mkdirs build/
-	cd build/ && ../$(C6809) -c -am -oOP ../$< ../$@
+	test -d build || mkdir -p build/
+	cd build && ../$(C6809) -c -am -oOP ../$< ../$@
 
 build/x%.gif: images/%.gif
 	test -d build || mkdirs build/
 	cd build && perl ../converters/img_to7_9exp.pl ../$<
-	
-#main.asm: rotozoom.ass
-#	sh inline_inc.sh $@ $< >$@_
-#	mv $@_ $@
-#	../windows/c6809$(EXE) -am -c -oOP/CM $@ $*.bin
 	
 fill_sapdir: $(SAPFS) empty_disk/bootbk.sap
 	test -d build/sapdir || mkdir -p build/sapdir
