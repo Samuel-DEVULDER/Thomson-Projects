@@ -1,1 +1,4 @@
 ignore/
+build/
+*.sap
+*.fd
