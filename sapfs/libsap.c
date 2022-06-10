@@ -1277,10 +1277,7 @@ int sap_FillArchive(sapID id, sapsector_t *sapsector)
          ID_STATE(id) = FILLED_ARCHIVE;
          sect = 1;
          /* no break */
-<<<<<<< Updated upstream
-=======
 		 /* fallthrough */ /* <== prevents gcc error/warning */
->>>>>>> Stashed changes
 
       case FILLED_ARCHIVE:
          do_write_sector(id, sapsector);

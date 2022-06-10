@@ -790,10 +790,7 @@ int main(int argc, char *argv[])
             }
 
             usage(argv[0]);
-<<<<<<< Updated upstream
-=======
 			/* fallthrough */ /* <== prevents gcc error/warning */
->>>>>>> Stashed changes
 
          case 'h':  /* help */
             if (is_fr)
