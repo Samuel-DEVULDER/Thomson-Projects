@@ -1,0 +1,32 @@
+(main)bootldr
+***************************************
+* Boot loader. Il charge le 2eme 
+* secteur de la diskette de boot en 
+* $6300 et saute a cette adresse.
+*
+* Compilation avec:
+* - c6809 (-c -am -oOP)
+*   http://www.pulsdemos.com/c6809.html
+* - macro assembler 3.6 (A/IM)
+*   http://tinyurl.com/btqz57a
+*
+* Samuel Devulder Mars 2012
+***************************************
+	setdp	$60
+
+	org	$6200
+
+init	lda	#$2
+	sta	<$6048
+	sta	<$604C
+	ldd	$1E
+	std	,s	! retour
+	ldd	#$6300	! addr. charg.
+	std	<$604F
+	jsr	$E82A	! load secteur	
+	stb	<$6080	! clear sema.
+	bcs	exit	! erreur?
+	jmp	$6300	! sinon jsr
+exit	rts
+	end	init
+	

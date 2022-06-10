@@ -1,0 +1,302 @@
+(main)TO-ale
+***************************************
+* Une araignee loufoque d'ecran (ALE)
+* du genre TO 8pattes^w bits.
+* ==> TO-ALE <== (se prononce toile)
+* 
+* Elle se balade a l'ecran avec un fil
+* a la patte et laisse trainer de
+* jolies toiles un peu partout.
+*
+* Sortie par ctrl-c.
+*
+* Compilation avec:
+* - c6809 (-c -am -oOP)
+*   http://www.pulsdemos.com/c6809.html
+* - macro assembler 3.6 (A/IM)
+*   http://tinyurl.com/btqz57a
+*
+* Samuel Devulder Mars 2012
+***************************************
+	org	$6300
+*	org	$9000
+
+PLOTX	equ	$603D
+PLOTY	equ	$603F
+STATUS	equ	$6019
+
+* profondeur maxi historique
+HISTORY	equ	20
+
+***************************************
+* boucle:
+*       REPEAT
+*       ....
+*       WHILE   condition
+***************************************
+REPEAT	macro
+loop	set	*
+	endm
+WHILE	macro
+	b\0	loop
+	endm
+	
+***************************************
+* Filtrage:
+*       FILTER  <lbl>
+*
+* Defini:
+*	F<lbl> = valeur filtree sur 2
+*                octets
+* Calcule:
+*       F<lbl> = (3*F<lbl> + D)/4
+***************************************
+FILTR	macro
+	jsr	<filtr
+F\0	fdb	0
+	endm
+
+***************************************
+* Mouvement physique:
+*       PHYS	symbol,val,max
+*
+* Defini:
+*      P<symbol> = position (2 octet)
+*      V<symbol> = vitesse (1 octet)
+*      A<symbol> = accel. (1 octet)
+*
+* Calcule: 
+* Mise a jour la position en fonction
+* de la vitesse et de l'acceleration. 
+* Si la position depasse max, alors
+* l'acceleration est stopee et la vit.
+* est inversee (et doublee).
+*
+* La vitesse et l'acceleration sont
+* definies au format signe 5.3 avec
+* saturation pour la vitesse.
+***************************************
+PHYS	macro
+	jsr	<phys
+V\0	fcb	0
+A\0	fcb	0
+P\0	fdb	\1,\2
+	endm
+	
+***************************************
+* Generateur aleatoire:
+*
+* 	RND	offset,max
+*
+* Calcule:
+* A = nb aleatoire entre offset et
+*     offset+max-1.
+***************************************
+RND	macro
+	jsr	<rnd
+	fcb	\0,\1
+	endm
+
+***************************************
+* Point d'entree
+***************************************
+	setdp	*<-8
+ini	pshs	d,x,y,u,dp
+	ldb	#*<-8
+	tfr	b,dp
+***************************************
+* initialisation du generateur rnd
+***************************************
+	ldx	$E7C6	! timer
+	REPEAT
+	RND	0,0
+	leax	-1,x
+	WHILE	ne
+***************************************
+* nouveau dessin
+***************************************
+start	clr	<PV	! reset traj
+	ldx	<PX	! init FX,FY
+	stx	<FX
+	ldy	<PY
+	sty	<FY
+	RND	8,HISTORY-8
+	ldu	#HFIN	! init histo.
+	REPEAT
+	pshu	x,y
+	deca
+	WHILE	ne
+	stu	<HDEB
+	stu	<HPTR
+***************************************
+* affichage dessin
+***************************************
+	RND	50,200	! nombre de pas
+	jsr	<cls	! eff. ecran
+	REPEAT		
+	jsr	<draw
+	deca
+	WHILE	ne
+***************************************
+* fin trace combine a l'attente
+***************************************	
+	clrb		! fin trace
+	std	<VX	! zero vitesse
+	std	<VY	! zero accel
+wait	lda	#HISTORY
+	sta	<PV
+	REPEAT
+	jsr	<draw
+	deca
+	WHILE	ne
+	decb
+	bne	wait
+***************************************
+* lecture clavier, detection BREAK.
+***************************************	
+	jsr	6,u	! GETC
+	cmpb	#3	! ctrl-c
+	bne	start
+	puls	d,x,y,u,dp
+***************************************
+* SWI est transparent pour le basic.
+* On passe donc sur le cls si on est
+* lance depuis le basic. Sinon sous
+* Assembler on s'arrete la.
+***************************************
+	swi		! rts 
+***************************************
+* Effacement ecran + forme seule +
+* curseur eteint.
+*
+* Retourne U=$E800 B=ecrase
+***************************************
+cls	ldu	#$E800
+	jsr	,u	! reset
+	ldb	#12
+	jsr	3,u	! PUTC
+	ldb	#88
+	stb	STATUS	! forme seule
+	rts		! curs eteint
+***************************************
+* Affiche une ligne:
+* - bouge PX, PY en fonction de la
+*   vitesse et l'acceleration.
+* - effecture un filtre passe bas 
+*   (FX, FY)
+* - depile dans (X,Y) la 1ere coord de
+*   l'historique et empile la nouvelle.
+* - tracage de ligne (FX,FY)-(X,Y)
+* - si fin de traj determine une
+*   nouvelle acceleration et duree
+*
+* En entree: U=$E800.
+* En sortie: X et Y coord extremite
+*            ligne tracee.
+***************************************
+draw	pshs	d,u
+	lda	#123
+PV	set	*-1	! fin traj ?
+	deca
+	bge	draw1	! non => phys
+	RND	-8,16	! nouvelle 
+	sta	<AX	! acceleration
+	RND	-8,16
+	sta	<AY	
+	RND	10,20	! nouv duree
+draw1	sta	<PV	
+	PHYS	X,160,319
+	PHYS	Y,100,199
+	ldd	<PX	! filtre passe
+	FILTR	X	! pas pour
+	std	PLOTX	! lisser la 
+	ldd	<PY	! trajectoire
+	FILTR	Y
+	std	PLOTY
+	ldu	#0	! depilage
+HPTR	set	*-2	! old coord
+	pulu	x,y	! empilage
+	std	-2,u	! new coord
+	ldd	<FX
+	std	-4,u
+	cmpu	#HFIN	! buf. circul.
+	bne	main1
+	ldu	#0
+HDEB	set	*-2
+main1	stu	<HPTR
+	puls	d,u
+	jmp	12,u	! DRAW
+***************************************
+* filtrage: FX = (D + 3*FX)/4
+* entree: D contient PX, S pointe sur
+*         l'adresse de FX.
+* sortie: U ecrase
+***************************************
+filtr	puls	u
+	addd	,u	! D+FX
+	addd	,u	! D+2*FX
+	addd	,u	! D+3*FX
+	asra
+	rorb
+	asra
+	rorb		! D=(D+3*FX)/4
+	std	,u	! FX=D
+	jmp	2,u	! retour
+***************************************
+* Genere un nombre pseudo aleatoire sur
+* 8 bit. C'est une version modifiee
+* du multiply with carry. La periode
+* de la sequence est 31870. Compact
+* et rapide, que demander de plus?
+*
+* en entree: S pointe sur (offset,max)
+* en sortie: A=un nombre random entre 
+*              offset et offset+max-1
+*            B, U ecrase
+***************************************
+rnd	puls	u
+	ldd	#3*256+249
+	mul
+rnd1	addd	#0
+	sta	<rnd1+2
+	stb	<rnd+1+2
+	lda	1,u
+	mul
+	adda	,u
+	jmp	2,u
+***************************************
+* Mise a jour d'une position via la
+* loi physique.
+*
+* entree : S pointe sur l'adresse de 
+*          fcb VIT,ACC
+*          fdb POS,MAX
+* sortie : POS, VIT mis a jour
+*          U, X, D ecrase
+***************************************
+phys	puls	u
+	pulu	d,x	! A=vit B=acc
+	asra		! X=pos
+	asra
+	asra		
+	leax	a,x	! X=pos+vit/8
+	lda	-4,u	
+	cmpx	,u	! X<0 ou X>MAX?
+	bls	phys1	
+	ldx	-2,u	! oui=>rebond
+	aslb		! accel*=2
+	bvc	phys0
+	ldb	-3,u
+phys0	negb		! accel=-accel
+	clra		! vit=0
+phys1	pshu	d,x
+	addb	,u	! vit=vit+acc
+	bvs	phys2	! satur?
+	stb	,u
+phys2	jmp	6,u	! retour
+***************************************
+* historique
+***************************************
+	rmb	4*HISTORY
+HFIN	set	*
+	end	ini
