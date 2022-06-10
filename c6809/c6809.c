@@ -2966,7 +2966,7 @@ int Ass_INCLUD(void)
 
     if (Ass_Start_INC("ASM") != NO_ERROR)
         return ERR_ERROR ;
-    if (run.pass > MACROPASS)
+    if (run.pass >= MACROPASS)
     {
         /* Recherche l'include dans la liste des sources */
         current_source = first_source ;
@@ -3453,7 +3453,7 @@ int Ass_END(void)
         if (Eval() != NO_ERROR) return ERR_ERROR ;
         run.exec = eval.operand ;
     }
-    run.exit = TRUE ;
+	run.exit = TRUE ;
     return RecordLine(PRINT_LIKE_END) ;
 }
 
@@ -3855,7 +3855,9 @@ int AssembleLine(void)
                  * passer */
                 if (((run.pass == MACROPASS)
                   && (strcmp(direct_table[i].name,"MACRO"))
-                  && (strcmp(direct_table[i].name,"ENDM")))
+                  && (strcmp(direct_table[i].name,"ENDM"))
+				  && (strcmp(direct_table[i].name,"INCLUD"))
+				  )
                  || ((run.pass > MACROPASS)
                   && (run.locked)
                   && (direct_table[i].ifprint == FALSE)))
