@@ -1,0 +1,1434 @@
+(main)firew.ASM
+***************************************
+* Particules colorees explosantes.
+*
+* Assemblage sous MASS6809 (prehisto)
+* avec l'option: A/IM
+*
+* Samuel Devulder, Mai 2011
+***************************************
+	org	$a000
+	
+NPARTS	set	65
+MAXGRO	set	8
+
+ini	jsr	inibas
+	swi
+	
+inibas	pshs	d,x,y,u,dp,cc
+
+	orcc	#$50
+	jsr	init_ram
+*	jsr	init_ecran
+	jsr	init_conv
+	jsr	init_vid
+	jsr	init_son
+	jsr	init_rnd
+	jsr	init_part
+
+boucle	
+	jsr	anim
+	jsr	$E81B
+	bcc	boucle
+	jsr	exit_son
+	puls	d,x,y,u,dp,cc,pc
+*	swi
+***************************************
+* initialisation du son
+***************************************
+init_son
+	pshs	a,dp,x
+	lda	#exit_son<-8
+	tfr	a,dp
+	setdp	exit_son<-8
+	ldx	#$E7CF
+	lda	-1,x
+	sta	<MCRA+1
+	lda	,x
+	sta	<MCRB+1
+	ora	#4
+	sta	,x
+	lda	-2,x
+	sta	<MDB+1
+	lda	,x
+	anda	#$FB
+	sta	,x
+	lda	-2,x
+	sta	<MDDB+1
+	lda	#$3F
+	sta	-2,x
+	lda	#4
+	sta	-1,x
+	sta	,x
+	clr	-2,x
+	lda	-14,x
+	sta	<MPCR+1
+	ora	#$30
+	anda	#$F7
+	sta	-14,x
+	setdp	0
+	puls	a,dp,x,pc
+***************************************
+* sortie du son
+***************************************
+exit_son
+	ldx	#$E7CF
+	lda	,x
+	anda	#$FB
+	sta	,x
+MDDB	lda	#0
+	sta	-2,x
+	lda	,x
+	ora	#4
+	sta	,x
+MDB	lda	#0
+	sta	-2,x
+MCRB	lda	#0
+	sta	,x
+MCRA	lda	#0
+	sta	-1,x
+MPCR	lda	#0
+	sta	-14,x
+	rts
+***************************************
+* initialisation des particules
+***************************************
+init_part
+	lda	#NPARTS
+	ldb	#48
+	ldu	#partic
+ini_p0
+	pshs	d
+	jsr	new_part
+	puls	d
+	leau	8,u
+	deca
+	decb
+	bne	ini_p0
+	sta	nparts
+	rts
+***************************************
+* prépare les echantillons sonores
+***************************************
+sound	ldx	#mute_sound
+	ldu	#ecranR
+	ldb	#50*3
+	ldy	#sound3
+sound0
+*	lda	#$F1
+	lda	,x+
+	bne	sound1
+	lda	,--x
+sound1	sta	sound2+1
+	lsra
+	lsra
+	lsra
+	lsra
+	lda	a,y
+	sta	1,u
+sound2	lda	#0
+	anda	#15
+	lda	a,y
+	sta	,u
+	leau	42,u
+	decb
+	bne	sound0
+	stx	sound+1
+	lda	ecranR
+	ora	#128
+	sta	ecranR
+	lda	ecranV
+	ora	#128
+	sta	ecranV
+	lda	ecranB
+	ora	#128
+	sta	ecranB
+sound3	rts
+	fcb	0,16,24,26,28,29,30
+	fcb	31
+	fcb	32,33,34,36,38,46,62
+***************************************
+* fait evoluer toutes les particules
+***************************************
+anim	bsr	sound
+	ldu	#partic
+anim1	jsr	anim_part
+	cmpu	#partic+8*(NPARTS+1)
+	bne	anim1
+	ldx	#ecranB+42*50
+	ldu	#$5F40-40
+	bsr	update
+	ldu	#$5F40-80
+	bsr	update
+	ldu	#$5F40-120
+* Economie d'un saut
+*	bsr	update
+*	rts
+***************************************
+* Mise a jour de l'ecran
+***************************************
+updat	macro
+	ldd	-2*(\0+1),x
+	std	-2*(\0+1),u
+	beq	updat\0
+	lda	a,y
+	ldb	b,y
+	std	-2*(\0+1),x
+updat\0	set	*
+	endm
+	
+update	ldy	#convTB	
+up0
+	updat	0
+	updat	1
+	updat	2
+	updat	3
+	updat	4
+	updat	5
+	updat	6
+	updat	7
+	updat	8
+	updat	9
+* son
+*	clr	$E7CD
+	lda	-41,x
+	sta	$E7CD
+	updat	10
+	updat	11
+	updat	12
+	updat	13
+	updat	14
+	updat	15
+	updat	16
+	updat	17
+	updat	18
+	updat	19
+	leau	-4*40,u
+	leax	-42,x
+	lda	,x
+	sta	$E7CD
+	lbge	up0
+	rts
+
+***************************************
+* Affiche une petite particule a une
+* coordonee paire:
+*       XX ..
+*       XX ..
+***************************************
+drSmallPart0
+	lda	#$77
+	sta	-42,x
+	sta	,x
+	rts
+***************************************
+* Affiche une petite particule a une
+* coordonee impaire:
+*       .X X.
+*       .X X.
+***************************************
+drSmallPart1
+	stb	,-s
+	ldd	-42,x
+	ora	#$07
+	orb	#$70
+	std	-42,x
+	ldd	,x
+	ora	#$07
+	orb	#$70
+	std	,x
+	puls	b,pc
+***************************************
+* Affiche une grosse particule a une
+* coordonee paire:
+*       .X X. ..
+*       XX XX ..
+*       XX XX ..
+*       .X X. ..
+***************************************
+drBigPart0
+	pshs	b
+	ldd	#$7777
+	std	,x
+	std	42,x
+	ldd	-42,x
+	ora	#$07
+	orb	#$70
+	std	-42,x
+	ldd	84,x
+	ora	#$07
+	orb	#$70
+	std	84,x
+	puls	b,pc
+***************************************
+* Affiche une grosse particule a une
+* coordonee impaire:
+*       .. XX ..
+*       .X XX X.
+*       .X XX X.
+*       .. XX ..
+***************************************
+drBigPart1
+	pshs	b
+	ldd	#$0777
+	stb	-41,x
+	stb	85,x
+	ora	,x
+	std	,x
+	lda	#$07
+	ora	42,x
+	std	42,x
+	lda	#$70
+	ora	2,x
+	sta	2,x
+	lda	#$70
+	ora	44,x
+	sta	44,x
+	puls	b,pc
+***************************************
+* initialisation du generateur rnd
+***************************************
+init_rnd
+	lda	$E7E5
+	sta	,-s
+	bsr	rnd
+	dec	,s
+	puls	a,pc
+***************************************
+* Cree une nouvelle particule pointee
+* par reg U.
+***************************************
+new_part
+* duree de vie
+	bsr	rnd
+	andb	#31
+	addb	#6+128
+	stb	,u
+* couleur
+newp2	bsr	rnd
+	andb	#7
+	beq	newp2
+	stb	1,u
+* coordonees
+	bsr	rnd
+	lsrb
+	lsrb
+	lsrb
+	lsrb
+	andb	#7
+	addb	#(80-7)/2
+	lslb
+	lda	#(50-4)*4
+	std	2,u
+* vitesse 
+	bsr	rnd
+	lda	#9
+	mul
+	suba	#4
+	pshs	a
+	bsr	rnd
+	tfr	b,a
+	anda	#15
+	adda	#10
+	nega
+	puls	b
+	std	4,u
+	ldd	#256
+	std	6,u
+* sifflement
+	ldd	#fsss_sound
+	std	sound+1
+	rts
+***************************************
+* Genere un nombre pseudo aleatoire sur
+* 8 bit. C'est une version modifiee
+* du multiply with carry. La periode
+* de la sequence est 31870. Compact
+* et rapide, que demander de plus?
+***************************************
+rnd	ldd	#3*256+249
+	mul
+rnd1	addd	#0
+	sta	rnd1+2	!,pcr
+	stb	rnd+1	!,pcr
+	rts
+***************************************
+* Fait evoluer la particule pointee par
+* reg U.
+***************************************
+anim_part
+	ldb	,u	* vivante?
+	beq	exit_part
+	decb		* vieillesse
+	bvs	boom_part
+	bne	affi_part
+	
+* Particule morte
+mort_part
+	clr	,u
+	ldb	nparts
+	incb
+	stb	nparts
+	beq	nouv_part
+	cmpb	#NPARTS-MAXGRO
+	blt	exit_part
+* A faire: si nb grosse <4, alors new part, sinon rien
+nouv_part
+	decb
+	stb	nparts
+	bsr	new_part
+* sortie animation
+exit_part
+	leau	8,u
+	rts
+
+* Affichage
+affi_part
+	stb	,u
+* calcul pointeur video
+	ldx	#ecranR+2
+	ldd	2,u
+	lsrb
+	lsrb
+	abx
+	lsra
+	lsra
+	inca
+	ldb	#42
+	mul
+	leax	d,x
+
+* routine de dessin
+	lda	,u
+	ldb	3,u
+	lsrb
+	lsla
+	rolb
+	lslb
+	andb	#6
+	ldy	#anim_tab
+	ldy	b,y
+
+* affichage
+	ldb	1,u
+	lsrb
+	bcc	*+4
+	jsr	,y
+	leax	42*50,x
+	lsrb
+	bcc	*+4
+	jsr	,y
+	leax	42*50,x
+	lsrb
+	bcc	*+4
+	jsr	,y
+
+* deplacement
+	ldd	2,u	* y,x
+	adda	4,u	* vy,vx
+	addb	5,u
+	cmpb	#(80-3)*2
+	bhi	mort_part
+	cmpa	#(50-4)*4
+	bhi	mort_part
+	std	2,u
+	ldd	4,u
+	addd	6,u	* fy,fx
+	std	4,u
+	bra	exit_part
+***************************************
+* explosion particule
+***************************************
+boom_part
+	ldb	nparts
+	cmpb	#(vit_tab2-vit_tab-2)/2
+	blt	mort_part
+* bruitage: boom
+	ldd	#boom_sound
+	std	sound+1
+* duree vie des sous-particules
+	jsr	rnd
+	lsrb
+	andb	#31
+	addb	#10
+	stb	,u
+	ldy	#vit_tab
+	ldx	#partic-8
+boom0	ldd	,y++
+	beq	exit_part
+boom1	leax	8,x
+	tst	,x
+	bne	boom1
+	dec	nparts
+* copie particule mini vers la nouvelle
+	addd	4,u
+	std	4,x
+	ldd	,u
+	std	,x
+	ldd	2,u
+	std	2,x
+	ldd	6,u
+	std	6,x
+	bra	boom0
+***************************************
+* table des routines d'affichage
+***************************************	
+anim_tab
+	fdb	drSmallPart0
+	fdb	drBigPart0
+	fdb	drSmallPart1
+	fdb	drBigPart1
+***************************************
+* Table des vitesses des sous-
+* particules
+***************************************
+vit_tab		* vy,vx
+***************************************
+*       |
+*     - * -
+*       |
+***************************************
+        fcb	0,2
+	fcb	0,-2
+	fcb	4,0
+	fcb	-4,0
+***************************************
+*      \ /
+*       * 
+*      / \
+***************************************	
+	fcb	4,1
+	fcb	4,-1
+	fcb	-4,1
+	fcb	-4,-1
+***************************************
+*     .   .
+*       * 
+*     `   '
+***************************************
+	fcb	2,2
+	fcb	2,-2
+	fcb	-2,2
+	fcb	-2,-2
+***************************************
+*      . .
+*       * 
+*      ` '
+***************************************
+	fcb	2,1
+	fcb	2,-1
+	fcb	-2,1
+	fcb	-2,-1
+***************************************
+*       
+*       *
+*       
+***************************************
+	fcb	0,0
+vit_tab2
+
+***************************************
+* Initialisation ecran. Tour en noir et
+* couleur de fond alternant R,V,B,Noir
+***************************************
+init_vid
+	lda	#$E7
+	setdp	$E7
+	tfr	a,dp
+	ldb	<$E7C3	* forme
+*	orb	#1
+	andb	#254	
+	stb	<$E7C3
+	ldd	#0*8+64+128
+	ldu	#$5F40
+	bsr	fillscr
+	inc	<$E7C3
+	clrb
+	bsr	fillscr
+	dec	<$E7C3	* fait au dessus
+	ldd	#-40*3*256+7*8+64+128
+	bsr	fillscr
+	leau	-40,u
+	ldb	#8+64+128
+	bsr	fillscr
+	leau	-40,u
+	ldb	#16+64+128
+	bsr	fillscr
+	leau	-40,u
+	ldb	#32+64+128
+	bsr	fillscr
+	inc	<$E7C3
+*	ldb	<$E7DD
+*	andb	#240
+*	stb	<$E7DD
+	setdp	$0
+* tour noir de façon portable
+*	ldb	#27
+*	jsr	$E803
+*	ldb	#$60
+*	jmp	$E803
+	rts
+***************************************
+* Effacement ram
+***************************************
+init_ram
+	ldx	#debram
+initr1	clr	,x+
+	cmpx	#finram+1
+	bne	initr1
+	rts
+***************************************
+* Initialisation des sentinelles 
+* de la ram ecran
+***************************************
+*init_ecran
+*	ldx	#ecranR
+*	lda	#-1
+*init_ecran0
+*	sta	,x
+*	leax	42,x
+*	cmpx	#ecranB+42*50
+*	bne	init_ecran0
+*	deca
+*	sta	ecranR
+*	sta	ecranV
+*	sta	ecranB
+*	rts
+***************************************
+* Remplissage de l'ecran avec la valeur
+* contendue dans le registre B. A
+* chaque fin de ligne l'adresse video
+* est ajoutée à la valeur du registre A
+* permettant de faire des remplissages
+* de lignes non consecutives.
+***************************************
+fillscr
+	pshs	d,x,y,u
+	sts	fill1-4
+	sta	fill2+2
+	tfr	b,a
+	tfr	d,x
+	leay	,x
+	leas	,x
+fill0	pshu	d,x,y,s
+	cmpa	,u
+	beq	fill1
+	lds	#$1234
+	puls	d,x,y,u,pc
+fill1	pshu	d,x,y,s
+	pshu	d,x,y,s
+	pshu	d,x,y,s
+	pshu	d,x,y,s
+fill2	leau	$55,u
+	bra	fill0
+***************************************
+* Initialisation de la table de
+* conversion. 
+***************************************	
+init_conv
+	ldu	#convTB
+	clra
+	bsr	initc1
+	leau	32,u
+	clra
+	bsr	initc1
+	leau	64,u
+	lda	#32
+	bsr	initc1
+	leau	16,u
+	lda	#96
+initc1	sta	,u
+	sta	2,u
+	ora	#2
+	sta	6,u
+	ora	#4
+	sta	7,u
+	rts
+***************************************
+* Echantillons sonore
+***************************************
+mute_sound
+	fdb	$8800
+boom_sound
+	includ	BOOM.ASM
+	fcb	$00
+fsss_sound
+	includ	FSSS.ASM
+	fcb	$00
+***************************************
+* debut zone donnees	
+***************************************
+debram	set	*
+***************************************
+* Tableau de conversion. Pour chaque
+* couple de valeurs il donne le couple
+* precedent.
+***************************************
+convTB	rmb	7*17+1
+***************************************
+* Ecran rouge, vert, bleu
+***************************************
+ecranR	rmb	42*50
+ecranV	rmb	42*50
+ecranB	rmb	42*50
+***************************************
+* Nombre de particules libres
+***************************************
+nparts	rmb	1
+***************************************
+* Particules
+***************************************
+* vie+type,couleur,x,y,vx,vy,fx,fy
+partic	rmb	8*NPARTS
+finram	set	*	
+***************************************
+* Fin du programme: on demarre sur 
+* le point d'entree "ini".
+***************************************
+	end	inibas
+(include)BOOM.ASM
+	fdb	$8888,$8786,$6554,$4211
+	fdb	$112E,$FFFF,$2111,$11AF
+	fdb	$FFF4,$21CD,$FFE7,$FFDB
+	fdb	$1121,$4EEE,$2DEE,$D211
+	fdb	$1111,$11BF,$FFFF,$FFFF
+	fdb	$E635,$D411,$1111,$12CE
+	fdb	$FFFF,$FEDF,$EE21,$1211
+	fdb	$118E,$FFFF,$C311,$1111
+	fdb	$13EF,$FFFF,$FEDD,$5211
+	fdb	$1111,$1228,$FFFF,$FFF1
+	fdb	$1111,$1111,$12CF,$FFFF
+	fdb	$FFFF,$E211,$1111,$1117
+	fdb	$EFFF,$FFFF,$F921,$1224
+	fdb	$D322,$2222,$2233,$DE9D
+	fdb	$FFFF,$EE31,$1111,$3CDE
+	fdb	$EEED,$EEFE,$C822,$1112
+	fdb	$DFFF,$FF71,$1112,$3334
+	fdb	$8DEE,$FEEE,$EEED,$4221
+	fdb	$1121,$234C,$EFFF,$FFF8
+	fdb	$1111,$1111,$26AE,$FFFF
+	fdb	$EEEE,$ECDD,$EEEF,$E311
+	fdb	$1111,$24CE,$DCB9,$BCDD
+	fdb	$4322,$4493,$23EF,$FFFD
+	fdb	$7344,$3432,$2234,$6644
+	fdb	$336C,$DA7D,$EDDD,$89AA
+	fdb	$BD88,$8348,$C722,$2223
+	fdb	$4EFF,$FFD7,$4211,$1111
+	fdb	$23EF,$FEEE,$EDDB,$AB42
+	fdb	$2233,$DFFF,$FE32,$1111
+	fdb	$128D,$EEC8,$4344,$4CEE
+	fdb	$FFFE,$DB32,$1111,$4DD9
+	fdb	$CEDD,$DD66,$3243,$2237
+	fdb	$9648,$459D,$EEED,$8CBD
+	fdb	$ED84,$2223,$4356,$438A
+	fdb	$989B,$CDDE,$EEEB,$AB8B
+	fdb	$5632,$1111,$236B,$EEEE
+	fdb	$EED9,$4322,$3437,$B633
+	fdb	$AEFE,$EEDC,$D844,$3232
+	fdb	$2222,$26A9,$CEEF,$FEE8
+	fdb	$3223,$349C,$DD89,$A9BD
+	fdb	$DEDB,$B322,$2237,$BCDB
+	fdb	$A89A,$8423,$25CE,$EE99
+	fdb	$4339,$DEEE,$DA52,$2234
+	fdb	$3223,$68BD,$DEED,$DD52
+	fdb	$223D,$DBA9,$4489,$88AE
+	fdb	$DDDC,$7887,$7322,$3546
+	fdb	$8CCC,$A963,$226C,$EEDB
+	fdb	$8334,$BCB9,$7ABA,$8845
+	fdb	$5ADC,$A843,$38C8,$CCCB
+	fdb	$CA88,$7442,$3347,$9DCA
+	fdb	$DEEE,$A322,$2236,$8DEE
+	fdb	$EEED,$9321,$1113,$DEFF
+	fdb	$FEDD,$E442,$1124,$CD98
+	fdb	$3333,$5CDE,$EEEE,$DC93
+	fdb	$2211,$2238,$CDDE,$DDDB
+	fdb	$8368,$DEEE,$DC32,$1123
+	fdb	$5DED,$DCDD,$D964,$3234
+	fdb	$8DDD,$A8A8,$A977,$8ADB
+	fdb	$DDA8,$5322,$2238,$C9AC
+	fdb	$DDEE,$C877,$5336,$BDDD
+	fdb	$A743,$336A,$CCDC,$C843
+	fdb	$3888,$6438,$BCDD,$DCBB
+	fdb	$BCA6,$3332,$2224,$7BBD
+	fdb	$ED9D,$D843,$3458,$CEEE
+	fdb	$ED52,$2222,$348D,$DEEE
+	fdb	$EB97,$8333,$3347,$4433
+	fdb	$344A,$DDCD,$A9AD,$EEED
+	fdb	$DB52,$2112,$26DE,$EEEE
+	fdb	$C933,$3333,$2235,$8ACD
+	fdb	$EEEE,$DC86,$4445,$6433
+	fdb	$3369,$DDCC,$A99A,$CDC9
+	fdb	$A889,$7667,$8DDD,$D963
+	fdb	$3223,$458C,$CDDD,$DDDD
+	fdb	$C763,$3333,$3348,$88AC
+	fdb	$CBCC,$AB83,$3333,$4634
+	fdb	$45CD,$DDDB,$A744,$5ACA
+	fdb	$88A8,$6344,$8C99,$6434
+	fdb	$48AB,$8A88,$8CDD,$DA85
+	fdb	$5457,$78BB,$A854,$3468
+	fdb	$CDDC,$CBDD,$AA83,$2222
+	fdb	$26DD,$DDDD,$DCC8,$899B
+	fdb	$CB85,$3346,$89BC,$BAB6
+	fdb	$4333,$3588,$9BDD,$DDB8
+	fdb	$8888,$BCA7,$4433,$224A
+	fdb	$DDDD,$DBA8,$8A85,$68A9
+	fdb	$8877,$7768,$AAAA,$8767
+	fdb	$6544,$58CD,$C985,$58AD
+	fdb	$DDCC,$A884,$3332,$3347
+	fdb	$CDEE,$D843,$3346,$ACDD
+	fdb	$DEDC,$9433,$3333,$348B
+	fdb	$DDCC,$B987,$7989,$CDDD
+	fdb	$D833,$2222,$27DE,$EED6
+	fdb	$3636,$CDDD,$DD83,$2223
+	fdb	$69BD,$DDDD,$DD88,$8433
+	fdb	$4444,$4456,$89AA,$ACCC
+	fdb	$CCB8,$6434,$78BA,$A886
+	fdb	$8987,$5888,$8856,$8688
+	fdb	$8889,$ABCB,$9AAB,$9888
+	fdb	$6543,$5687,$7757,$8ACD
+	fdb	$C888,$9AA7,$7443,$3359
+	fdb	$CEDD,$DC97,$6333,$3458
+	fdb	$78AA,$CBBA,$7588,$8AA9
+	fdb	$B976,$78B9,$8864,$4468
+	fdb	$99A8,$8899,$ABAC,$8887
+	fdb	$6767,$7656,$8AB9,$8975
+	fdb	$8889,$7CCC,$CCA8,$4344
+	fdb	$4778,$99AB,$C978,$7434
+	fdb	$58CC,$CDC9,$7754,$3358
+	fdb	$9BBC,$A988,$9998,$689C
+	fdb	$DDA8,$4333,$4688,$9878
+	fdb	$8ABC,$CCB8,$5568,$89AA
+	fdb	$A887,$8878,$6644,$78CD
+	fdb	$DD85,$4434,$556A,$ABCC
+	fdb	$BA88,$6789,$8888,$8ABA
+	fdb	$8754,$4568,$9989,$A998
+	fdb	$78A8,$8764,$4679,$BCDC
+	fdb	$A887,$5558,$ACCB,$9864
+	fdb	$4558,$9A9B,$C985,$4367
+	fdb	$8CCC,$9875,$78A9,$AA88
+	fdb	$7667,$8CCC,$7544,$4488
+	fdb	$AB88,$5587,$ACBB,$A998
+	fdb	$6335,$7AAC,$A887,$7888
+	fdb	$7888,$7667,$889B,$AA96
+	fdb	$6875,$7897,$6887,$879C
+	fdb	$CBAA,$8688,$8975,$7799
+	fdb	$8886,$6888,$9ACB,$A987
+	fdb	$5454,$6758,$ACCB,$B987
+	fdb	$8ABC,$CC83,$3333,$457A
+	fdb	$DDDD,$BA88,$8765,$5567
+	fdb	$6668,$CCDD,$A986,$6776
+	fdb	$6788,$8887,$8799,$8866
+	fdb	$6788,$889A,$CCCC,$BAA9
+	fdb	$9665,$5554,$4557,$8899
+	fdb	$CDCB,$CA88,$4755,$7877
+	fdb	$7578,$8988,$ACCB,$8864
+	fdb	$7898,$7864,$5878,$8989
+	fdb	$8988,$88AA,$A99B,$A888
+	fdb	$A989,$5443,$4665,$6574
+	fdb	$4545,$89CD,$DDDD,$DDCA
+	fdb	$9856,$9CAA,$8533,$3233
+	fdb	$4788,$ABAA,$BCC8,$AB88
+	fdb	$8878,$9888,$8887,$4768
+	fdb	$9ACA,$89BC,$CA54,$3345
+	fdb	$8899,$8A87,$7456,$8ABC
+	fdb	$CCBA,$9654,$5878,$8886
+	fdb	$6688,$6778,$CCA8,$4646
+	fdb	$77A9,$BBCC,$9868,$8643
+	fdb	$4457,$9CBD,$CCAB,$9774
+	fdb	$4345,$78A8,$B89B,$AAAB
+	fdb	$9878,$9988,$8788,$8899
+	fdb	$8864,$668A,$AAA8,$A888
+	fdb	$8788,$8764,$8A9C,$A987
+	fdb	$7489,$9788,$6688,$8888
+	fdb	$AB99,$78A8,$88A8,$8898
+	fdb	$8675,$7456,$5668,$ADB9
+	fdb	$8857,$888C,$9775,$658B
+	fdb	$9CB9,$A684,$5766,$5878
+	fdb	$9A98,$999A,$9998,$8899
+	fdb	$8988,$8878,$7877,$8977
+	fdb	$8788,$8889,$BA9A,$8775
+	fdb	$4778,$ABCC,$CCB6,$6444
+	fdb	$4788,$88A9,$8898,$BCBC
+	fdb	$BA98,$6555,$7767,$89AA
+	fdb	$BB87,$8556,$769A,$9998
+	fdb	$8866,$7898,$989A,$8888
+	fdb	$7678,$887A,$9A99,$7787
+	fdb	$9888,$9888,$7557,$7788
+	fdb	$8654,$5689,$BCCB,$AA89
+	fdb	$A887,$6576,$7998,$8988
+	fdb	$89AA,$A997,$5665,$5679
+	fdb	$9ABA,$8787,$7678,$8988
+	fdb	$8998,$8866,$6778,$8B9A
+	fdb	$BAB9,$8875,$4447,$789A
+	fdb	$BAA9,$8886,$8866,$7554
+	fdb	$5477,$89AB,$CBBB,$B989
+	fdb	$8886,$7776,$7775,$7778
+	fdb	$AAAA,$A8AC,$B988,$7666
+	fdb	$6668,$8776,$7788,$89BC
+	fdb	$BACA,$BCA8,$8644,$6577
+	fdb	$7888,$A8AA,$9AAA,$B887
+	fdb	$5468,$89A7,$6768,$AAAA
+	fdb	$8887,$7667,$88A8,$8866
+	fdb	$6899,$8AA9,$9A98,$8875
+	fdb	$6555,$6667,$678A,$CCDD
+	fdb	$CBA8,$8766,$7788,$7866
+	fdb	$7789,$AA8B,$A988,$6664
+	fdb	$7878,$8999,$999A,$9887
+	fdb	$6777,$7888,$8898,$8776
+	fdb	$5759,$BCBA,$9644,$7CCC
+	fdb	$B886,$6444,$6889,$AA99
+	fdb	$8AAA,$BCB9,$9988,$6656
+	fdb	$7889,$8888,$8887,$8898
+	fdb	$9888,$8878,$99AB,$A998
+	fdb	$8777,$6668,$8877,$7778
+	fdb	$7888,$9AAA,$9988,$8865
+	fdb	$4668,$9998,$8878,$89A9
+	fdb	$8777,$7777,$7676,$6788
+	fdb	$AA98,$8777,$8888,$89AA
+	fdb	$BCBA,$AA88,$8888,$9888
+	fdb	$7777,$8888,$8888,$9A9A
+	fdb	$9988,$7888,$8888,$8877
+	fdb	$7777,$6678,$8888,$7778
+	fdb	$899A,$9887,$6667,$8898
+	fdb	$8899,$8877,$8789,$9998
+	fdb	$8876,$8787,$8888,$8898
+	fdb	$8888,$8788,$8898,$8878
+	fdb	$8888,$7886,$7888,$8888
+	fdb	$8777,$6788,$9ABB,$BBAA
+	fdb	$A999,$9888,$8778,$8989
+	fdb	$99AA,$BBA9,$8888,$8898
+	fdb	$8888,$8877,$6666,$6666
+	fdb	$7888,$8877,$6687,$7666
+	fdb	$7778,$89AA,$9888,$8888
+	fdb	$7678,$8AAA,$AAAA,$9988
+	fdb	$7788,$8888,$8889,$8998
+	fdb	$8878,$8887,$7787,$7766
+	fdb	$6677,$7878,$89A8,$9A88
+	fdb	$8877,$6667,$7776,$6678
+	fdb	$8988,$8888,$8888,$88AA
+	fdb	$A999,$8888,$8889,$999A
+	fdb	$AA99,$8888,$8878,$8899
+	fdb	$9988,$8766,$6778,$89A9
+	fdb	$9A98,$8888,$8888,$8766
+	fdb	$6666,$6556,$8888,$8988
+	fdb	$8899,$9998,$8888,$8888
+	fdb	$8987,$7766,$6678,$8989
+	fdb	$999A,$9999,$9998,$8888
+	fdb	$8766,$7889,$9989,$8888
+	fdb	$8888,$8888,$8766,$7788
+	fdb	$8778,$8888,$99A9,$9A99
+	fdb	$8888,$8898,$8888,$8876
+	fdb	$6677,$8888,$899A,$A999
+	fdb	$8887,$7777,$7777,$8888
+	fdb	$8888,$8899,$A988,$6667
+	fdb	$8888,$8888,$7777,$8999
+	fdb	$8888,$8888,$7888,$8877
+	fdb	$8888,$8888,$8999,$9888
+	fdb	$7888,$8877,$8688,$8889
+	fdb	$8898,$8889,$9888,$8888
+	fdb	$8888,$8998,$8877,$6678
+	fdb	$9ABA,$A987,$6666,$7878
+	fdb	$8999,$AA88,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$9ABB,$A988,$7676,$7778
+	fdb	$8889,$9888,$8888,$8887
+	fdb	$7888,$8888,$9998,$8888
+	fdb	$8876,$5668,$8889,$9998
+	fdb	$8878,$8888,$8888,$7778
+	fdb	$8888,$7777,$8888,$8899
+	fdb	$9988,$8888,$8877,$8788
+	fdb	$8998,$9988,$8888,$8888
+	fdb	$8899,$9888,$8888,$8889
+	fdb	$9998,$8888,$8899,$9988
+	fdb	$8898,$8776,$6778,$8899
+	fdb	$AAA9,$9887,$7777,$8888
+	fdb	$8888,$8777,$7787,$7788
+	fdb	$8888,$8888,$8888,$8877
+	fdb	$7778,$7777,$7888,$8889
+	fdb	$8888,$7778,$8888,$8888
+	fdb	$8999,$8888,$8888,$8888
+	fdb	$8888,$8878,$8888,$8888
+	fdb	$8888,$8888,$8889,$9999
+	fdb	$9889,$8888,$7655,$6788
+	fdb	$8888,$8766,$7889,$9998
+	fdb	$8766,$5667,$6667,$7899
+	fdb	$9998,$8888,$89AB,$BBA9
+	fdb	$8888,$8888,$899A,$9998
+	fdb	$9998,$8778,$8888,$8888
+	fdb	$8999,$9988,$8778,$8888
+	fdb	$8888,$9888,$8899,$AAAA
+	fdb	$9988,$8888,$8888,$8899
+	fdb	$9887,$7777,$8887,$7666
+	fdb	$7766,$6666,$7788,$8888
+	fdb	$8888,$7776,$6788,$8877
+	fdb	$7888,$999A,$AA98,$7778
+	fdb	$8887,$8887,$7667,$8899
+	fdb	$A999,$8888,$8889,$A999
+	fdb	$9888,$8888,$8899,$9888
+	fdb	$8888,$8888,$8877,$7666
+	fdb	$6777,$7777,$7777,$7888
+	fdb	$9999,$899A,$ABAB,$BBCB
+	fdb	$BBBB,$BAA9,$9888,$8777
+	fdb	$7777,$7777,$5555,$5566
+	fdb	$7788,$8999,$9999,$99AA
+	fdb	$A999,$8887,$7667,$7778
+	fdb	$7665,$5566,$7788,$8887
+	fdb	$7666,$7778,$8889,$9999
+	fdb	$9888,$8888,$8888,$8889
+	fdb	$9AAA,$AA98,$8888,$8888
+	fdb	$8777,$7888,$9999,$9988
+	fdb	$8888,$8888,$8889,$9999
+	fdb	$9888,$8888,$8888,$8988
+	fdb	$8877,$6666,$6777,$7777
+	fdb	$7788,$8888,$8877,$7667
+	fdb	$8888,$8889,$9999,$A999
+	fdb	$9999,$9999,$9999,$9AAA
+	fdb	$AAAA,$9988,$8777,$7777
+	fdb	$8888,$8888,$8888,$7788
+	fdb	$8888,$8887,$7778,$8899
+	fdb	$8888,$8888,$8777,$7777
+	fdb	$8888,$7788,$8888,$8888
+	fdb	$7888,$8888,$8888,$8888
+	fdb	$8877,$7777,$7888,$8888
+	fdb	$8888,$8888,$8889,$9888
+	fdb	$8888,$9999,$9988,$8888
+	fdb	$8898,$8888,$999A,$A999
+	fdb	$8998,$8888,$8888,$8888
+	fdb	$8777,$8888,$8887,$7665
+	fdb	$5667,$7888,$8988,$8778
+	fdb	$8888,$8778,$8888,$8998
+	fdb	$8888,$8898,$8888,$8888
+	fdb	$8999,$9999,$8888,$8887
+	fdb	$7888,$8888,$8888,$8888
+	fdb	$8888,$8888,$7777,$7777
+	fdb	$8877,$7777,$7888,$8888
+	fdb	$8888,$8899,$8888,$8888
+	fdb	$8888,$899A,$AAAA,$A999
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8999,$9888,$8888
+	fdb	$8888,$8888,$8888,$7777
+	fdb	$7777,$7788,$8888,$8887
+	fdb	$7777,$7888,$8877,$7777
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8887,$7898,$8667,$7665
+	fdb	$789A,$9888,$9A98,$8888
+	fdb	$7789,$ABAA,$A998,$8888
+	fdb	$8889,$99AA,$999A,$AA98
+	fdb	$8888,$8888,$8888,$8999
+	fdb	$9988,$8888,$8888,$8888
+	fdb	$8888,$8878,$8888,$8888
+	fdb	$8888,$7788,$8888,$8766
+	fdb	$6666,$6777,$7778,$8999
+	fdb	$9888,$8888,$8887,$6666
+	fdb	$6778,$8999,$9988,$8888
+	fdb	$8999,$9988,$8888,$8888
+	fdb	$8888,$8899,$AABA,$A999
+	fdb	$8888,$8888,$8888,$9888
+	fdb	$8888,$7777,$8888,$8899
+	fdb	$8888,$8777,$6666,$6777
+	fdb	$8888,$8777,$7777,$7777
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8999,$9998,$8888,$8888
+	fdb	$8877,$7788,$8899,$9999
+	fdb	$9988,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8777,$6666,$6777
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8999,$9999,$9999
+	fdb	$9999,$8888,$8888,$8888
+	fdb	$9999,$9999,$9999,$9999
+	fdb	$9998,$8888,$8888,$7766
+	fdb	$6666,$6666,$6677,$6665
+	fdb	$5566,$6667,$7777,$7888
+	fdb	$8899,$9988,$8888,$8777
+	fdb	$7777,$8888,$8899,$8888
+	fdb	$8888,$9998,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+(include)FSSS.ASM
+	fdb	$F1F1,$F1F1,$F1F1,$F1F1
+	fdb	$F1F1,$F1F1,$F1F1,$F1F1
+	fdb	$F1F1,$F1F1,$F1F1,$F1F1
+	fdb	$F1F1,$F1F1,$F1F1,$F1F1
+	fdb	$F1F1,$F1F1,$F1F1,$F1F1
+	fdb	$F1F1,$F2E2,$E2E2,$E2E2
+	fdb	$E2E2,$E2D3,$D3D3,$D4C5
+	fdb	$A698,$897A,$5C4C,$3D3D
+	fdb	$3D3E,$2E2E,$2E2E,$2E2E
+	fdb	$2E2E,$2E2E,$2E1F,$1F1F
+	fdb	$1F1F,$1F1F,$1E2E,$2E2E
+	fdb	$2E2E,$2E2E,$2E2E,$2E3D
+	fdb	$3D3C,$4B69,$8896,$B4C3
+	fdb	$D3D3,$D2E2,$E2E2,$E2E2
+	fdb	$E2E2,$E2E2,$E2E2,$E2E2
+	fdb	$E2E2,$E2E2,$E3D3,$D3C4
+	fdb	$B698,$896B,$4C3D,$3D3E
+	fdb	$2E2E,$2E2E,$2E2E,$2E2E
+	fdb	$2E2E,$2E2E,$2D3D,$3D4C
+	fdb	$5A78,$87B4,$C3D3,$D3D2
+	fdb	$E2E2,$E2E2,$E2E2,$E2E2
+	fdb	$E2D3,$D3D3,$C4A7,$887A
+	fdb	$5C4D,$3D3D,$3E2E,$2E2E
+	fdb	$2E2E,$2E2D,$3D3D,$3C4B
+	fdb	$7887,$A5C4,$D3D3,$D3E2
+	fdb	$E2E2,$E2E2,$E3D3,$D3D4
+	fdb	$C598,$896B,$4D3D,$3D3D
+	fdb	$2E2E,$2E2D,$3D3D,$3D4C
+	fdb	$5A78,$96B4,$C3D3,$D3D3
+	fdb	$D2E2,$D3D3,$D3D3,$C5A7
+	fdb	$887B,$4C3D,$3D3D,$3D3D
+	fdb	$3D3D,$3D3C,$4B69,$87A5
+	fdb	$C4D3,$D3D3,$D3D3,$D3D3
+	fdb	$D3C4,$A788,$7B4C,$3D3D
+	fdb	$3D3D,$3D3D,$3D3C,$4B78
+	fdb	$87A4,$C3D3,$D3D3,$D3D3
+	fdb	$D3D4,$C598,$896B,$4D3D
+	fdb	$3D3D,$3D3D,$3D4C,$5A88
+	fdb	$96B4,$C3D3,$D3D3,$D3D3
+	fdb	$C4B6,$987A,$5C4D,$3D3D
+	fdb	$3D3D,$3D4C,$5A88,$96B4
+	fdb	$C3D3,$D3D3,$D3D4,$C598
+	fdb	$896C,$4C3D,$3D3D,$3D3C
+	fdb	$4B69,$87A5,$C4D3,$D3D3
+	fdb	$D3D4,$C5A8,$896B,$4C3D
+	fdb	$3D3D,$3D4C,$5A78,$96B4
+	fdb	$C3D3,$D3D3,$D4C5,$A889
+	fdb	$6B4C,$3D3D,$3D3C,$4B69
+	fdb	$87A5,$C4D3,$D3D3,$D4C5
+	fdb	$A789,$6B4C,$3D3D,$3D4C
+	fdb	$4A78,$87B4,$C4D3,$D3D4
+	fdb	$C4B6,$887A,$5C4D,$3D3D
+	fdb	$4C4B,$7887,$B4C4,$D3D3
+	fdb	$D4C5,$A789,$6B4C,$3D3D
+	fdb	$3C4B,$6987,$A5C4,$C3D3
+	fdb	$D4C5,$A789,$6B4C,$4D3D
+	fdb	$4C4B,$6987,$A5C4,$C3D4
+	fdb	$C4B6,$988A,$5C4C,$3D4C
+	fdb	$4B69,$88A5,$C4C4,$D4C4
+	fdb	$B698,$8A5C,$4C4C,$4C4B
+	fdb	$6987,$A5C4,$C4C4,$C4B7
+	fdb	$887A,$5C4C,$4C4C,$5A78
+	fdb	$96B4,$C4C4,$C4B6,$987A
+	fdb	$5C4C,$4C4C,$5A78,$96B4
+	fdb	$C4C4,$C4B6,$887A,$5C4C
+	fdb	$4C4B,$6988,$A5C4,$C4C4
+	fdb	$C5A8,$896B,$4C4C,$4C5A
+	fdb	$7896,$B4C4,$C4C5,$A789
+	fdb	$6B4C,$4C4C,$5A78,$96B4
+	fdb	$C4C4,$C5A7,$896B,$4C4C
+	fdb	$4B69,$8895,$B4C4,$C4B6
+	fdb	$987A,$5C4C,$4C5A,$7887
+	fdb	$B5C4,$C4C5,$A889,$6B4C
+	fdb	$4C4B,$6987,$A5C4,$C4C5
+	fdb	$A789,$6B4C,$4C4B,$6987
+	fdb	$A5C4,$C4C5,$A889,$6B4C
+	fdb	$4C5A,$7887,$A5C4,$C4B6
+	fdb	$987A,$5C4C,$4B59,$8896
+	fdb	$B4C4,$C5A7,$896B,$4C4C
+	fdb	$5A78,$86B5,$C4C5,$B788
+	fdb	$7A5C,$4C5B,$6887,$A5C4
+	fdb	$C5B6,$887A,$5C4C,$5B68
+	fdb	$87A5,$C4C5,$B788,$7A5C
+	fdb	$4C5A,$7887,$B5C4,$C5A7
+	fdb	$896B,$5C4B,$5A88,$96B4
+	fdb	$C4B6,$988A,$5B4C,$5B69
+	fdb	$87A5,$C4C5,$A788,$6B5C
+	fdb	$4B69,$8896,$B4C5,$B698
+	fdb	$7A5B,$4B5A,$7896,$B5C5
+	fdb	$B698,$7A5B,$4B5A,$7886
+	fdb	$B5C5,$B698,$8A5B,$4B5A
+	fdb	$7896,$B5C5,$B698,$7A5B
+	fdb	$4B5A,$7896,$B5B5,$A788
+	fdb	$7A5B,$5B69,$88A5,$B5B5
+	fdb	$A789,$6B5B,$5A78,$87A5
+	fdb	$B5B6,$987A,$5B5B,$6988
+	fdb	$96B5,$B5A7,$896B,$5B5A
+	fdb	$7886,$A5B5,$A788,$7A5B
+	fdb	$5B69,$87A5,$B5B6,$987A
+	fdb	$5B5B,$6988,$A5B5,$B698
+	fdb	$896B,$5B69,$8896,$B5B6
+	fdb	$9889,$6B5B,$6988,$96B5
+	fdb	$B698,$896B,$5B69,$88A6
+	fdb	$B5B6,$987A,$5B5B,$6987
+	fdb	$A5B5,$A688,$7A5B,$5A78
+	fdb	$87A5,$B5A7,$896B,$5B6A
+	fdb	$8896,$B5B6,$988A,$6B5B
+	fdb	$6987,$A5B5,$A788,$7A5B
+	fdb	$5A78,$96B5,$B698,$8A6B
+	fdb	$5A68,$87A5,$B5A7,$896B
+	fdb	$5B69,$8896,$B5A6,$887A
+	fdb	$5B5A,$7896,$B5B6,$987A
+	fdb	$6B5A,$7887,$A5B6,$9889
+	fdb	$6B5A,$7887,$A5B6,$A889
+	fdb	$6B5A,$6987,$A5B6,$A789
+	fdb	$6B5A,$6987,$A5B6,$A789
+	fdb	$6B5A,$6887,$A5B6,$9889
+	fdb	$6B5A,$7887,$A5B6,$9889
+	fdb	$6B5A,$7886,$A5A6,$987A
+	fdb	$6B6A,$8896,$B5A7,$887A
+	fdb	$5B69,$87A6,$B6A7,$896A
+	fdb	$5A78,$87A5,$A698,$7A6B
+	fdb	$6A88,$96A6,$A788,$6A5A
+	fdb	$6987,$A6A6,$9889,$6B6A
+	fdb	$7896,$A6A7,$887A,$5A68
+	fdb	$87A6,$A698,$7A6A,$6988
+	fdb	$96A6,$A789,$6A6A,$7886
+	fdb	$A6A7,$887A,$6A69,$87A6
+	fdb	$A698,$7A6A,$6988,$96A6
+	fdb	$9889,$6A6A,$8896,$A6A7
+	fdb	$896A,$6A78,$96A6,$A788
+	fdb	$7A6A,$7887,$A6A7,$887A
+	fdb	$6A78,$87A6,$A788,$7A6A
+	fdb	$7887,$A6A7,$887A,$6A78
+	fdb	$87A6,$A788,$7A6A,$7887
+	fdb	$A6A7,$887A,$6A78,$87A6
+	fdb	$A788,$7A6A,$7896,$A6A7
+	fdb	$896A,$6A78,$96A6,$9889
+	fdb	$6A69,$8896,$A698,$896A
+	fdb	$6987,$A6A7,$887A,$6A78
+	fdb	$87A6,$A789,$6A6A,$7896
+	fdb	$A698,$896A,$6987,$A6A6
+	fdb	$887A,$6A78,$87A6,$A789
+	fdb	$6A69,$8896,$A698,$7A6A
+	fdb	$7887,$A6A7,$887A,$6988
+	fdb	$96A6,$9889,$6A78,$87A6
+	fdb	$A788,$7A69,$8896,$A698
+	fdb	$7A6A,$7887,$A6A7,$896A
+	fdb	$6988,$96A7,$887A,$6A78
+	fdb	$96A6,$9889,$6A78,$87A6
+	fdb	$A789,$6A69,$8896,$A788
+	fdb	$7A6A,$7896,$A698,$896A
+	fdb	$7887,$A698,$896A,$6987
+	fdb	$A6A7,$897A,$6988,$96A7
+	fdb	$887A,$6988,$96A7,$887A
+	fdb	$6A78,$96A6,$987A,$6A78
+	fdb	$87A6,$9889,$6A78,$87A6
+	fdb	$9889,$6A78,$87A6,$9889
+	fdb	$6A78,$87A6,$9889,$6A78
+	fdb	$87A6,$9889,$6A78,$87A6
+	fdb	$9889,$6A78,$87A6,$9889
+	fdb	$6A78,$87A6,$9889,$6A78
+	fdb	$87A6,$9879,$6A78,$96A7
+	fdb	$987A,$6988,$96A7,$887A
+	fdb	$6988,$96A7,$887A,$6987
+	fdb	$96A7,$896A,$7887,$A698
+	fdb	$896A,$7887,$A698,$7969
+	fdb	$7896,$A788,$7A69,$8896
+	fdb	$A789,$7A78,$87A6,$9889
+	fdb	$6A78,$97A7,$987A,$6988
+	fdb	$96A7,$887A,$7887,$A698
+	fdb	$896A,$7897,$A788,$7A69
+	fdb	$8896,$9789,$6A78,$87A6
+	fdb	$9879,$6988,$96A7,$887A
+	fdb	$7887,$A698,$8969,$7896
+	fdb	$A788,$7A79,$87A6,$9889
+	fdb	$6978,$96A7,$887A,$7987
+	fdb	$A698,$8969,$8896,$A788
+	fdb	$7A78,$87A6,$9879,$6988
+	fdb	$9697,$897A,$7887,$A788
+	fdb	$7A69,$8896,$9889,$6978
+	fdb	$97A7,$887A,$7887,$A798
+	fdb	$7969,$8896,$9889,$6978
+	fdb	$97A7,$887A,$7887,$A798
+	fdb	$7979,$8896,$9889,$6988
+	fdb	$9697,$897A,$7887,$A788
+	fdb	$7A78,$8797,$9879,$7988
+	fdb	$9698,$8969,$8896,$9789
+	fdb	$7978,$9797,$887A,$7887
+	fdb	$A788,$7A78,$8797,$9879
+	fdb	$7987,$9798,$8979,$8897
+	fdb	$9889,$7988,$9798,$8979
+	fdb	$8897,$9789,$7978,$9797
+	fdb	$8979,$7887,$9788,$7978
+	fdb	$8797,$8879,$7887,$9788
+	fdb	$7978,$8797,$8879,$7887
+	fdb	$9788,$7978,$8797,$8879
+	fdb	$7887,$9788,$7978,$8797
+	fdb	$8879,$7887,$9788,$7978
+	fdb	$8797,$8879,$7887,$9788
+	fdb	$7978,$8797,$8979,$7897
+	fdb	$9789,$7988,$9798,$8979
+	fdb	$8897,$9889,$7988,$9798
+	fdb	$8979,$8797,$9879,$7887
+	fdb	$9788,$7978,$8797,$8879
+	fdb	$7887,$9789,$7988,$9798
+	fdb	$8979,$8897,$9889,$7987
+	fdb	$9788,$7978,$8797,$8879
+	fdb	$7887,$9789,$7988,$9798
+	fdb	$8979,$8897,$9879,$7887
+	fdb	$9788,$7978,$8798,$8979
+	fdb	$8897,$9889,$7987,$9788
+	fdb	$7978,$8797,$8979,$8897
+	fdb	$9889,$7988,$9788,$7978
+	fdb	$8797,$8979,$8897,$9889
+	fdb	$7987,$9788,$7978,$8797
+	fdb	$8979,$8897,$9889,$7887
+	fdb	$9788,$7978,$9798,$8979
+	fdb	$8897,$8879,$7887,$9789
+	fdb	$7988,$9798,$7978,$8797
+	fdb	$8879,$8897,$9889,$7887
+	fdb	$9788,$7988,$9798,$8979
+	fdb	$8797,$8879,$7897,$9889
+	fdb	$7987,$9788,$7978,$9798
+	fdb	$8979,$8797,$8879,$8897
+	fdb	$9889,$7887,$9788,$7988
+	fdb	$9798,$8978,$8797,$8979
+	fdb	$8897,$9879,$7887,$9889
+	fdb	$7988,$9788,$7978,$9798
+	fdb	$8978,$8797,$8879,$8897
+	fdb	$9879,$7887,$9889,$7988
+	fdb	$9788,$7978,$9798,$8978
+	fdb	$8797,$8979,$8897,$8879
+	fdb	$7897,$9889,$7887,$9789
+	fdb	$7988,$9788,$7978,$9798
+	fdb	$8978,$8797,$8979,$8897
+	fdb	$8879,$8897,$9889,$7887
+	fdb	$9889,$7987,$9788,$7988
+	fdb	$9788,$7978,$8798,$8978
+	fdb	$8798,$8979,$8897,$8879
+	fdb	$8897,$8879,$7897,$9889
+	fdb	$7887,$9889,$7987,$9788
+	fdb	$7988,$9788,$7988,$9798
+	fdb	$7978,$8798,$8978,$8798
+	fdb	$8979,$8797,$8879,$8897
+	fdb	$8879,$8897,$8879,$7897
+	fdb	$9889,$7887,$9889,$7887
+	fdb	$9889,$7887,$9789,$7988
+	fdb	$9788,$7988,$9788,$7988
+	fdb	$9788,$7988,$9788,$7978
+	fdb	$9798,$8978,$8798,$8978
+	fdb	$8798,$8978,$8798,$8978
+	fdb	$8798,$8978,$8798,$8979
+	fdb	$8797,$8979,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8897,$8879
+	fdb	$8897,$8879,$8797,$8978
+	fdb	$8798,$8978,$8798,$8978
+	fdb	$8798,$8978,$8798,$8978
+	fdb	$8798,$8978,$8798,$7988
+	fdb	$9788,$7988,$9788,$7988
+	fdb	$9788,$7988,$9788,$7988
+	fdb	$9889,$7887,$9889,$7887
+	fdb	$9889,$7887,$9889,$7897
+	fdb	$8879,$8897,$8879,$8897
+	fdb	$8879,$8898,$8978,$8798
+	fdb	$8978,$8798,$8978,$8788
+	fdb	$7988,$9788,$7988,$9788
+	fdb	$7987,$9889,$7887,$9889
+	fdb	$7887,$9879,$8897,$8879
+	fdb	$8897,$8878,$8798,$8978
+	fdb	$8798,$8978,$8788,$7988
+	fdb	$9788,$7988,$9889,$7887
+	fdb	$9889,$7887,$8879,$8897
+	fdb	$8879,$8898,$8978,$8798
+	fdb	$8978,$8788,$7988,$9788
+	fdb	$7988,$9889,$7887,$9889
+	fdb	$8897,$8879,$8897,$8878
+	fdb	$8798,$8978,$8788,$7988
+	fdb	$9788,$7887,$9889,$7887
+	fdb	$9879,$8897,$8879,$8898
+	fdb	$8978,$8798,$8988,$9788
+	fdb	$7988,$9889,$7887,$9879
+	fdb	$8897,$8878,$8798,$8978
+	fdb	$8788,$7988,$9788,$7887
+	fdb	$9889,$7887,$8879,$8898
+	fdb	$8978,$8798,$8988,$9788
+	fdb	$7988,$9889,$7887,$8879
+	fdb	$8897,$8878,$8798,$8988
+	fdb	$9788,$7988,$9889,$7887
+	fdb	$8879,$8897,$8878,$8798
+	fdb	$8988,$9788,$7887,$9889
+	fdb	$7887,$8879,$8898,$8978
+	fdb	$8788,$7988,$9889,$7887
+	fdb	$9889,$8897,$8878,$8798
+	fdb	$8988,$9788,$7887,$9889
+	fdb	$8897,$8878,$8798,$8988
+	fdb	$8788,$7988,$9889,$7887
+	fdb	$8879,$8898,$8978,$8788
+	fdb	$7988,$9889,$7887,$8879
+	fdb	$8898,$8978,$8788,$7988
+	fdb	$9889,$7887,$8878,$8898
+	fdb	$8988,$9788,$7887,$9889
+	fdb	$8897,$8878,$8798,$8988
+	fdb	$9788,$7887,$9889,$8898
+	fdb	$8978,$8788,$7988,$9889
+	fdb	$7887,$8879,$8898,$8988
+	fdb	$9788,$7887,$9889,$8897
+	fdb	$8878,$8788,$7988,$9889
+	fdb	$7887,$8878,$8898,$8988
+	fdb	$9788,$7887,$9889,$8898
+	fdb	$8978,$8788,$7988,$9889
+	fdb	$8897,$8878,$8788,$8988
+	fdb	$9889,$7887,$8878,$8798
+	fdb	$8988,$9788,$7887,$8879
+	fdb	$8898,$8988,$9788,$7887
+	fdb	$8889,$8898,$8978,$8788
+	fdb	$7887,$9889,$8898,$8978
+	fdb	$8788,$7887,$9889,$8898
+	fdb	$8978,$8788,$7887,$9889
+	fdb	$8898,$8978,$8788,$7887
+	fdb	$9889,$8898,$8978,$8788
+	fdb	$7887,$8889,$8898,$8988
+	fdb	$8788,$7887,$8879,$8898
+	fdb	$8988,$9888,$7887,$8878
+	fdb	$8898,$8988,$9889,$7887
+	fdb	$8878,$8788,$8988,$9889
+	fdb	$8898,$8878,$8788,$7887
+	fdb	$9889,$8898,$8988,$8788
+	fdb	$7887,$8878,$8898,$8988
+	fdb	$9889,$8887,$8878,$8788
+	fdb	$7888,$9889,$8898,$8988
+	fdb	$8788,$7887,$8878,$8798
+	fdb	$8988,$9889,$8898,$8878
+	fdb	$8788,$7887,$8889,$8898
+	fdb	$8988,$9889,$8887,$8878
+	fdb	$8788,$7887,$8889,$8898
+	fdb	$8988,$9889,$8887,$8878
+	fdb	$8788,$7887,$8889,$8898
+	fdb	$8988,$9889,$8887,$8878
+	fdb	$8788,$7887,$8888,$8898
+	fdb	$8988,$9889,$8898,$8888
+	fdb	$8788,$7887,$8878,$8788
+	fdb	$8888,$9889,$8898,$8988
+	fdb	$9888,$8887,$8878,$8788
+	fdb	$7887,$8878,$8888,$8988
+	fdb	$9889,$8898,$8988,$9888
+	fdb	$8887,$8878,$8788,$7887
+	fdb	$8878,$8788,$8888,$9889
+	fdb	$8898,$8988,$9889,$8898
+	fdb	$8888,$8888,$7887,$8878
+	fdb	$8788,$7887,$8878,$8888
+	fdb	$8888,$9889,$8898,$8988
+	fdb	$9889,$8898,$8988,$8888
+	fdb	$8888,$8878,$8788,$7887
+	fdb	$8878,$8788,$7887,$8878
+	fdb	$8888,$8888,$8888,$8898
+	fdb	$8988,$9889,$8898,$8988
+	fdb	$9889,$8898,$8988,$8888
+	fdb	$8888,$8888,$8888,$8887
+	fdb	$8878,$8788,$7887,$8878
+	fdb	$8788,$7887,$8878,$8788
+	fdb	$7887,$8878,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8898,$8988
+	fdb	$9889,$8898,$8988,$9889
+	fdb	$8898,$8988,$9889,$8898
+	fdb	$8988,$9889,$8898,$8988
+	fdb	$9889,$8898,$8988,$9889
+	fdb	$8898,$8988,$9889,$8898
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8888,$8888,$8888
+	fdb	$8888,$8788,$7887,$8878
+	fdb	$8788,$7887,$8878,$8888
+	fdb	$8888,$8888,$8888,$8888

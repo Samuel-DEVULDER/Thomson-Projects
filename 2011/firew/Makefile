@@ -1,17 +1,21 @@
-# Makefile for HNY2013
+# Makefile for "Oh la belle bleue"
 
-DISK=hny2013.sap
+DISK=olbb.sap
 
 EXE=.exe
 C6809=../../c6809/c6809$(EXE)
 SAPFS=../../sapfs/sapfs$(EXE)
 
-IMAGES=$(wildcard images/*.gif)
-ASM=$(wildcard asm/*.ass)
+IMAGES=$(wildcard images/*.gif) $(wildcard images/*.png)
+ASM=$(wildcard *.ass)
 
 all: compile fill_sapdir #test 
 
-compile: $(IMAGES:images/%=build/x%) $(C6809) $(ASM:asm/%.ass=build/%.BIN) 
+compile: \
+	$(IMAGES:images/%.gif=build/x%.gif) \
+	$(IMAGES:images/%.png=build/x%.gif) \
+	$(C6809) \
+	$(ASM:%.ass=build/%.BIN) 
 
 list:	compile
 	less codes.lst
@@ -25,23 +29,26 @@ $(SAPFS):
 %$(EXE): %.c
 	$(CC) "$<" -Ofast -o "$@"
 
-build/%.BIN: asm/%.ass
+build/%.BIN: %.ass
 	test -d build || mkdir -p build/
 	cd build && ../$(C6809) -c -am -oOP ../$< ../$@
+
+build/x%.gif: images/%.png
+	test -d build || mkdir -p build/
+	cd build && perl ../converters/img_to7_9exp.pl ../$<
 
 build/x%.gif: images/%.gif
 	test -d build || mkdir -p build/
 	cd build && perl ../converters/img_to7_9exp.pl ../$<
 	
-fill_sapdir: $(SAPFS) empty_disk/bootbk.sap
+fill_sapdir: $(SAPFS)
 	test -d build/sapdir || mkdir -p build/sapdir
+	cp basic/*.BAT build/sapdir
 	cp basic/*.BAS build/sapdir
 	cp build/*.ASM build/sapdir
 	cp build/*.BIN build/sapdir
 	cp build/*.mp* build/sapdir
-	cp build/snow.BIN build/sapdir/AUTO.BIN
-	cp empty_disk/bootbk.sap $(DISK)
-	# $(SAPFS) -c $(DISK)
+	$(SAPFS) -c $(DISK)
 	$(SAPFS) -a $(DISK) build/sapdir/*
 
 test: $(DISK)

@@ -1,0 +1,279 @@
+(main)intro.ASM
+***************************************
+* Intro. 
+* Samuel Devulder, Juillet 2011
+***************************************
+	org	$9000-$C00
+ini	jsr	inibas
+	swi
+  rts
+
+inibas	pshs	d,x,y,u,dp,cc
+	orcc	#$50
+
+* tour, fond: noir. forme : blanc
+	jsr	init_vid
+	
+	ldu	#ecran	
+	ldb	#4	* pause
+	
+* 1ere image
+	ldx	#puls_
+	jsr	decomp
+	jsr	display
+	
+* 2eme image
+	ldx	#presents
+	jsr	decomp
+	jsr	display
+
+* image forme
+	ldx	#img_fond
+	jsr	decomp
+
+* image forme
+	dec	$E7C3
+	ldu	#$5F40
+	ldb	#0*8+64+128
+	jsr	fillscr
+	inc	$E7C3
+	ldu	#$4000
+	ldx	#img_forme
+	jsr	decomp
+
+* affichage forme
+	dec	$E7C3
+	ldu	#ecran
+	jsr	fastcpy
+	ldb	#4
+	jsr	pause
+	puls	d,x,y,u,dp,cc,pc
+***************************************
+* fait une pause proportionelle a B
+***************************************	
+pause	pshs	x,b
+	ldx	#0
+paus1	leax	-1,x
+	bne	paus1
+	decb
+	bne	paus1
+	puls	x,b,pc
+***************************************
+* fait apparaitre progressivement 
+* l'image pointée par U dans la ram
+* video	
+***************************************
+display	lda	#63
+disp0	bsr	dith
+	bsr	disp
+	deca
+	bge	disp0
+	bsr	pause
+	lda	#63
+disp1	bsr	dith
+	bsr	disp
+	deca
+	bge	disp1
+	rts
+	
+disp	pshs	d,x,y,u
+	ldb	#7
+	subb	dith3a+1
+	ldx	#mask
+	abx
+	lda	#40
+	mul
+	ldy	#$4000
+	leay	d,y
+	leau	d,u
+	lda	,x
+	sta	disp5+3
+	sta	disp5+5
+	leax	40,y
+	stx	disp6+1
+	leax	,y
+disp5	pulu	d
+	anda	#0
+	andb	#0
+	std	,x++
+disp6	cmpx	#0
+	bne	disp5
+	leau	40*7,u
+	leax	40*8,x
+	stx	disp6+1
+	leax	-40,x
+disp7	cmpx	#$5F40
+	bls	disp5
+disp8	puls	d,x,y,u,pc
+
+mask	fcb	0,0,0,0,0,0,0,0
+
+dith	pshs	d,x,u
+	ldx	#dith3a+1
+	ldu	#mask
+	clrb
+	lsla
+	anda	#$AA
+	eora	,s
+	lsra
+	rolb	
+	clr	,x
+	lsra
+	rol	,x
+	lsra
+	rolb
+	lsra
+	rol	,x
+	lsra
+	rolb
+	lsra
+	rol	,x
+	clr	4,x
+	coma
+dith2	rol	4,x
+	decb
+	bge	dith2
+	ldb	#7
+dith3	lda     ,u
+dith3a	cmpb	#00
+	bne	dith4
+	eora	#1
+dith4	sta     ,u+
+	decb
+	bge	dith3
+	puls	d,x,u,pc
+***************************************
+* Decompresse le fichier MAP pointe
+* par X dans l'ecran virtuel pointe
+* par U (8Ko).
+***************************************
+decomp	pshs	d,x,y,u
+	ldd	,x++
+	incb
+	pshs	d
+	ldb	,x+
+	incb
+	lda	#8
+	mul
+	tfr	d,y
+decm1	lda	1,s
+decm2	pshs	a,y,u
+decm3	ldb	,x+
+	bne	decm7
+	ldb	,x+
+decm4	lda	,x+
+	sta	,u
+	leau	40,u
+	leay	-1,y
+	beq	decm6
+decm5	decb
+	bne	decm4
+	bra	decm3
+decm6	puls	a,y,u
+	leau	1,u
+	deca
+	pshs	a,y,u
+	bne	decm5
+	bra	decm10
+decm7	lda	,x
+	sta	,u
+	leau	40,u
+	leay	-1,y
+	beq	decm9
+decm8	decb
+	bne	decm7
+	leax	1,x
+	bra	decm3
+decm9	puls	a,y,u
+	leau	1,u
+	deca
+	pshs	a,y,u
+	bne	decm8
+	leax	1,x
+decm10	puls	a,y,u
+	leas	2,s
+	puls	d,x,y,u,pc
+***************************************
+* Initialisation ecran. Tour en noir et
+* blanc sur fond noir, passage en mode
+* forme a la sortie.
+***************************************
+init_vid
+	lda	#$E7
+	setdp	$E7
+	tfr	a,dp
+	ldb	<$E7C3
+	orb	#1
+	stb	<$E7C3
+	clra
+	clrb
+	ldu	#$5F40
+	bsr	fillscr
+	dec	<$E7C3
+	ldb	#7*8+64+128
+	bsr	fillscr
+	inc	<$E7C3
+	setdp	$0
+* tour noir de façon portable
+	ldb	#27
+	jsr	$E803
+	ldb	#$60
+	jmp	$E803
+***************************************
+* Remplissage de l'ecran avec la valeur
+* contendue dans le registre B.
+***************************************
+fillscr
+	pshs	d,x,y,u
+	sts	fill1-4
+	tfr	b,a
+	tfr	d,x
+	leay	,x
+	leas	,x
+fill0	pshu	d,x,y,s
+	cmpa	,u
+	beq	fill1
+	lds	#$1234
+	puls	d,x,y,u,pc
+fill1	pshu	d,x,y,s
+	pshu	d,x,y,s
+	pshu	d,x,y,s
+	pshu	d,x,y,s
+	bra	fill0
+***************************************
+* recopie rapide entre ecran et ram
+* video
+***************************************
+fastcpy
+	pshs	d,x,y,u
+	sts	fastc1+2
+	lds	#$4007
+fastc0	pulu	d,x,y,dp
+	pshs	d,x,y,dp
+	leas	14,s
+	cmps	#$5f40
+	bls	fastc0
+fastc1	lds	#$1234
+	puls	d,x,y,u,pc
+***************************************
+* images
+***************************************
+puls_
+	incbin	xintro1.mpa
+presents
+	incbin	xintro2.mpa
+img_fond
+	incbin	xImg.mpb
+img_forme
+	incbin	xImg.mpa
+***************************************
+* ecran
+***************************************
+ecran
+	rmb	8000
+finram	set	*
+***************************************
+* Fin du programme: on demarre sur 
+* le point d'entree "ini".
+***************************************
+	end	inibas
