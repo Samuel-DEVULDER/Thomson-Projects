@@ -2,8 +2,8 @@ MAIN=TO-ale
 
 DISK=$(MAIN).sap
 EXE=.exe
-C6809=../c6809/c6809$(EXE)
-SAPFS=../sapfs/sapfs$(EXE)
+C6809=../../c6809/c6809$(EXE)
+SAPFS=../../sapfs/sapfs$(EXE)
 
 ASM=$(wildcard *.ass)
 
