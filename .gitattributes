@@ -1,1 +1,3 @@
 *.ass linguist-language=Assembly
+*.BAS -text
+*.BAT -text
