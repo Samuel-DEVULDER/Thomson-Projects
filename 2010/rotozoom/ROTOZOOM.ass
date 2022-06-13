@@ -1,0 +1,1471 @@
+(main)ROTO.ASM
+	org	$A000
+	includ	ROTOZOOM
+	end	INI
+
+(include)ROTOZOOM.ASM
+***************************************
+* ROTOZOOM couleur pour TO7
+* 
+* Samuel DEVULDER, 2010
+***************************************
+
+DP_BASE	set	*<-8
+	setdp	DP_BASE
+		
+INI	lda	#DP_BASE
+	tfr	a,dp
+	jsr	start
+	swi
+	rts
+	
+*****************************************
+* data: en tete de segment pour utiliser
+* au mieux le mode direct-page.
+*****************************************
+
+WIDTH	set	40	! jusqu'a 80
+HEIGHT	set	40	! jusqu'a 50
+
+WIDTH	set	50	! jusqu'a 80
+HEIGHT	set	31	! jusqu'a 50
+
+* divers registres 8bits virtuels => "DP"
+R0	rmb	1
+R1	rmb	1
+
+* data pour PUTC
+PUTCFLG	fcb	0
+PUTCDAT	rmb	8
+
+* param d'anim
+PALPH	rmb	2
+PZOOM	rmb	2
+PXPOS	rmb	2
+PYPOS	rmb	2
+PTEX	rmb	2
+CTEX	rmb	2
+PTXT	rmb	2
+CTXT	rmb	1
+
+* params de frame
+ALPHA	rmb	1	angle 256=2pi
+SCALE	rmb	1	scale 4.4
+X0	rmb	2	coord 8.8
+Y0	rmb	2	coord 8.8
+
+* data pour dessin de frame
+DX	rmb	2	delta 4.8
+DY	rmb	2	delta 4.8
+DX16	rmb	2	delta * 16
+DY16	rmb	2	delta * 16
+XC	rmb	2	X de travail
+YC	rmb	2	Y de travail
+CPTLINE	rmb	1	compteur ligne
+TMP	rmb	160	buffer travail
+
+* blabla
+TEXT	fcc	/Bonjour /
+	fcb	0
+
+	org	(DP_BASE+1)<+8
+INTENS0	rmb	256	*64*3
+INTENS1	rmb	256	*64*3
+	includ	TEXTURE
+
+*****************************************
+* vrai debut
+*****************************************
+start	jsr	INIT_SCR
+	jsr	INIT_INTENS
+	jsr	RESET
+	jsr	INTRO
+	rts
+*****************************************
+* intro avant la grosse boucle
+*****************************************
+INTRO
+* spirale
+	lda	#16
+	sta	SCALE
+	lda	#128
+loop	set	*
+	deca
+	sta	<R0
+	jsr	sin512	! sin
+	jsr	mul_intro
+	std	<Y0
+	leax	256,x
+	jsr	sin512	! cos
+	lda	<R0
+	jsr	mul_intro
+	std	<X0
+	jsr	FRAME
+	leax	-256+16,x
+	lda	<R0
+	bne	loop
+* tour complet
+loop	set	*
+	suba	#2
+	sta	<ALPHA
+	jsr	FRAME
+	tsta
+	bne	loop
+* zoom 1 -> 16
+	lda	#16
+loop	set	*
+	deca
+	sta	<SCALE
+	jsr	FRAME
+	tsta
+	bne	loop
+* tout ensemble
+* 
+	ldd	#0
+	std	<PALPH
+	std	<PZOOM
+	std	<PXPOS
+	std	<PYPOS
+	std	<PTEX
+	ldd	#TEXTAB
+	std	<CTEX
+loop	set	*
+	jsr	SCROLTX
+	bsr	c_zoom
+	bsr	c_angl
+	bsr	c_xy
+	bsr	c_tex
+	jsr	FRAME
+	bra	loop
+	rts
+c_tex	ldd	PTEX
+	addd	#512+157
+	bvs	c_tex2
+	std	<PTEX
+	rts
+c_tex2	std	<PTEX
+	ldx	<CTEX
+	lda	,x+
+	bne	c_tex3
+	ldx	#TEXTAB
+	lda	,x+
+c_tex3	stx	<CTEX
+	jmp	settex
+c_zoom	ldx	<PZOOM
+	jsr	zoomfn
+	leax	1,x
+	stx	<PZOOM
+	stb	<SCALE
+	rts
+c_angl	ldb	<PALPH
+	stb	<ALPHA
+	decb
+	stb	<PALPH
+	rts
+c_xy	bsr	c_x
+	bra	c_y
+c_x	ldx	<PXPOS
+	jsr	sin512
+	leax	15,x
+	stx	<PXPOS
+	addb	#127
+	lda	#48
+	mul
+	std	<X0
+	rts
+c_y	ldx	<PYPOS
+	jsr	sin512
+	leax	17,x
+	stx	<PYPOS
+	addb	#127
+	lda	#48
+	mul
+	std	<Y0
+	rts
+*****************************************
+* mul A (8.0 unsigned) par B (1.7 signed)
+* resultat dans D (8.8)
+*****************************************
+mul_intro
+	tstb
+	bge	mul_intro2
+	negb
+	bsr	mul_intro2
+*pose des soucis de comptage de PC sous c6809
+	negd
+* nega
+* negb
+* sbca #0 
+	rts
+mul_intro2
+	mul
+*	lslb
+*	rola
+	lsra
+	rorb
+	rts
+*****************************************
+* Initialise les data d'une frame
+*****************************************
+RESET
+	ldd	#TEXT
+	std	<PTXT
+	ldd	#0	! X0=Y0=0
+	sta	<CTXT
+	std	<X0
+	std	<Y0
+	lda	#16	! SCALE=1.0
+	sta	<SCALE
+	stb	<ALPHA	! ALPHA=0
+	lda	#Trainbow<-8
+	jsr	settex
+	rts
+	includ	DEMOFCTS
+*****************************************
+* Attente d'une touche
+*****************************************
+getc	jsr	$E806
+	bcc	getc
+	cmpb	#1
+	rts
+*****************************************
+* multiplie D par 16
+*****************************************
+mul16	macro
+	lslb
+	rola
+	lslb
+	rola
+	lslb
+	rola
+	lslb
+	rola
+	endm
+*****************************************
+* D = -D
+*****************************************
+negd	macro
+	nega
+	negb
+	sbca	#0
+	endm
+*****************************************
+* Calcule la frame pour ALPHA, SCALE,
+* X/Y. Tous les regs sont preserves
+*
+* 106920 en 40x40  9.3fps 
+* 103478 en 50x31  9.6fps 67 c / pixel
+*  66825 en 40x25 14.9fps
+*****************************************
+FRAME	pshs	d,x,y,u
+	ldb	#HEIGHT
+	stb	<CPTLINE
+	ldb	<ALPHA
+	jsr	fcos	! b = cos(alpha)
+	lda	<SCALE
+	jsr	fmul	! d = sx*b
+	std	<DX
+	mul16
+	std	<DX16
+	ldb	<ALPHA	
+	jsr	fsin	! b = sin(alpha)
+	lda	<SCALE
+	jsr	fmul	! d = sy*b
+	std	<DY
+	mul16
+	std	<DY16
+	jsr	setdeltas
+* mise en place XC/YC
+	ldd	<X0
+	std	<XC
+	ldd	<Y0
+	mul16
+	std	<YC
+* pointeur ecran
+xoff	set	(80-WIDTH)<-2
+yoff	set	(50-HEIGHT)<-1
+	ldy	#$4000+xoff+yoff*160
+frloop	jsr	DRLINE
+	leay	4*40,y
+	ldd	<XC	! x0 -= dy
+	subd	<DY
+	std	<XC
+	ldd	<YC	! y0 += dx
+	addd	<DX16
+	std	<YC
+	dec	<CPTLINE
+	bne	frloop
+	puls	d,x,y,u,pc
+*****************************************
+* Macro qui repete une macro (\1) \0 fois
+*****************************************
+reptm	macro
+	iflt	\0-\1
+	\2	\0
+	endc
+	endm
+rept	macro
+	reptm	0,\0,\1
+	reptm	1,\0,\1
+	reptm	2,\0,\1
+	reptm	3,\0,\1
+	reptm	4,\0,\1
+	reptm	5,\0,\1
+	reptm	6,\0,\1
+	reptm	7,\0,\1
+	reptm	8,\0,\1
+	reptm	9,\0,\1
+	reptm	10,\0,\1
+	reptm	11,\0,\1
+	reptm	12,\0,\1
+	reptm	13,\0,\1
+	reptm	14,\0,\1
+	reptm	15,\0,\1
+	reptm	16,\0,\1
+	reptm	17,\0,\1
+	reptm	18,\0,\1
+	reptm	19,\0,\1
+	reptm	20,\0,\1
+	reptm	21,\0,\1
+	reptm	22,\0,\1
+	reptm	23,\0,\1
+	reptm	24,\0,\1
+	reptm	25,\0,\1
+	reptm	26,\0,\1
+	reptm	27,\0,\1
+	reptm	28,\0,\1
+	reptm	29,\0,\1
+	reptm	30,\0,\1
+	reptm	31,\0,\1
+	reptm	32,\0,\1
+	reptm	33,\0,\1
+	reptm	34,\0,\1
+	reptm	35,\0,\1
+	reptm	36,\0,\1
+	reptm	37,\0,\1
+	reptm	38,\0,\1
+	reptm	39,\0,\1
+	reptm	40,\0,\1
+	reptm	41,\0,\1
+	reptm	42,\0,\1
+	reptm	43,\0,\1
+	reptm	44,\0,\1
+	reptm	45,\0,\1
+	reptm	46,\0,\1
+	reptm	47,\0,\1
+	reptm	48,\0,\1
+	reptm	49,\0,\1
+	reptm	50,\0,\1
+	reptm	51,\0,\1
+	reptm	52,\0,\1
+	reptm	53,\0,\1
+	reptm	54,\0,\1
+	reptm	55,\0,\1
+	reptm	56,\0,\1
+	reptm	57,\0,\1
+	reptm	58,\0,\1
+	reptm	59,\0,\1
+	reptm	60,\0,\1
+	reptm	61,\0,\1
+	reptm	62,\0,\1
+	reptm	63,\0,\1
+	reptm	64,\0,\1
+	reptm	65,\0,\1
+	reptm	66,\0,\1
+	reptm	67,\0,\1
+	reptm	68,\0,\1
+	reptm	69,\0,\1
+	reptm	70,\0,\1
+	reptm	71,\0,\1
+	reptm	72,\0,\1
+	reptm	73,\0,\1
+	reptm	74,\0,\1
+	reptm	75,\0,\1
+	reptm	76,\0,\1
+	reptm	77,\0,\1
+	reptm	78,\0,\1
+	reptm	79,\0,\1
+	endm
+*****************************************
+* Prepare le calcul d'une ligne en
+* ecrivant dx et dy dans le code qui
+* calcule les x,y d'une ligne.
+* 365 cycle(s)
+*****************************************
+* TODO utiliser le mode direct-page?
+setdltx	macro
+	ifne	\0
+	std	incx\0+1
+	endc
+	endm
+setdlty	macro
+	ifne	\0
+	std	incy\0+1
+	endc
+	endm
+(info)
+setdeltas
+	ldd	DX
+	rept	WIDTH,setdltx
+	ldd	DY16
+	rept	WIDTH,setdlty
+	rts
+(info)
+*****************************************
+* Positionne une nouvelle texture 
+* pointée par A.
+*****************************************
+setexm	macro
+vcol	set	\0<-1
+	ifne	vcol*2-\0
+	sta	drtex\0+1
+	sta	drtey\0+1
+	endc
+	endm
+settex	set	*
+	rept	WIDTH,setexm
+	rts
+*****************************************
+* Affiche une ligne complete. 
+* X0,Y0: coord du point (0,0) dans la
+*        texture.
+* DX,DY: delta.
+* U:     pointeur ram video.
+* X,Y,D: temporaires (non preserves).
+* TMP:   memoire pour stocker les parties
+*        entieres
+* 2673 cycle(s)
+*****************************************
+* calcule x+=dx et place x/16 dans TMP
+incx	macro
+	ifne	\0
+incx\0	addd	#0
+	endc
+	sta	TMP+0+\0*2
+	endm
+* calcule y+=dy et place y/16 dans TMP
+incy	macro
+	ifne	\0
+incy\0	addd	#0
+	endc
+	sta	TMP+1+\0*2
+	endm
+* Affichage de 2 pixels
+drpix2	macro
+* b=texture[x/16][y/16]
+	ldd	TMP+0+vcol*4	! 5
+	anda	#$0F		! 2
+	andb	#$F0		! 2
+drtex\0
+	ldx	#TEX		! 3
+	abx			! 3
+	ldb	a,x		! 5
+* u=&intens[b] (colone impaire)
+	stb	*+5		! 5
+	ldu	#INTENS0	! 3 => 28
+* b=texture[(x+dx)/16][(y+dy)/16]
+	ldd	TMP+2+vcol*4
+	anda	#$0F		! 2
+	andb	#$F0		! 2
+drtey\0
+	ldx	#TEX		! 3
+	abx			! 3
+	ldb	a,x		! 5
+* x=&intens[b] (colone paire)
+	ldx	#INTENS1	! 3
+	abx			! 3 => 26
+* affichage video
+	lda	,x		! 4
+	ora	,u		! 4
+	ifne	vcol
+	sta	vcol,y		! 5
+	else
+	sta	,y
+	endc
+	lda	1,x		! 5
+	ora	1,u		! 5
+	sta	40+vcol,y	! 5
+	lda	2,x		! 5
+	ora	2,u		! 5
+	sta	80+vcol,y	! 5 => 48
+	endm
+drpix1	macro
+vcol	set	\0<-1
+	ifne	\0-vcol*2
+	drpix2	\0
+	endc
+	endm
+(info)
+DRLINE	ldd	XC
+	rept	WIDTH,incx
+	ldd	YC
+	rept	WIDTH,incy
+	rept	WIDTH,drpix1
+(info)
+	rts
+*****************************************
+* Renvoit le cursor en 0,0
+*****************************************
+*prhome	pshs	b
+*	ldb	#$1E
+*	jsr	$E803
+*	puls	b,pc
+*****************************************
+* Affiche un texte (\0 de la macro)
+*****************************************
+*prstr	pshs	b,x
+*	ldx	3,s
+*	bra	prtstr3
+*prtstr4	jsr	$E803
+*prtstr3	ldb	,x+
+*	bne	prtstr4
+*	stx	3,s
+*	puls	b,x,pc
+*****************************************
+* Affiche un hexa (A/B)
+*****************************************
+*prhexx	pshs	b
+*	jsr	prhex
+*	puls	a
+*prhex	tfr	a,b
+*	lsra
+*	lsra
+*	lsra
+*	lsra
+*	adda	#$90
+*	daa
+*	adca	#$40
+*	daa
+*	exg	a,b
+*	anda	#15
+*	adda	#$90
+*	daa
+*	adca	#$40
+*	daa
+*	jsr	$E803
+*	tfr	a,b
+*	jmp	$E803
+*****************************************
+* Preparation des tableaux INTENS0,
+* INTENS1. Les tableaux contiennent pour
+* chaque pixel (0..63) les 3 valeurs des
+* composantes R/V/B a utiliser. Les
+* tableaux marchent donc 3x3. INTENS1 est
+* pour les colonnes impaires, INTENS0
+* pour les paires.
+*****************************************
+INIT_INTENS
+* le pshs a sert a reserver 1 octet sur 
+* pile sans faire de lea
+	pshs	A,B,X,U
+	ldu	#INTENS_TAB
+	ldx	#INTENS1
+	clrb
+loop	set	*
+	stb	,s
+	ldb	#3
+	andb	,s
+	ldb	b,u
+	stb	,x+
+	ldb	#3*4
+	andb	,s
+	lsrb
+	lsrb
+	ldb	b,u
+	stb	,x+
+	ldb	#3*4*4
+	andb	,s
+	lsrb
+	lsrb
+	lsrb
+	lsrb
+	ldb	b,u
+	stb	,x+
+	ldb	,s
+	incb
+	bitb	#64
+	beq	loop
+	ldu	#INTENS0
+	ldx	#INTENS1
+	lda	#64*3
+loop	set	*
+	ldb	,x+
+	lslb
+	lslb
+	lslb
+	lslb
+	stb	,u+
+	deca
+	bne	loop
+	leas	1,s
+	puls	B,X,U,PC
+INTENS_TAB
+	fcb	0,4,8+4,8+4+2
+*****************************************
+* Initialisation de l'ecran
+*****************************************
+INIT_SCR
+	pshs	d,x,u
+* effacement forme
+	lda	$E7C3
+	ora	#1
+	sta	$E7C3
+	ldu	#0	
+	bsr	FILLSCR
+* tour noir
+	ldb	#$1B
+	jsr	$E803
+	ldb	#$60
+	jsr	$E803
+* fond noir
+	lda	$E7C3
+	anda	#254
+	sta	$E7C3
+	ldu	#$C0C0
+	bsr	FILLSCR
+* ligne noire
+*	ldx	#$5F40
+*	ldu	#$C8C8
+*	bsr	FILLSC4
+* ligne bleue		
+	ldx	#$5F40-40
+	ldu	#$C8C8
+	bsr	FILLSC4
+* ligne verte
+	ldx	#$5F40-80
+	ldu	#$D0D0
+	bsr	FILLSC4
+* ligne rouge
+	ldx	#$5F40-120
+	ldu	#$E0E0
+	bsr	FILLSC4
+* retourne forme
+	lda	$E7C3
+	ora	#1
+	sta	$E7C3
+	puls	d,x,u,pc
+*****************************************
+* Rempli tout l'ecran avec la valeur
+* contenue dans U
+*****************************************
+FILLSCR	pshs	cc,d,x,y,u
+	orcc	#$50
+	lda	R0
+	ldx	R1
+	pshs	A,X
+	sts	R1
+	lda	#100
+	sta	R0
+	tfr	u,d
+	leax	,u	plus rapide que tfr u,x
+	leay	,u
+	lds	#$5F40
+loop	set	*		
+	pshs	d,x,y,u	on traite 2 lignes par 2
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	dec	R0
+	bne	loop
+	lds	R1
+	puls	A,X
+	sta	R0
+	stx	R1
+	puls	cc,d,x,y,u,pc
+*****************************************
+* rempli l'ecran pointe par x par pas de
+* 4 lignes en 4 lignes avec la valeur
+* contenue dans U
+*****************************************
+FILLSC4	pshs	cc,d,x,y,u
+	orcc	#$50
+	lda	R0
+	ldy	R1
+	pshs	a,y
+	sts	R1
+	leas	,x
+	lda	#25
+	sta	R0
+	tfr	u,d
+	leay	,u
+	leax	,u
+loop	set	*
+	pshs	d,x,y,u	1ere ligne
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	leas	-3*40,s	2eme ligne
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	pshs	d,x,y,u
+	leas	-3*40,s
+	dec	R0
+	bne	loop
+	lds	R1
+	puls	a,x
+	sta	R0
+	stx	R1
+	puls	cc,d,x,y,u,pc
+*****************************************
+* scrolltext
+*****************************************
+SCROLTX	ldb	CTXT
+	beq	SCRLTX2
+	decb
+	stb	CTXT
+	jmp	SCROLL
+SCRLTX2	ldb	#8
+	stb	CTXT
+	ldx	PTXT
+	ldb	,x+
+	bne	SCRLTX3
+	ldx	#TEXT
+SCRLTX3	bsr	PUTC
+	bcc	SCRLTX4
+	ldb	,x+
+	bra	SCRLTX3
+SCRLTX4	stx	PTXT
+	jmp	SCROLL
+*****************************************
+* Affiche le caractere B dans PUTCDAT
+* retourne C = 1 si un autre caractere
+* est requis (sequence d'echappement)
+*****************************************
+PUTC	pshs	d,x
+	lda	PUTCFLG
+	beq	PUTCNOR
+	deca
+	beq	PUTCACC
+	deca
+	beq	PUTCHI
+	deca
+	beq	PUTCLO
+	cmpb	#$16
+	bne	PUTCNOR
+	lda	#2
+PUTCXIT	lsra	
+	sta	PUTCFLG
+	puls	d,x,pc
+* accent type bas (cedille)
+PUTCLO	clra
+	cmpb	#$63
+	beq	PUTCXIT
+	bra	PUTCNOR
+* accent type haut
+PUTCHI	subb	#32
+	lslb
+	lslb
+	rola
+	lslb
+	rola
+	addd	$60CF
+	tfr	d,x
+	ldd	,x
+	std	PUTCDAT+6
+	ldd	2,x
+	std	PUTCDAT+4
+	ldd	4,x
+	std	PUTCDAT+2
+	clra
+	puls	d,x,pc
+* caractere normal
+PUTCNOR	clra
+	subb	#32
+	cmpb	#127-32
+	bhi	PUTCXIT
+	lslb
+	lslb
+	rola
+	lslb
+	rola
+	addd	$60CF
+	tfr	d,x
+	clr	PUTCCDE+1
+PUTCPR8	ldd	,x
+	std	PUTCDAT+6
+	ldd	2,x
+	std	PUTCDAT+4
+	ldd	4,x
+	std	PUTCDAT+2
+	ldd	6,x
+	std	PUTCDAT
+PUTCCDE	lda	#0
+	bra	PUTCXIT
+* on a lu un ESC, suit un code d'accent
+PUTCACC	ldx	$60CF
+	leax	128*8,x
+	cmpb	#$4B
+	beq	PUTCCED
+* accents grave/aigue/trema/circonflexe
+	subb	#$41
+	lslb
+	lslb
+	lslb
+	abx
+	lda	#2*2+1
+	sta	PUTCCDE+1
+	bra	PUTCPR8
+* c cedille
+PUTCCED	lda	#3*2+1
+	sta	PUTCCDE+1
+	bra	PUTCPR8
+*****************************************
+* Scrolle la 1ere ligne ecran
+*
+* 2630 cycle(s) en 20
+* 5190 cycles en 40
+*****************************************
+SCROLSZ	set	40
+
+SCRPTR	set	$4000+(39+SCROLSZ)<-1
+
+DP0	set	0
+SCROLLM	macro
+DP1	set	SCRPTR<-8
+	if	DP1-DP0
+DP0	set	DP1
+	lda	#DP0
+	tfr	a,dp
+	endc
+	fcb	09,SCRPTR&255	* ROR
+SCRPTR	set	SCRPTR-1
+	endm
+	
+(info)
+SCROLL	pshs	dp,a,x
+	ldx	#PUTCDAT
+	lsl	,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	1,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	2,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	3,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	4,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	5,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	6,x
+	rept	SCROLSZ,SCROLLM	
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	7,x
+	rept	SCROLSZ,SCROLLM	
+	puls	dp,a,x,pc
+(info)
+*****************************************
+* Multiplie A (format 4.4, unsigned) par
+* B (format 2.6, signed). Resultat dans
+* D (format 6.8 signed).
+*****************************************
+fmul	stb	,-s
+	bge	fmul1
+	negb
+* 256*(A/16)*(B/64) = A*B/4
+fmul1	mul
+	lsra
+	rorb
+	lsra
+	rorb
+	adcb	#0	! arrondi
+	adca	#0
+	tst	,s+
+	bge	fmul2
+	nega
+	negb
+	sbca	#0
+fmul2	rts
+*****************************************
+* Calcul cos(B) 2pi = 256 en 2.6 
+*****************************************
+fcos	addb	#64
+* cos(x) = sin(x + pi/2)
+*****************************************
+* Cacule sin(B) en fixed pt 2.6. pi = 128
+*****************************************
+fsin	tstb
+	bge	fsin2
+	negb
+	bsr	fsin2
+* sin(-x) = -sin(x)
+	negb
+	rts
+fsin2	cmpb	#64
+	bhi	fsin3
+	blo	fsin4
+* sin(pi/2) = 1
+	ldb	#64
+	rts
+* sin(pi/2 + x) = sin(pi - (pi/2 + x))
+fsin3	negb
+	addb	#128
+fsin4	pshs	x
+	ldx	#fsintab
+	abx
+	ldb	,x
+	lsrb
+	lsrb
+	adcb	#0	! arrondi
+	puls	x,pc
+fsintab
+	fcb     0,6,12,18,25,31,37,43,49
+	fcb	56,62,68,74,80,86,92,97
+	fcb	103,109,115,120,126,131
+	fcb	136,142,147,152,157,162
+	fcb	167,171,176,181,185,189
+	fcb	193,197,201,205,209,212
+	fcb	216,219,222,225,228,231
+	fcb	234,236,238,241,243,244
+	fcb	246,248,249,251,252,253
+	fcb	254,254,255,255,255
+(include)DEMOFCTS.ASM
+*****************************************
+* Calcul B=ZOOM(X)
+* de 0 a PI/2, sin(x)*13 + 3
+* de PI/2 a PI, 16+(1-sin(PI-x))*16
+* de PI a 2PI, ZOOM(2PI-X)
+*****************************************
+zoomfn	pshs	a,x
+	ldx	#sin512t
+	ldd	1,s
+	anda	#3
+	bita	#2
+	beq	zoomf1
+* [PI, 2PI[ = [512, 1023] -> [512, 1]
+* D = 1024 - D
+* nega; negb; sbca #-4
+	nega
+	negb
+	sbca	#-4
+zoomf1	cmpd	#512
+	bne	zoomf2
+	ldb	#32
+	puls	a,x,pc
+zoomf2	anda	#1
+	bne	zoomf3
+*  [0, PI/2[ = [0, 255]
+	abx
+	ldb	,x
+	lda	#26
+	mul
+*	lslb
+*	adca	#3
+	adda	#3
+	tfr	a,b
+	puls	a,x,pc
+* [PI/2, PI[ = [256, 511]
+zoomf3	comb
+	abx
+	ldb	,x
+	negb
+	asrb
+	asrb
+	asrb
+	adcb	#32
+	puls	a,x,pc
+*****************************************
+* Calcule B = sin(X) -127..127, PI/2=256
+*****************************************
+sin512	pshs	a,x
+	ldd	1,s
+	blt	sin0
+	bsr	sin1
+	puls	a,x,pc
+sin0	nega
+	negb
+	sbca	#0
+	bsr	sin1
+* sin(-x) = -sin(x)
+	negb
+	puls	a,x,pc
+sin1	bita	#2	
+	beq	sin2
+* sin(pi+x) = -sin(x)
+	bsr	sin2
+	negb
+	rts
+sin2	anda	#1
+	cmpd	#256	! 0..PI
+	bhi	sin3
+	blo	sin4
+* sin(pi/2) = 1
+	ldb	#127
+	rts
+* sin(pi/2 + x) = sin(-((pi/2 + x)-pi))
+sin3	negb
+sin4	ldx	#sin512t
+	abx
+	ldb	,x
+	rts
+sin512t fcb     0,0,1,2,3,3
+        fcb     4,5,6,7,7,8
+        fcb     9,10,10,11,12,13
+        fcb     14,14,15,16,17,18
+        fcb     18,19,20,21,21,22
+        fcb     23,24,24,25,26,27
+        fcb     28,28,29,30,31,31
+        fcb     32,33,34,34,35,36
+        fcb     37,37,38,39,40,40
+        fcb     41,42,43,43,44,45
+        fcb     46,46,47,48,48,49
+        fcb     50,51,51,52,53,54
+        fcb     54,55,56,56,57,58
+        fcb     58,59,60,61,61,62
+        fcb     63,63,64,65,65,66
+        fcb     67,67,68,69,69,70
+        fcb     71,71,72,73,73,74
+        fcb     74,75,76,76,77,78
+        fcb     78,79,79,80,81,81
+        fcb     82,83,83,84,84,85
+        fcb     85,86,87,87,88,88
+        fcb     89,89,90,91,91,92
+        fcb     92,93,93,94,94,95
+        fcb     95,96,96,97,97,98
+        fcb     98,99,99,100,100,101
+        fcb     101,102,102,103,103,104
+        fcb     104,105,105,105,106,106
+        fcb     107,107,108,108,108,109
+        fcb     109,110,110,110,111,111
+        fcb     112,112,112,113,113,113
+        fcb     114,114,115,115,115,116
+        fcb     116,116,117,117,117,117
+        fcb     118,118,118,119,119,119
+        fcb     119,120,120,120,121,121
+        fcb     121,121,122,122,122,122
+        fcb     122,123,123,123,123,123
+        fcb     124,124,124,124,124,125
+        fcb     125,125,125,125,125,125
+        fcb     126,126,126,126,126,126
+        fcb     126,126,127,127,127,127
+        fcb     127,127,127,127,127,127
+        fcb     127,127,127,127,127,127
+        fcb     127,127,127,127	
+(include)TEXTURE.ASM
+TEXTAB
+	fcb	Trainbow<-8
+	fcb	Tface6<-8
+	fcb	Tface7<-8
+*	fcb	Tface4<-8
+	fcb	Tface3<-8
+	fcb	Tface0<-8
+	fcb	Tface1<-8
+	fcb	0
+*****************************************
+* Les textures sont codees avec 2 bits 
+* par composantes R2V2B2 donc 64 couleurs
+* et le tout est multiplie par 3 pour
+* etre un index direct dans INTENS0 et 
+* INTENS1
+*****************************************
+TEX
+Trainbow
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,108,96,96,96
+        fcb     96,96,96,99,0,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,111,111,111,111
+        fcb     99,99,99,0,0,0
+        fcb     0,0,120,120,123,171
+        fcb     159,159,159,159,162,114
+        fcb     99,102,0,0,0,72
+        fcb     120,123,171,171,171,159
+        fcb     159,162,162,162,114,102
+        fcb     102,0,0,72,120,123
+        fcb     171,171,171,174,174,162
+        fcb     162,162,114,102,54,0
+        fcb     0,72,123,135,135,123
+        fcb     174,174,174,174,114,117
+        fcb     117,102,54,0,0,72
+        fcb     123,135,135,135,138,126
+        fcb     126,129,129,117,117,114
+        fcb     54,0,0,24,75,87
+        fcb     135,135,138,138,129,129
+        fcb     129,117,69,54,6,0
+        fcb     0,24,72,87,87,87
+        fcb     138,138,129,129,69,69
+        fcb     69,54,6,0,0,12
+        fcb     24,87,87,87,90,138
+        fcb     129,81,81,69,69,6
+        fcb     6,0,0,12,24,27
+        fcb     87,87,90,90,81,81
+        fcb     81,69,6,6,3,0
+        fcb     0,0,12,24,27,90
+        fcb     90,90,81,81,81,18
+        fcb     6,6,0,0,0,0
+        fcb     0,12,12,27,30,30
+        fcb     30,30,18,3,3,0
+        fcb     0,0,0,0,0,0
+        fcb     12,12,15,15,15,15
+        fcb     3,3,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+Tface7
+        fcb     0,0,0,168,168,168
+        fcb     168,168,168,168,168,168
+        fcb     0,0,0,0,0,0
+        fcb     168,168,168,186,186,186
+        fcb     186,186,168,168,168,0
+        fcb     0,0,0,168,168,183
+        fcb     186,186,186,186,186,186
+        fcb     186,183,168,168,0,0
+        fcb     168,168,183,183,120,120
+        fcb     183,186,183,120,120,183
+        fcb     183,168,168,0,168,168
+        fcb     183,171,189,189,183,183
+        fcb     183,189,189,171,183,168
+        fcb     168,0,168,183,183,183
+        fcb     189,18,183,183,183,18
+        fcb     189,183,183,183,168,0
+        fcb     168,183,168,183,183,183
+        fcb     183,183,183,183,183,183
+        fcb     168,183,168,0,168,183
+        fcb     108,108,108,120,120,120
+        fcb     120,120,108,108,108,183
+        fcb     168,0,168,183,108,186
+        fcb     189,126,189,126,189,126
+        fcb     189,186,108,183,168,0
+        fcb     108,168,168,174,189,189
+        fcb     189,189,189,189,189,174
+        fcb     168,168,108,0,108,168
+        fcb     168,120,186,189,189,189
+        fcb     189,189,186,120,168,168
+        fcb     108,0,108,108,168,168
+        fcb     120,123,189,186,189,123
+        fcb     120,168,168,108,108,0
+        fcb     0,108,108,168,171,168
+        fcb     168,120,168,168,171,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+Tface6
+        fcb     0,0,0,168,168,168
+        fcb     168,168,168,168,168,168
+        fcb     0,0,0,0,0,0
+        fcb     168,168,168,186,186,186
+        fcb     186,186,168,168,168,0
+        fcb     0,0,0,168,168,171
+        fcb     183,186,186,186,186,186
+        fcb     183,171,168,168,0,0
+        fcb     168,168,189,189,189,171
+        fcb     186,186,186,171,189,189
+        fcb     189,168,168,0,168,189
+        fcb     189,189,189,189,171,183
+        fcb     171,189,189,189,189,189
+        fcb     168,0,123,189,189,18
+        fcb     189,189,123,183,171,189
+        fcb     189,18,189,189,123,0
+        fcb     123,189,189,189,189,189
+        fcb     123,183,123,189,189,189
+        fcb     189,189,123,0,123,126
+        fcb     186,189,186,123,171,183
+        fcb     171,123,186,189,186,126
+        fcb     123,0,120,126,126,123
+        fcb     126,126,183,183,183,126
+        fcb     126,123,126,126,120,0
+        fcb     108,168,171,171,171,183
+        fcb     183,183,183,183,171,171
+        fcb     171,168,108,0,108,168
+        fcb     168,171,183,183,183,183
+        fcb     183,183,183,171,168,168
+        fcb     108,0,108,108,168,183
+        fcb     183,171,120,120,120,171
+        fcb     183,183,168,108,108,0
+        fcb     0,108,108,168,183,183
+        fcb     183,183,183,183,183,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+*Tface5
+*        fcb     0,0,0,168,168,168
+*        fcb     168,168,168,168,168,168
+*        fcb     0,0,0,0,0,0
+*        fcb     168,168,168,186,186,186
+*        fcb     186,186,168,168,168,0
+*        fcb     0,0,0,168,168,183
+*        fcb     186,186,186,186,186,186
+*        fcb     186,183,168,168,0,0
+*        fcb     168,168,183,183,120,120
+*        fcb     183,186,183,120,120,183
+*        fcb     183,168,168,0,168,168
+*        fcb     183,183,171,171,183,183
+*        fcb     183,171,171,183,183,168
+*        fcb     168,0,168,108,0,126
+*        fcb     63,0,0,108,0,126
+*        fcb     63,0,0,108,168,0
+*        fcb     168,183,0,60,63,0
+*        fcb     0,168,0,63,63,48
+*        fcb     0,183,168,0,168,183
+*        fcb     108,60,60,60,120,168
+*        fcb     120,60,60,60,108,183
+*        fcb     168,0,168,183,168,168
+*        fcb     168,168,168,183,168,168
+*        fcb     168,168,168,183,168,0
+*        fcb     108,168,168,168,183,183
+*        fcb     183,183,183,183,183,168
+*        fcb     168,168,108,0,108,168
+*        fcb     168,171,120,171,183,183
+*        fcb     183,183,183,171,168,168
+*        fcb     108,0,108,108,168,183
+*        fcb     171,120,120,120,120,171
+*        fcb     183,183,168,108,108,0
+*        fcb     0,108,108,168,183,183
+*        fcb     183,183,183,183,183,168
+*        fcb     108,108,0,0,0,0
+*        fcb     108,108,108,171,171,183
+*        fcb     171,171,108,108,108,0
+*        fcb     0,0,0,0,0,108
+*        fcb     108,108,108,108,108,108
+*        fcb     108,108,0,0,0,0
+*        fcb     0,0,0,0,0,0
+*        fcb     0,0,0,0,0,0
+*        fcb     0,0,0,0
+Tface4
+        fcb     0,96,96,156,168,168
+        fcb     168,168,168,168,168,156
+        fcb     96,96,0,0,0,96
+        fcb     96,96,168,186,186,186
+        fcb     186,186,168,96,96,96
+        fcb     0,0,0,96,159,183
+        fcb     186,186,186,186,186,186
+        fcb     186,183,159,96,0,0
+        fcb     168,96,171,183,168,183
+        fcb     186,186,186,183,168,183
+        fcb     171,96,168,0,168,168
+        fcb     183,183,171,120,183,168
+        fcb     183,120,171,183,183,168
+        fcb     168,0,168,183,183,171
+        fcb     189,18,120,120,120,18
+        fcb     189,171,183,183,168,0
+        fcb     168,183,168,168,168,168
+        fcb     168,171,168,168,168,168
+        fcb     168,183,168,0,168,183
+        fcb     108,108,108,120,120,120
+        fcb     120,120,108,108,108,183
+        fcb     168,0,168,183,108,186
+        fcb     189,126,189,126,189,126
+        fcb     189,186,108,183,168,0
+        fcb     108,168,168,174,189,189
+        fcb     189,189,189,189,189,174
+        fcb     168,168,108,0,108,168
+        fcb     168,120,186,189,189,189
+        fcb     189,189,186,120,168,168
+        fcb     108,0,108,108,168,168
+        fcb     120,123,189,186,189,123
+        fcb     120,168,168,108,108,0
+        fcb     0,108,108,168,171,168
+        fcb     168,120,168,168,171,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+Tface3
+        fcb     0,0,0,168,168,168
+        fcb     168,168,168,168,168,168
+        fcb     0,0,0,0,0,0
+        fcb     168,168,168,186,186,186
+        fcb     186,186,168,168,168,0
+        fcb     0,0,0,168,168,183
+        fcb     186,186,186,186,186,186
+        fcb     186,183,168,168,0,0
+        fcb     168,168,183,171,168,183
+        fcb     186,186,186,183,168,171
+        fcb     183,168,168,0,168,168
+        fcb     183,183,171,168,171,183
+        fcb     171,168,171,183,183,168
+        fcb     168,0,168,183,183,183
+        fcb     120,120,171,183,171,120
+        fcb     120,183,183,183,168,0
+        fcb     168,183,183,183,183,183
+        fcb     183,183,183,183,183,183
+        fcb     183,183,168,0,168,183
+        fcb     180,108,108,120,120,120
+        fcb     120,120,108,108,180,183
+        fcb     168,0,168,183,180,108
+        fcb     189,189,189,189,189,189
+        fcb     189,108,180,183,168,0
+        fcb     108,168,168,108,96,96
+        fcb     144,159,144,144,96,108
+        fcb     168,168,108,0,108,168
+        fcb     168,168,108,96,144,159
+        fcb     144,144,108,168,168,168
+        fcb     108,0,108,108,168,171
+        fcb     120,171,186,189,186,171
+        fcb     120,171,168,108,108,0
+        fcb     0,108,108,168,183,171
+        fcb     168,120,168,171,183,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+*Tface2
+*        fcb     0,0,0,168,168,168
+*        fcb     168,168,168,168,168,168
+*        fcb     0,0,0,0,0,0
+*        fcb     168,168,168,186,186,186
+*        fcb     186,186,168,168,168,0
+*        fcb     0,0,0,168,168,183
+*        fcb     186,186,186,186,186,186
+*        fcb     186,183,168,168,0,0
+*        fcb     168,168,183,183,120,120
+*        fcb     183,186,186,186,186,183
+*        fcb     183,168,168,0,168,168
+*        fcb     183,171,171,171,183,183
+*        fcb     183,183,168,171,183,168
+*        fcb     168,0,168,183,183,183
+*        fcb     189,18,183,183,171,168
+*        fcb     168,183,183,183,168,0
+*        fcb     168,183,183,168,189,81
+*        fcb     171,183,168,120,120,168
+*        fcb     183,183,168,0,168,183
+*        fcb     180,180,183,183,183,183
+*        fcb     183,183,183,180,180,183
+*        fcb     168,0,168,183,180,180
+*        fcb     180,180,180,183,180,168
+*        fcb     120,180,180,183,168,0
+*        fcb     108,168,168,168,183,183
+*        fcb     183,183,183,168,168,168
+*        fcb     168,168,108,0,108,168
+*        fcb     168,171,168,168,183,183
+*        fcb     171,168,168,171,168,168
+*        fcb     108,0,108,108,168,183
+*        fcb     183,168,120,120,168,171
+*        fcb     183,183,168,108,108,0
+*        fcb     0,108,108,168,183,183
+*        fcb     183,183,183,183,183,168
+*        fcb     108,108,0,0,0,0
+*        fcb     108,108,108,171,171,183
+*        fcb     171,171,108,108,108,0
+*        fcb     0,0,0,0,0,108
+*        fcb     108,108,108,108,108,108
+*        fcb     108,108,0,0,0,0
+*        fcb     0,0,0,0,0,0
+*        fcb     0,0,0,0,0,0
+*        fcb     0,0,0,0
+Tface1
+        fcb     0,0,0,168,168,168
+        fcb     168,168,168,168,168,168
+        fcb     0,0,0,0,0,0
+        fcb     168,168,168,186,186,186
+        fcb     186,186,168,168,168,0
+        fcb     0,0,0,168,168,183
+        fcb     186,186,186,186,186,186
+        fcb     186,183,168,168,0,0
+        fcb     168,168,183,183,183,168
+        fcb     171,186,171,168,183,183
+        fcb     183,168,168,0,168,168
+        fcb     183,171,168,171,183,183
+        fcb     183,171,168,171,183,168
+        fcb     168,0,168,183,183,183
+        fcb     189,18,183,183,183,18
+        fcb     189,183,183,183,168,0
+        fcb     168,183,183,168,189,81
+        fcb     171,183,171,81,189,168
+        fcb     183,183,168,0,168,183
+        fcb     168,168,168,180,183,183
+        fcb     183,180,168,168,168,183
+        fcb     168,0,168,168,168,168
+        fcb     168,168,180,183,180,168
+        fcb     168,168,168,168,168,0
+        fcb     108,168,156,156,168,171
+        fcb     183,183,183,171,168,156
+        fcb     156,168,108,0,108,156
+        fcb     168,168,171,183,183,183
+        fcb     183,183,171,168,168,156
+        fcb     108,0,108,108,168,171
+        fcb     183,171,120,120,120,171
+        fcb     183,171,168,108,108,0
+        fcb     0,108,108,168,183,183
+        fcb     183,183,183,183,183,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
+Tface0
+        fcb     0,0,0,168,168,168
+        fcb     168,168,168,168,168,168
+        fcb     0,0,0,0,0,0
+        fcb     168,168,168,186,186,186
+        fcb     186,186,168,168,168,0
+        fcb     0,0,0,168,168,183
+        fcb     186,186,186,186,186,186
+        fcb     186,183,168,168,0,0
+        fcb     168,168,183,183,120,120
+        fcb     183,186,183,120,120,183
+        fcb     183,168,168,0,168,168
+        fcb     183,171,171,171,183,183
+        fcb     183,171,171,171,183,168
+        fcb     168,0,168,183,183,183
+        fcb     189,18,183,183,183,18
+        fcb     189,183,183,183,168,0
+        fcb     168,183,183,168,189,81
+        fcb     171,183,171,81,189,168
+        fcb     183,183,168,0,168,183
+        fcb     180,180,183,183,183,183
+        fcb     183,183,183,180,180,183
+        fcb     168,0,168,183,180,168
+        fcb     180,180,180,183,180,180
+        fcb     180,168,180,183,168,0
+        fcb     108,168,168,108,108,120
+        fcb     156,156,156,120,108,108
+        fcb     168,168,108,0,108,168
+        fcb     168,171,183,183,159,159
+        fcb     159,183,183,171,168,168
+        fcb     108,0,108,108,168,183
+        fcb     183,183,159,144,159,183
+        fcb     183,183,168,108,108,0
+        fcb     0,108,108,168,183,183
+        fcb     183,171,183,183,183,168
+        fcb     108,108,0,0,0,0
+        fcb     108,108,108,171,171,183
+        fcb     171,171,108,108,108,0
+        fcb     0,0,0,0,0,108
+        fcb     108,108,108,108,108,108
+        fcb     108,108,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0,0,0
+        fcb     0,0,0,0
