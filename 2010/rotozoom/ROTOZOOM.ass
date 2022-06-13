@@ -65,10 +65,30 @@ CPTLINE	rmb	1	compteur ligne
 TMP	rmb	160	buffer travail
 
 * blabla
-TEXT	fcc	/Bonjour /
-	fcb	0
+TEXT
+*  fcb $16,$41,'e
+*  fcb $16,$42,'o
+*  fcb $16,$43,'i
+*  fcb $16,$48,'a
+*  fcb $16,$4B,'c
 
-	org	(DP_BASE+1)<+8
+  fcc /-=* /
+	fcc	/Ceci est un test /
+  fcc /de RotoZoom avec un /
+  fcc /scroller /
+  fcc /*=- /
+*  fcc /Test accents: /
+*  fcb $16,$41,'e
+*  fcb $16,$42,'o
+*  fcb $16,$43,'i
+*  fcb $16,$48,'a
+*  fcb $16,$4B,'c
+*	fcc /-=* /
+	fcc	/Cool non ? /
+*  fcc /*=- /
+  fcb	0
+
+	org	((*+255)<-8)<+8
 INTENS0	rmb	256	*64*3
 INTENS1	rmb	256	*64*3
 	includ	TEXTURE
@@ -654,7 +674,7 @@ FILLSCR	pshs	cc,d,x,y,u
 	ldx	R1
 	pshs	A,X
 	sts	R1
-	lda	#100
+	lda	#96
 	sta	R0
 	tfr	u,d
 	leax	,u	plus rapide que tfr u,x
@@ -690,7 +710,7 @@ FILLSC4	pshs	cc,d,x,y,u
 	pshs	a,y
 	sts	R1
 	leas	,x
-	lda	#25
+	lda	#24
 	sta	R0
 	tfr	u,d
 	leay	,u
@@ -742,16 +762,17 @@ SCRLTX4	stx	PTXT
 *****************************************
 PUTC	pshs	d,x
 	lda	PUTCFLG
-	beq	PUTCNOR
+	beq	PUTC1
 	deca
 	beq	PUTCACC
 	deca
 	beq	PUTCHI
 	deca
 	beq	PUTCLO
+PUTC1
 	cmpb	#$16
 	bne	PUTCNOR
-	lda	#2
+	lda	#%11
 PUTCXIT	lsra	
 	sta	PUTCFLG
 	puls	d,x,pc
@@ -770,13 +791,13 @@ PUTCHI	subb	#32
 	addd	$60CF
 	tfr	d,x
 	ldd	,x
-	std	PUTCDAT+6
+	std	PUTCDAT
 	ldd	2,x
-	std	PUTCDAT+4
-	ldd	4,x
 	std	PUTCDAT+2
+	ldd	4,x
+	std	PUTCDAT+4
 	clra
-	puls	d,x,pc
+	bra PUTCXIT
 * caractere normal
 PUTCNOR	clra
 	subb	#32
@@ -791,31 +812,32 @@ PUTCNOR	clra
 	tfr	d,x
 	clr	PUTCCDE+1
 PUTCPR8	ldd	,x
-	std	PUTCDAT+6
-	ldd	2,x
-	std	PUTCDAT+4
-	ldd	4,x
-	std	PUTCDAT+2
-	ldd	6,x
 	std	PUTCDAT
+	ldd	2,x
+	std	PUTCDAT+2
+	ldd	4,x
+	std	PUTCDAT+4
+	ldd	6,x
+	std	PUTCDAT+6
 PUTCCDE	lda	#0
 	bra	PUTCXIT
 * on a lu un ESC, suit un code d'accent
 PUTCACC	ldx	$60CF
-	leax	128*8,x
+	leax	(128-32)*8,x
 	cmpb	#$4B
 	beq	PUTCCED
 * accents grave/aigue/trema/circonflexe
 	subb	#$41
 	lslb
 	lslb
-	lslb
-	abx
-	lda	#2*2+1
+	ldd	b,x
+	stb	PUTCDAT+6
+  sta	PUTCDAT+7
+	lda	#%101
 	sta	PUTCCDE+1
-	bra	PUTCPR8
+	bra	PUTCCDE
 * c cedille
-PUTCCED	lda	#3*2+1
+PUTCCED	lda	#%111
 	sta	PUTCCDE+1
 	bra	PUTCPR8
 *****************************************
@@ -843,28 +865,28 @@ SCRPTR	set	SCRPTR-1
 (info)
 SCROLL	pshs	dp,a,x
 	ldx	#PUTCDAT
-	lsl	,x
+	lsl	7,x
 	rept	SCROLSZ,SCROLLM
 SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	1,x
-	rept	SCROLSZ,SCROLLM
-SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	2,x
-	rept	SCROLSZ,SCROLLM
-SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	3,x
-	rept	SCROLSZ,SCROLLM
-SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	4,x
+	lsl	6,x
 	rept	SCROLSZ,SCROLLM
 SCRPTR	set	SCRPTR+SCROLSZ+40
 	lsl	5,x
 	rept	SCROLSZ,SCROLLM
 SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	6,x
+	lsl	4,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	3,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	2,x
+	rept	SCROLSZ,SCROLLM
+SCRPTR	set	SCRPTR+SCROLSZ+40
+	lsl	1,x
 	rept	SCROLSZ,SCROLLM	
 SCRPTR	set	SCRPTR+SCROLSZ+40
-	lsl	7,x
+	lsl	,x
 	rept	SCROLSZ,SCROLLM	
 	puls	dp,a,x,pc
 (info)
