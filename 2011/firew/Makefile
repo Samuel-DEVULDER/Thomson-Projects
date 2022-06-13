@@ -2,7 +2,12 @@
 
 DISK=olbb.sap
 
+ifeq ($(OS),Windows_NT)
 EXE=.exe
+else
+EXE=
+endif
+
 C6809=../../c6809/c6809$(EXE)
 SAPFS=../../sapfs/sapfs$(EXE)
 
