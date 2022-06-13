@@ -192,10 +192,10 @@ mul_intro
 	negb
 	bsr	mul_intro2
 *pose des soucis de comptage de PC sous c6809
-	negd
-* nega
-* negb
-* sbca #0 
+*	negd
+  nega
+  negb
+  sbca #0 
 	rts
 mul_intro2
 	mul

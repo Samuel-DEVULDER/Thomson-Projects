@@ -11,7 +11,7 @@ SAPFS=../../sapfs/sapfs$(EXE)
 
 ASM=$(wildcard *.ass)
 
-all: compile fill_sapdir test
+all: compile fill_sapdir #test
 
 compile: $(C6809) $(ASM:%.ass=build/%.BIN) 
 
