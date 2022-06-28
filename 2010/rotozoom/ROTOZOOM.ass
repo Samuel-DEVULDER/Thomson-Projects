@@ -749,6 +749,7 @@ SCRLTX2	ldb	#8
 	ldb	,x+
 	bne	SCRLTX3
 	ldx	#TEXT
+  ldb	,x+
 SCRLTX3	bsr	PUTC
 	bcc	SCRLTX4
 	ldb	,x+
@@ -803,6 +804,9 @@ PUTCNOR	clra
 	subb	#32
 	cmpb	#127-32
 	bhi	PUTCXIT
+	clr	PUTCCDE+1
+PUTCPR8
+  clra
 	lslb
 	lslb
 	rola
@@ -810,8 +814,7 @@ PUTCNOR	clra
 	rola
 	addd	$60CF
 	tfr	d,x
-	clr	PUTCCDE+1
-PUTCPR8	ldd	,x
+	ldd	,x
 	std	PUTCDAT
 	ldd	2,x
 	std	PUTCDAT+2
@@ -822,22 +825,18 @@ PUTCPR8	ldd	,x
 PUTCCDE	lda	#0
 	bra	PUTCXIT
 * on a lu un ESC, suit un code d'accent
-PUTCACC	ldx	$60CF
-	leax	(128-32)*8,x
+PUTCACC
 	cmpb	#$4B
-	beq	PUTCCED
+	bge PUTCCED
 * accents grave/aigue/trema/circonflexe
-	subb	#$41
-	lslb
-	lslb
-	ldd	b,x
-	stb	PUTCDAT+6
-  sta	PUTCDAT+7
+	subb	#$41-128-14+32
 	lda	#%101
 	sta	PUTCCDE+1
-	bra	PUTCCDE
+	bra	PUTCPR8
 * c cedille
-PUTCCED	lda	#%111
+PUTCCED	
+  ldb #128-32
+	lda	#%111
 	sta	PUTCCDE+1
 	bra	PUTCPR8
 *****************************************
