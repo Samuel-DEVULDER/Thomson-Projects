@@ -1,0 +1,3 @@
+
+10 CLEAR,&H9FFF
+20 LOADM"boing17",,R

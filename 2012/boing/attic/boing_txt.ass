@@ -1,0 +1,169 @@
+(main)BOING.ASM
+	org	$a000
+
+* facteur d'extinction
+FACT	set	4	
+
+* initialisation ecran	
+ini	ldx	#scrinit
+	bsr	puts
+* en ce point x pointe sur les
+* caracteres de tramage. on economise
+* donc un ldx #dithcar
+
+* initialisation des caracteres de
+* tramage
+	ldd	#63*256+8
+dith0	clr	,x+
+	decb
+	bne	dith0
+	ldu	#dith5+1
+dith1	stb	,u
+	stb	4,u
+* 4,u = dith6-1
+	ldb	#3
+	pshs	a,b
+	clrb
+	lsla
+	anda	#$AA
+	eora	,s
+dith2	lsra
+	rolb
+	lsra
+	rol	,u
+	dec	1,s
+	bne	dith2	
+dith3	ror	4,u
+	decb
+	bge	dith3
+	ldb	#7
+dith4	lda     -8,x
+dith5	cmpb	#00
+	bne	dith6
+	ora	#1	
+dith6	sta     ,x+
+	decb
+	bge	dith4
+	puls	a,b	
+* ici b=0 a cause du "dec 1,s"
+	deca
+	bge	dith1
+
+* boucle principale
+cycle	set	*	
+* deplacement balle
+	ldu	#coord
+	bsr	balle
+	bsr	balle
+* affichage video
+	bsr	video
+	cmpb	#3
+	bne	cycle
+* sortie
+	swi
+	
+* deplace et affiche un balle
+balle	ldx	#ecran
+	bsr	move
+	abx
+	bsr	move
+	andb	#256-4
+	lda	#10
+	mul
+	leax	d,x	
+* affichage balle dans ecran
+	ldd	#257*((65/FACT)*FACT)
+	std	1,x
+	std	40,x
+	std	42,x
+	std	80,x
+	std	82,x
+	std	121,x
+	rts
+	
+* produit un beep
+beep	ldb	#7
+* indirection sur putc pour pouvoir y
+* acceder avec un bsr (2 octets) au lieu
+* d'un jsr (3 octets)
+putc	jmp	$E803
+puts0	bsr	putc
+* affiche la chaine pointee par x
+puts	ldb	,x+
+	bne	puts0
+	rts
+	
+* deplacement: u point sur fx,vx,x,max
+move	ldb	,u+
+	addb	,u
+	stb	,u+
+	addb	,u+
+	cmpb	,u+
+	bhs	bounce
+	stb	-2,u
+	rts
+bounce	bsr	beep
+	neg	-3,u
+	ldb	-2,u
+	rts
+
+* Affichage video. En sortie b contient
+* un caractere lu au clavier
+video	ldx	#ecran
+	ldu	#$4000+120
+vid0	lda	#40
+vid1	ldb	,x+
+	bgt	vid3
+	leau	1,u
+vid2	deca
+	bne	vid1
+	leau	7*40,u
+	cmpx	#ecran+1000
+	blo	vid0
+	jmp	$E806
+vid3	subb	#FACT
+	stb	-1,x
+	pshs	a,x
+	ldx	#dithcar
+	lslb
+	abx
+	abx
+	abx
+	abx
+	ldd	,x
+	sta	-120,u
+	stb	-80,u
+	ldd	2,x
+	sta	-40,u
+	stb	,u+
+	ldd	4,x
+	sta	39,u
+	stb	79,u
+	ldd	6,x
+	sta	119,u
+	stb	159,u
+	puls	a,x
+	bra	vid2
+* tableau de corrdonees organise
+* comme suit: fx, vx, x, max
+* fx=force sur x
+* vx=vitesse en x
+* x = position
+* max = maximum sur x
+coord	fcb	0,1,0,37
+	fcb	1,0,0*4,23*4
+	fcb	0,-1,30,37
+	fcb	1,-4*4	,23*4,23*4
+scrinit	fcb	$14		* cursor off
+*	fcb	$1F,$20,$20	* top=0
+*	fcb	$1F,$12,$14	* bottom=24
+*	fcb	$1B,$6B		* no-scroll
+	fcb	$1B,$60		* tour=0
+	fcb	$1B,$50		* fond=0
+	fcb	$1B,$47		* forme=7
+	fcb	$0C		* cls
+	fcb	$1B,$68		* mode forme
+	fcb	0
+dithcar	rmb	8*65
+ecran	rmb	40*25
+	end	ini

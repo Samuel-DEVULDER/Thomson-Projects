@@ -1,0 +1,254 @@
+(main)EXOLDR
+**************************************
+* Loader EXOMIZER K7 pour thomson
+*
+* complation: a/im
+*
+* Samuel Devulder, Mars 2012
+**************************************
+
+K7OPC	set	$6029
+K7CO	set	$E815
+
+* prologue d'une fonction
+PROC	macro
+\0	set	*
+EXITP	set	\0_
+	endm
+	
+* epilogue d'une fonction
+ENDP	macro
+\0_	set	*
+	endm
+
+* appel d'une fonction et retour si C=1	
+INVOKE	macro
+	bsr	\0
+	bcs	EXITP
+	endm
+	
+* boucle
+REPEAT	macro
+loop	set	*
+	endm
+WHILE	macro
+	b\0	loop
+	endm
+	
+**************************************
+	PROC	ini
+	orcc	#$50
+	ldu	#fcb
+	lda	#10
+	
+	REPEAT
+	clr	a,u
+	deca
+	WHILE	ge
+	
+	
+	ldx	#$4000
+	lda	$E7C3
+	ora	#1
+	sta	$E7C3
+	
+	INVOKE	k7open
+	
+	REPEAT
+	bsr	k7read
+	stb	,x+
+	WHILE	cc
+
+	ENDP	ini
+	swi
+fcb	rmb	12
+
+**************************************
+* Lecture caractere
+* U=nom fichier
+* U+11=longueur bloc
+* B=caractere
+* CC=1 si erreur ou fin fichier (B=0)
+**************************************
+	PROC	k7read
+	pshs	a,x,u
+	ldx	#k7buf+128
+	lda	11,u
+k7rd2	beq	k7rd1
+	deca
+	sta	11,u
+	ldb	a,x
+	ENDP	k7read
+	puls	a,x,u,pc
+
+* lecture bloc suivant
+k7rd1	bsr	k7blk
+	bcc	k7rd3
+	ldb	#2
+k7rd3	decb
+	bne	k7rd4
+	tsta
+	bra	k7rd2
+
+* erreur ou fin fichier
+k7rd4	lda	#$10
+	sta	K7OPC
+	jsr	K7CO
+	cmpb	#$FE
+	bne	k7rd5	* error
+	clrb		
+k7rd5	orcc	#1
+	bra	EXITP	* eof
+
+**************************************
+* Ouverture d'un fichier
+* U = nom fichier (8+3)
+* U+12 = 0 = nb d'octet dispo dans
+*            buffer
+**************************************
+	PROC	k7open
+	pshs	x,u
+
+k7opn1	
+* attente d'en-tete
+	REPEAT
+	INVOKE	k7hdr
+	tsta
+	WHILE	le
+
+* verif du nom fichier
+	ldu	2,s
+	ldx	#k7buf+128-10
+	leax	a,x
+	lda	#10
+	REPEAT
+	ldb	,u+
+	beq	k7opn3	* joker
+	cmpb	a,x
+* correspond pas => nouvel entete
+	bne	k7opn1
+k7opn3	deca
+	WHILE	ge
+
+* force chargmement nouveau bloc
+zzz	clr	,u
+
+* recopie du nom
+	lda	#11
+	REPEAT
+	ldb	,x+
+	stb	,-u
+	deca
+	WHILE	ne
+	ENDP	k7open
+	puls	x,u,pc
+
+**************************************
+* lecture d'un bloc d'en-tete
+* Retourne avec CC=1 si pb.
+* A=longueur 
+* B=00
+**************************************
+	PROC	k7hdr
+	ldb	#1
+	stb	K7OPC
+	JSR	K7CO
+	bcs	EXITP
+	inc	K7OPC
+	REPEAT
+	INVOKE	k7blk
+	tstb
+	WHILE	ne
+	ENDP	k7hdr
+	rts
+
+**************************************
+* lecture d'un bloc.
+* CC=1 en cas de pb. 
+* A=longueur
+* B=type (0=header, 1=data, ff=fin)
+**************************************
+	PROC	k7blk
+	pshs	d,x
+	leas	-1,s
+
+* lecture du bootstrap
+	INVOKE	k7amc
+
+* lecture du type de bloc
+	INVOKE	k7car
+	stb	2,s
+	stb	,s	* crc
+
+* lecture de la longueur
+	INVOKE	k7car
+	tfr	b,a
+	addb	,s
+	stb	,s
+	sta	1,s
+	beq	k7blk1
+	
+* lecture du bloc
+	ldx	#k7buf+128
+	REPEAT
+	INVOKE	k7car
+	deca
+	stb	a,x
+	addb	,s
+	stb	,s
+	tsta
+	WHILE	ne
+
+* crc ok?
+k7blk1
+	INVOKE	k7car
+	subb	,s
+	beq	EXITP
+	comb		* CC=1
+	ENDP	k7blk
+	leas	1,s
+	puls	d,x,pc
+
+**************************************
+* lecture du démarage de bloc
+* FF FF FF .. FF 01 3C 
+* A,B=detruit
+**************************************
+	PROC	k7amc
+k7amc0	clra
+	REPEAT
+	INVOKE	k7car
+	cmpa	#4
+	bge	k7amc1
+	comb
+	bne	k7amc0
+	inca
+	WHILE	ra
+k7amc1	cmpa	#5
+	beq	k7amc2
+	comb
+	WHILE	eq
+	cmpb	#$FE
+	bne	k7amc
+	inca
+	WHILE	ra
+k7amc2	cmpb	#$3C
+	bne	k7amc0
+	ENDP	k7amc
+	rts	
+	
+**************************************
+* lecture d'un caractere
+**************************************
+k7car	jsr	K7CO
+	stb	,-s
+	andb	#15
+	stb	$E7DD	* modif tour
+	puls	b,pc
+
+**************************************
+* buffer k7
+**************************************
+k7buf	rmb	256
+
+	end	ini

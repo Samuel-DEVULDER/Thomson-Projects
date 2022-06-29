@@ -1,0 +1,149 @@
+(main)BOING.ASM
+	org	$a000
+ini	
+* initialisation du dither.
+	ldx	#dith3a+1
+	ldu	#dithcar
+	ldd	#63*256+8
+dith0	clr	,u+
+	decb
+	bne	dith0
+dith1	sta	,-s
+	clrb
+	lsla
+	anda	#$AA
+	eora	,s
+	lsra
+	rolb
+	clr	,x
+	lsra
+	rol	,x
+	lsra
+	rolb
+	lsra
+	rol	,x
+	lsra
+	rolb
+	lsra
+	rol	,x
+	clr	4,x
+	coma
+dith2	rol	4,x
+	decb
+	bge	dith2
+	ldb	#7
+dith3	lda     -8,u
+dith3a	cmpb	#00
+	bne	dith4
+	ora	#1	
+dith4	sta     ,u+
+	decb
+	bge	dith3
+	lda	,s+
+	deca
+	bne	dith1
+* initialisation ecran	
+	ldu	#$E7D0
+	sta	$0D,u
+	inca
+	ora	$C3-$D0,u
+	sta	$C3-$D0,u
+	ldx	#$5F40-1-15
+	lda	#$F0
+ecr0	clr	15,x
+	dec	$C3-$D0,u
+	sta	15,x
+	inc	$C3-$D0,u
+	leax	-1,x
+* astuce: pour eviter un cmpx #$4000
+* on continue d'ecrire sur la rom 
+* (en fait jusqu'a $000F pour eviter
+* une commut de bank)
+	bne	ecr0
+* test anti rebond
+key0	jsr	$e809
+	bcs	key0
+cycle	
+* on fait avancer la balle:
+	ldu	#coord	* vy,y,vx,x
+* calcul y
+	pulu	d,x
+	addb	-4,u
+	bge	endy
+	clrb
+	nega
+endy	deca		* gravite
+	std	-4,u
+	andb	#256-4
+	lda	#10
+	mul
+	adda	#ecran<-8
+	exg	d,x
+* calcul x
+	addb	-2,u
+	bgt	xpos1
+	clrb
+	nega
+	bra	endx
+xpos1	cmpb	#36
+	bls	endx
+	nega
+endx	std	-2,u
+
+* on affiche la balle dans ecran
+	abx
+	ldd	#$4141
+	std	1,x
+	std	40,x
+	std	42,x
+	std	80,x
+	std	82,x
+	std	121,x
+* on l'affiche dans la zone ecran
+	ldx	#ecran+40*25
+	ldu	#$4000+120
+line	lda	#40
+px	sta	,-s	
+	leau	1,u
+	ldb	,-x
+* pixel allume?
+	beq	nextpx
+	decb
+	stb	,x
+* affichage
+	leay	,x
+	ldx	#dithcar
+	lslb
+	lslb
+	abx
+	abx	
+	ldd	,x
+	sta	-120,u
+	stb	-80,u
+	ldd	2,x
+	sta	-40,u
+	stb	,u
+	ldd	4,x
+	sta	40,u
+	stb	80,u
+	ldd	6,x
+	sta	120,u
+	stb	160,u
+	leax	,y
+nextpx	lda	,s+
+	deca
+	bne	px
+	leau	40*7,u
+	cmpx	#ecran
+	bgt	line
+* on met a jour la memoire video
+	jsr	$e809
+	lbcc	cycle
+	swi
+* vy,y,vx,x
+coord	fcb	0,22*4,1,0
+	org	((*+255)<-8)<+8
+ecran	rmb	40*25
+dithcar	rmb	8*65
+
+	end	ini

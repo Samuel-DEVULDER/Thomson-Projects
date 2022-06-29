@@ -1,0 +1,166 @@
+(main)BOING.ASM
+	org	$a000
+
+* initialisation ecran
+ini	ldx	#scrinit
+	ldb	,x+
+	jsr	$E803
+	bne	ini+3
+*	incb
+	ldd	#$0f03
+	stb	$6034
+*	incb
+*	stb	$6037
+
+* RAZ ram ecran + 1er dithcar
+raz	clr	,x+
+	cmpx	#dithcar+4
+	bne	raz
+	
+* initialisation dithcar (a=15 via le ldd du haut)
+dith	clrb
+	pshs	d
+	lsla
+	anda	#$AA
+	eora	,s
+	lsra
+	rolb
+	lsra
+	rol	1,s
+	lsra
+	rolb
+	lsra
+	rol	1,s
+	lda	#256-17
+	coma
+dith1	rora
+	decb
+	bne	dith1
+	ldu	-4,x
+	stu	,x++
+	ldu	-4,x
+	stu	,x++
+	ldb	1,s
+	comb	
+	ora	b,x
+	sta	b,x
+	puls	d
+	deca
+	bge	dith
+
+* boucle principale
+cycle	ldu	#coord
+*	bsr	balle
+	bsr	balle2
+	bcc	cycle
+* sortie
+*	swi
+	fcb	$3E
+
+* deplacement: u pointe sur
+* fx,vx,x,max
+move	ldb	,u+
+	addb	,u
+	stb	,u+
+	addb	,u+
+	cmpb	,u+
+	bhi	bounce
+	stb	-2,u
+	rts
+bounce	
+	andb	#7
+	addb	#$31
+	jsr	$E81E
+	neg	-3,u
+	ldb	-2,u
+	rts
+
+* deplace et affiche une
+* balle
+balle	ldx	#ecran+1
+	bsr	move
+	abx
+	bsr	move
+	andb	#256-4
+	lda	#10
+	mul
+	leax	d,x	
+* affichage balle dans
+* zone ecran
+	ldd	#257*17*4
+*	std	1-1,x
+	std	,x
+	std	40-1,x
+	std	42-1,x
+	std	80-1,x
+	std	82-1,x
+	std	121-1,x
+	rts
+
+* affiche une balle et redessine
+* l'ecran.
+balle2	bsr	balle
+	
+* Affichage video. En sortie
+* C=1 si le ligthpen est appuye
+*video
+	ldx	#ecran+40
+	ldu	#$4000+40*8
+vid0	lda	#40
+vid1	ldb	,x+
+	ble	vid3
+	subb	#4
+	stb	-1,x
+	pshs	a,x,u
+	ldx	#dithcar
+	abx
+	ldb	#4
+vid2	lda	,x+
+	sta	,u
+	leau	40,u
+	sta	120,u
+	decb	
+	bne	vid2
+	puls	a,x,u
+vid3	leau	1,u
+	deca
+	bne	vid1
+	leau	7*40,u
+	cmpx	#ecran+1000-40
+	blo	vid0
+	jmp	$E81B
+	
+* tableau de corrdonees organise
+* comme suit: fx, vx, x, max
+* fx=force sur x
+* vx=vitesse en x
+* x = position
+* max = maximum sur x
+coord
+	fcb	0,1,0,36
+	fcb	1,0,1*4,23*4
+*	fcb	0,-1,30,36
+*	fcb	0,-2,30,36
+*	fcb	2,0*4,10*4,23*4
+scrinit	fcb	$14		* cursor off
+*	fcb	$1F,$20,$20	* top=0
+*	fcb	$1F,$12,$14	* bottom=24
+*	fcb	$1B,$6B		* no-scroll
+	fcb	$1B,$60		* tour=0
+	fcb	$1B,$50		* fond=0
+*	fcb	$1B,$46		* forme=7
+	fcb	$0C		* cls
+*	fcb	9,9
+*	fcc	/PULS/
+*	fcc	/Boing-Boing/
+*	fcb	9,9,9,9
+	fcb	$1B,$43
+	fcb	$1F,$40,$4a
+	fcc	/Boing by Sam: 256bytes/
+	fcb	$1F,$40+24,$4e
+	fcc	/--== cool ==--/
+*	fcb	$1B,$68			* mode forme
+	fcb	0
+ecran	rmb	40*25
+dithcar	rmb	4*17
+	end	ini

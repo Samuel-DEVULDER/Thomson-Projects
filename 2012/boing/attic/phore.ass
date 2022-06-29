@@ -1,0 +1,213 @@
+(main)PHORE.ASM
+	org	$a000
+ini	
+*	bsr	initdith
+*initdith
+*	pshs	d,x,y,u
+	ldu	#dithcar
+	clra
+	clrb
+	std	,u
+	std	2,u
+	std	4,u
+	std	6,u
+initdit0
+	inca
+	ldx	#dithmat
+initdit1
+	ldb	,u+
+initdit2
+	cmpa	,x+
+	bne	initdit4
+initdit3
+	orb	#1
+initdit4
+	stb	7,u
+	lsl	initdit3+1,pcr
+	bne	initdit2
+	inc	initdit3+1,pcr
+	cmpx	#dithmat+64	
+	bne	initdit1
+	cmpa	#64
+	bne	initdit0
+*	puls	d,x,y,u,pc
+
+	ldu	#$E7C3
+	lda	,u
+	ora	#1
+	sta	,u
+	ldx	#$4000
+	lda	#$F0
+loop	set	*
+	clr	,x
+	dec	,u
+	sta	,x+
+	inc	,u
+	cmpx	#$5F40
+	bne	loop
+loop	set	*
+	jsr	$e809
+	bcs	loop
+loop	set	*
+	bsr	step
+	jsr	$e809
+	bcc	loop
+	swi
+	
+	ldu	#dithcar
+	lda	#8
+loop	set	*
+	clr	,u+
+	deca
+	bne	loop
+	ldb	#63
+	pshs	b,u
+x0	ldu	1,s
+	ldb	#8
+loop	set	*	
+	lda	-8,u
+	sta	,u+
+	decb
+	bne	loop
+	stu	1,s
+	lda	,s
+	lsra
+	sbcb	#0
+	andb	#16
+	bita	#1
+	beq	x1
+	lslb
+	lslb
+x1	bita	#4
+	beq	x2
+	lslb
+x2	eora	2,s
+	lsra
+	bcc	x3
+	leau	-4,u
+x3	lsra
+	lsra
+	bcc	x4
+	leau	-2,u
+x4	tsta
+	beq	x5
+	leau	-1,u
+x5	orb	,u
+	stb	,u
+	dec	,s
+	bne	x0
+	
+	
+
+* fait un pas de simu
+step	ldu	#coord
+	bsr	drawmov
+*	bsr	drawmov
+*	bsr	drawmov
+*	bsr	drawmov
+*	bra	drawscr
+* affiche l'ecran complet et decremente l'intensite video
+*drawscr
+*	pshs	x,d
+	ldu	#$4000+120
+	ldx	#ecran
+draw1	lda	#40
+draw2	ldb	,x+
+	beq	draw3
+	decb
+	stb	-1,x
+	bsr	plot
+	bra	draw4
+draw3	leau	1,u
+draw4	deca
+	bne	draw2
+	leau	40*7,u
+	cmpx	#ecran+40*25
+	bne	draw1
+	rts
+*	puls	x,d,pc
+* affiche un bloc pointe par u
+drawmov	ldx	#ecran
+	ldd	1,u
+	abx
+	ldb	#40
+	mul
+	leax	d,x
+	ldd	#64*257
+	std	,x
+	std	40,x
+* avance d'un pas u pointe sur le dy,y,x,dx
+* move dy,x
+	ldd	,u
+	addb	,u
+	bge	move1
+	clrb
+	nega
+	bra	move2
+SIZE	set	4
+move1	cmpb	#25-SIZE
+	bls	move2
+	ldb	#25-SIZE
+	nega
+move2	std	,u++
+* move x,dx
+	ldd	,u
+	adda	1,u
+	bge	move3
+	clra
+	negb
+	bra	move4
+move3	cmpa	#40-SIZE
+	bls	move4
+	lda	#40-SIZE
+	negb
+move4	std	,u++
+	rts
+* affiche le caractère de niveau 'b' dans la zone pointee
+* par u qui est incremente de 1
+plot	pshs	d,x
+	ldx	#dithcar
+
+	lslb
+	lslb
+	abx
+	abx	
+	ldd	,x
+
+	sta	-120,u
+	stb	-80,u
+	
+	ldd	2,x
+	sta	-40,u
+	stb	,u+
+	
+	ldd	4,x
+	sta	39,u
+	stb	79,u
+	
+	ldd	6,x
+	sta	119,u
+	stb	159,u
+	
+	puls	d,x,pc
+* Intialise les caracteres de dither
+dithmat	
+	fcb	1,49,13,61,4,52,16,64
+	fcb	33,17,45,29,36,20,48,32
+	fcb	9,57,5,53,12,60,8,56
+	fcb	41,25,37,21,44,28,40,24
+	fcb	3,51,15,63,2,50,14,62
+	fcb	35,19,47,31,34,18,46,30
+	fcb	11,59,7,55,10,58,6,54
+	fcb	43,27,39,23,42,26,38,22
+coord
+*	fcb	dy,y,x,dx
+	fcb	2,12,19,1
+	fcb	-1,12,29,1
+	fcb	1,12,29,-1
+	fcb	1,12,29,-2
+
+dithcar	rmb	8*65
+ecran	rmb	40*25
+
+	end	ini
