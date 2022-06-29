@@ -21,7 +21,7 @@ list:	compile
 	less codes.lst
 
 clean: 
-	rm -rf build sapdir 
+	rm -rf build sapdir  $(DISK)
 	
 build/%.BIN: %.ass
 	test -d build || mkdir -p build
