@@ -61,10 +61,12 @@ opIm:
    sta <opImX
    bra incPC
 
-getAddrrSafee
+getAddrLong
+   if safe
    ldb #%11111100
    andb 3,u
    stb 3,u
+   endc
 getAddr
    ldd 2,u
    anda #$30
@@ -198,7 +200,7 @@ opOr:
       
    opcode %1000
 opLoad:
-   bsr getAddr
+   bsr getAddrLong
    ldd ,x
    std ,u
    ldd 2,x
@@ -251,7 +253,7 @@ opNop:
      
    opcode %1100
 opStore:
-   bsr getAddr
+   bsr getAddrLong
    ldd 4,u
    std ,x
    ldd 6,u  
