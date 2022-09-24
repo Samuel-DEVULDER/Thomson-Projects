@@ -1,6 +1,5 @@
 opLDSTsp:
     bpl opStoresp_x
-
 opLoadsp_x
    andb %01111100
    leax b,u
@@ -8,7 +7,6 @@ opLoadsp_x
    ldx 2,x
    pshu d,x
    bra fetch
- 
 opStoresp_x
    leax b,u
    ldd ,u
@@ -42,7 +40,7 @@ opImX:
    rora
    rorb
    std 2,u
-   ldb[fetch+1]
+   ldb [fetch+1]
    bmi incPC
    lda #cmpa
    sta <opIm
@@ -118,17 +116,31 @@ decode:
     bmi opEmulate_x
     bitb #%01000000
     bne opAddsp_x
+    clra
     lslb
     lslb
     lslb
-    jmp b,pc
+    rola
+    jmp d,pc
+    
+;    34*4 136*4 272-256=12
+    
+emulate_x
+    ldx #lo1dH-34*32
+    lslb
+    lslb
+    abx
+    abx
+    jmp ,x
+    
+optab set *
 
 opcode macro
-tmp set breakpt+32*\0
+tmp set optab+32*\0
    ifgt *-tmp
    error overflow
    else
-   org tmp
+   rmb tmp-*,$12 ; align
    endif
    endm
   
@@ -148,13 +160,15 @@ opPushsp:
     jmp <fetch
   
     opcode %0011
- op0011:
+op0011:
     jmp op0011
    
     opcode %0100
 opPoppc:
-   ldb 3,u
-   stb <fetch+2
+   ldd 2,u
+   anda #$03
+   adda #$a0
+   std <fetch+1
    ldd 1,u   
    std <pcHigh
    leau 4,u  
@@ -280,3 +294,37 @@ opStore:
 op1111:
    bra op1111
 
+optab set *
+
+   opcode 34-34
+opLoadH
+   bsr getAddr
+   ldx ,x  
+   bmi opLoadH2
+   ldd #0
+opLoadH1
+   pshu d,x
+   jmp <updatePC
+oploadH2
+   ldd #-1
+   pshu d,x
+   jmp <updatePC
+ 
+ opcode 35-34
+opStoreH
+   bsr getAddr
+   std ,xH2
+
+   ldd #0
+
+  jmp <updatePC
+
+oploadH2
+
+   ldd #-1  pshu d,x
+
+   jmp <updatePC
+
+   
+   
+   
