@@ -61,6 +61,10 @@ opIm:
    sta <opImX
    bra incPC
 
+getAddrrSafee
+   ldb #%11111100
+   andb 3,u
+   stb 3,u
 getAddr
    ldd 2,u
    anda #$30
