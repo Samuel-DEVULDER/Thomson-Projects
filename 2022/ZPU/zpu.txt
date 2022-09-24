@@ -1,0 +1,276 @@
+opLDSTsp:
+    bpl opStoresp_x
+
+opLoadsp_x
+   andb %01111100
+   leax b,u
+   ldd ,x
+   ldx 2,x
+   pshu d,x
+   bra fetch
+ 
+opStoresp_x
+   leax b,u
+   ldd ,u
+   std ,x
+   ldd 2,u
+   std 2,x
+   leau 4,u
+   bra fetch
+
+opAddsp_x:
+   andb %00111100
+   leax b,u
+   ldd 2,x
+   addd 2,u
+   std 2,u
+   ldd ,x
+   adcb 1,u
+   adca ,u
+   std ,u
+   bra fetch
+   
+opImX:
+   lsr ,u
+   lda 1,u
+   rora
+   sta ,u
+   lda 2,u
+   rora
+   sta 1,u
+   lda 3,u
+   rora
+   rorb
+   std 2,u
+   ldb[fetch+1]
+   bmi incPC
+   lda #cmpa
+   sta <opIm
+   bra incPC
+   
+opIm:
+   brn opImX
+   asrb
+   sex
+   pshs d 
+   sta ,-u
+   sta ,-u
+   ldb [fetch+1]
+   bmi incPC
+   lda #bra
+   sta <opImX
+   bra incPC
+
+getAddr
+   ldd 2,u
+   anda #$30
+   adda #$a0
+   tfr d,x    
+   ldd 1,u
+    
+updatePage
+   andb #$c0
+   cmpd #page
+page equ*-2
+   beq updatePage2
+   std <page
+   lslb
+   rola
+   lslb
+   rola
+bank
+   sta $e7e6
+updatePage2
+   rts
+
+updatePC
+    ldd #pchigh
+pchigh set *-2 
+    bsr updatePage
+    
+fetch:
+    ldb >$a000
+incPC
+    inc <fetch+2
+    bne decode
+    inc <fetch+1
+    lda <fetch+l
+    cmpa #$e0
+    bne decode
+    lda #$a0
+    sta <fetch+1
+    ldd <updatePC+1
+    addd #$40
+    std   <updatePC+1
+    bra updatePC
+    
+decode:
+    lslb
+    bcs opIm
+    lslb
+    bcs opLDSTsp
+    bmi opEmulate_x
+    bitb #%01000000
+    bne opAddsp_x
+    lslb
+    lslb
+    lslb
+    jmp b,pc
+
+opcode macro
+tmp set breakpt+32*\0
+   ifgt *-tmp
+   error overflow
+   else
+   org tmp
+   endif
+   endm
+  
+   opcode %0000
+breakpt:
+   bra breakpt
+  
+   opcode %0001 
+op0001:
+   bra op0001
+    
+   opcode %0010
+opPushsp:    
+    ldd #0
+    leax ,u
+    pshu d,x
+    jmp <fetch
+  
+    opcode %0011
+ op0011:
+    jmp op0011
+   
+    opcode %0100
+opPoppc:
+   ldb 3,u
+   stb <fetch+2
+   ldd 1,u   
+   std <pcHigh
+   leau 4,u  
+   jmp <updatePC+3
+    
+   opcode %0101
+opAdd:
+   leau 4,u
+   ldd 2,u
+   addd -2,u
+   std 2,u
+   ldd ,u
+   adcb -3,u
+   adca -4,u
+   std ,u
+   jmp <fetch 
+   
+   opcode %0110
+opAnd:
+    leau4,u
+    ldd ,u
+    anda -4,u
+    andb -3,u
+    std ,u
+    ldd 2,u
+    anda -2,u
+    andb -1,u
+    std 6,u
+    jmp <fetch
+   
+   opcode %0111
+opOr:
+    leau 4,u
+    ldd ,u
+    ora -4,u
+    orb -3,u
+    std ,u
+    ldd 2,u
+    ora -2,u
+    orb -1,u
+    std 2,u
+    jmp <fetch 
+      
+   opcode %1000
+opLoad:
+   bsr getAddr
+   ldd ,x
+   std ,u
+   ldd 2,x
+   std 2,u
+   jmp <updatePC
+  
+   opcode %1001
+opNot:
+   com ,u
+   com 1,u
+   com 2,u
+   com 3,u
+   jmp <fetch
+  
+flip2
+   lsla
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   rola
+   rorb
+   adca #0
+   rts
+
+   opcode %1010
+opFlip:
+   lda ,u
+   ldb 3,u
+   bsr flip2
+   sta ,u
+   stb 3,u
+   ldd 1,u
+   bsr flp2
+   std 1,u
+   jmp <fetch
+
+   opcode %1011
+opNop:
+   jmp <fetch
+     
+   opcode %1100
+opStore:
+   bsr getAddr
+   ldd 4,u
+   std ,x
+   ldd 6,u  
+   std 2,x
+   leau 8,u
+   jmp <updatePC
+  
+   opcode %1101
+opPopsp:
+    pulu d,x
+    leau ,x
+    jmp <fetch
+  
+   opcode %1110
+opStore:
+   bsr getAddr
+   ldd 4,u
+   std ,x
+   ldd 6,u
+   std 2,x
+   jmp <updatePC
+  
+  opcode %1111
+op1111:
+   bra op1111
+
