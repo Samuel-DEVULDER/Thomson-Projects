@@ -93,45 +93,45 @@ pchigh set *-2
     bsr updatePage
     
 fetch:
-    ldb >$a000
+   ldb >$a000
 incPC
-    inc <fetch+2
-    bne decode
-    inc <fetch+1
-    lda <fetch+l
-    cmpa #$e0
-    bne decode
-    lda #$a0
-    sta <fetch+1
-    ldd <updatePC+1
-    addd #$40
-    std   <updatePC+1
-    bra updatePC
+   inc <fetch+2
+   bne decode
+   inc <fetch+1
+   lda <fetch+l
+   cmpa #$e0
+   bne decode
+   lda #$a0
+   sta <fetch+1
+   ldd <updatePC+1
+   addd #$40
+   std <updatePC+1
+   bra updatePC
     
 decode:
-    lslb
-    bcs opIm
-    lslb
-    bcs opLDSTsp
-    bmi opEmulate_x
-    bitb #%01000000
-    bne opAddsp_x
-    clra
-    lslb
-    lslb
-    lslb
-    rola
-    jmp d,pc
+   lslb
+   bcs opIm
+   lslb
+   bcs opLDSTsp
+   bmi opEmulate_x
+   bitb #%01000000
+   bne opAddsp_x
+   clra
+   lslb
+   lslb
+   lslb
+   rola
+   jmp d,pc
     
 ;    34*4 136*4 272-256=12
     
 emulate_x
-    ldx #lo1dH-34*32
-    lslb
-    lslb
-    abx
-    abx
-    jmp ,x
+   ldx #lo1dH-34*32
+   lslb
+   lslb
+   abx
+   abx
+   jmp ,x
     
 optab set *
 
@@ -154,16 +154,16 @@ op0001:
     
    opcode %0010
 opPushsp:    
-    ldd #0
-    leax ,u
-    pshu d,x
-    jmp <fetch
+   ldd #0
+   leax ,u
+   pshu d,x
+   jmp <fetch
   
-    opcode %0011
+   opcode %0011
 op0011:
-    jmp op0011
+   jmp op0011
    
-    opcode %0100
+   opcode %0100
 opPoppc:
    ldd 2,u
    anda #$03
@@ -188,29 +188,29 @@ opAdd:
    
    opcode %0110
 opAnd:
-    leau4,u
-    ldd ,u
-    anda -4,u
-    andb -3,u
-    std ,u
-    ldd 2,u
-    anda -2,u
-    andb -1,u
-    std 6,u
-    jmp <fetch
+   leau4,u
+   ldd ,u
+   anda -4,u
+   andb -3,u
+   std ,u
+   ldd 2,u
+   anda -2,u
+   andb -1,u
+   std 6,u
+   jmp <fetch
    
    opcode %0111
 opOr:
-    leau 4,u
-    ldd ,u
-    ora -4,u
-    orb -3,u
-    std ,u
-    ldd 2,u
-    ora -2,u
-    orb -1,u
-    std 2,u
-    jmp <fetch 
+   leau 4,u
+   ldd ,u
+   ora -4,u
+   orb -3,u
+   std ,u
+   ldd 2,u
+   ora -2,u
+   orb -1,u
+   std 2,u
+   jmp <fetch 
       
    opcode %1000
 opLoad:
@@ -332,7 +332,6 @@ push0
    std 2,u
    jmp <fetch
 
-   
    opcode 37-34
 opLessThanOrEqual
    ldd ,u
@@ -342,7 +341,7 @@ opLessThanOrEqual
    blt push1
    ldd -2,u
    subd 2,u
-   bmi push0
+   bpl push0
 push1
    ldd #0
    std,u
