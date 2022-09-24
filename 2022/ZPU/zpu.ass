@@ -324,17 +324,30 @@ opLessThan
    blt push1
    bgt push0
    ldd -2,u
-   sub 2,u
+   subd 2,u
    bmi push1 
 push0
    ldd #0
    std ,u
    std 2,u
    jmp <fetch
+
+   
+   opcode 37-34
+opLessThanOrEqual
+   ldd ,u
+   leau 4,u
+   subd ,u
+   bgt push0
+   blt push1
+   ldd -2,u
+   subd 2,u
+   bmi push0
 push1
    ldd #0
    std,u
    incb
    std 2,u
    jmp <fetch
+
    
