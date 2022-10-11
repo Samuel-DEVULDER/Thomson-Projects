@@ -41,7 +41,7 @@ clean:
 	
 fullclean: clean
 	-$(RM) 2>/dev/null m0d/* bin/* $(C6809) $(DISKTO) $(LUA)
-	-cd lua52/src && make -f Makefile.std clean && $(RM) *$(EXE)
+	-cd lua52/src && make -f Makefile.std clean && $(RM) lua$(EXE) luac$(EXE)
 	
 norm:
 	@for i in mods/*/*; do case $$i in *\ *) mv -v "$$i" `echo "$$i" | tr ' ' '_'`;; esac; done
