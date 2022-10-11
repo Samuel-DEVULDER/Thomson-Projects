@@ -1,0 +1,591 @@
+(main)player
+
+        ORG     $6600
+
+
+LOAD    set     $6300       ; Load a file
+BANK    set     $6381       ; Change memory bank
+RESET   set     $6400       ; Reset computer
+PRB1    set     $E7CD       ; B port (DAC/CNA)
+PRC     set     $E7C3       ; C port (ramA/ramB)
+PUTC    set     $E803       ; Prints a character
+KTST    equ     $E809       ; Check key pressed
+GETC    equ     $E806       ; Read pressed key
+
+*song    equ     $6A00       ; start of song (can be as low as STOP)
+SPEED   set     130         ; player speed (in cycles)
+TEMPO   equ     (20000+SPEED/2)/SPEED
+
+* align macro
+ALGN    macro
+        org     ((*+(\0)-1)/(\0))*(\0)
+        endm
+
+* macro to define a variable in self-modifying code
+VAR     macro
+\1      set     *-\0
+        endm
+
+START   set     *           ; start address
+        ALGN    256         ; align on page boundary
+volTab
+/
+perl -e 'for($v=0;$v<16;++$v) {for($w=0; $w<16; ++$w) {my $c = 64+$v*$w/15; print (($w&15)==0?"\n fcb ":",");print sprintf("\$%x",int($c+.5));}}'
+/
+ fcb $40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40
+ fcb $40,$40,$40,$40,$40,$40,$40,$40,$41,$41,$41,$41,$41,$41,$41,$41
+ fcb $40,$40,$40,$40,$41,$41,$41,$41,$41,$41,$41,$41,$42,$42,$42,$42
+ fcb $40,$40,$40,$41,$41,$41,$41,$41,$42,$42,$42,$42,$42,$43,$43,$43
+ fcb $40,$40,$41,$41,$41,$41,$42,$42,$42,$42,$43,$43,$43,$43,$44,$44
+ fcb $40,$40,$41,$41,$41,$42,$42,$42,$43,$43,$43,$44,$44,$44,$45,$45
+ fcb $40,$40,$41,$41,$42,$42,$42,$43,$43,$44,$44,$44,$45,$45,$46,$46
+ fcb $40,$40,$41,$41,$42,$42,$43,$43,$44,$44,$45,$45,$46,$46,$47,$47
+ fcb $40,$41,$41,$42,$42,$43,$43,$44,$44,$45,$45,$46,$46,$47,$47,$48
+ fcb $40,$41,$41,$42,$42,$43,$44,$44,$45,$45,$46,$47,$47,$48,$48,$49
+ fcb $40,$41,$41,$42,$43,$43,$44,$45,$45,$46,$47,$47,$48,$49,$49,$4a
+ fcb $40,$41,$41,$42,$43,$44,$44,$45,$46,$47,$47,$48,$49,$4a,$4a,$4b
+ fcb $40,$41,$42,$42,$43,$44,$45,$46,$46,$47,$48,$49,$4a,$4a,$4b,$4c
+ fcb $40,$41,$42,$43,$43,$44,$45,$46,$47,$48,$49,$4a,$4a,$4b,$4c,$4d
+ fcb $40,$41,$42,$43,$44,$45,$46,$47,$47,$48,$49,$4a,$4b,$4c,$4d,$4e
+ fcb $40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$4a,$4b,$4c,$4d,$4e,$4f
+
+* logical representation of a channel
+DATA    macro           ; 16 bytes
+        fdb     frq\0   ; prt to frequency register
+        fdb     vol\0   ; prt to volume mask
+        fdb     chl\0   ; prt to channel mask
+        fdb     smp\0   ; prt to sample address
+        fdb     end\0   ; prt to end of sample address
+        fdb     upd\0   ; prt to "update" self-modifying code address
+        ifeq    'X-'\0
+        fdb     $3089   ; leaX
+        fdb     $128e   ; nop;ldx
+        endc
+        ifeq    'Y-'\0
+        fdb     $31A9   ; leaY
+        fdb     $108e   ; ldy
+        endc
+        ifeq    'U-'\0
+        fdb     $33c9   ; leaU
+        fdb     $12ce   ; nop;ldU
+        endc
+        ifeq    'S-'\0
+        fdb     $32E9   ; leaS
+        fdb     $10Ce   ; ldS
+        endc
+        endm
+_frq    equ     0       ; offset of data elements
+_vol    equ     2
+_chl    equ     4
+_smp    equ     6
+_end    equ     8
+_upd    equ     10
+opLEA   equ     12
+opLD    equ     14
+
+        setdp   *<-8
+frmCnt  fcb     0
+begsong fdb     song
+hidden  fcb     0           ; hidden-part mask (7=found)
+
+* =============================================================
+* plays one frame (TEMPO == ~20ms) A times
+c_play  pshs    u
+        sts     <bak_S
+        sta     <frmCnt
+        ldx     #0
+        VAR     2,smpX
+        ldy     #0
+        VAR     2,smpY
+        ldu     #0
+        VAR     2,smpU
+        lds     #0
+        VAR     2,smpS
+
+f_new   coma                ; 2 sets carry
+        lda     #TEMPO
+f_loop
+* get next sample for a given voice and update mixing data
+VOICE   macro
+        ldb     #0          ; 2 get counter
+        VAR     1,cpt\0
+        adcb    #0          ; 2 add frequency
+        VAR     1,frq\0
+        stb     <cpt\0      ; 4 save counter (self modifying code)
+        bcs     v\0a        ; 3 overflow ?
+        orcc    #1          ; 3 no ==> reset carry to 1
+        exg     a,a         ; 8        and compensate time
+        bra     v\0b        ; 3
+v\0a    ldb     ,-\0        ; 6 yes ==> get next sample (backward)
+        andb    #0          ; 2 filter out other channel data
+        VAR     1,chl\0
+        orb     #0          ; 2 add volume
+        VAR     1,vol\0
+        stb     <mix\0      ; 4 update mixing reg
+v\0b    set     *           ; total = 25 cycles
+        endm
+        VOICE   X           ; 25
+        VOICE   Y           ; 25
+        VOICE   U           ; 25
+        VOICE   S           ; 25
+
+        ldb     volTab      ; 5 load channel 1 sample
+        VAR     1,mixX
+        addb    volTab      ; 5 mix with channel 2
+        VAR     1,mixY
+        addb    volTab      ; 5 mix with channel 3
+        VAR     1,mixU
+        addb    volTab      ; 5 mix with channel 4
+        VAR     1,mixS
+* Note: volTab is such that CC is set from here
+
+* filtering: 11 cycles. Too long!
+*       addb    #0          ; 2
+*       VAR     1,FILT
+*       lsrb                ; 2
+*       stb     <FILT       ; 4
+*       orcc    #1          ; 3
+
+        stb     PRB1        ; 5 output mixed samples to CNA
+        deca                ; 2 finished frame ?
+        bne     f_loop      ; 3 => total = 130 cycles
+
+* Handles end of samples (looping/non looping)
+CHKEND  macro
+        CMP\0   #0         ; 4 or 5 cycles
+        VAR     2,end\0     ; end of sample reached ?
+        bcc     *+6         ; no ==> skip
+        fdb     0,0         ; lea or ld<Reg> depending on looping or not
+        VAR     2,upd\0
+        endm
+        CHKEND  X
+        CHKEND  Y
+        CHKEND  U
+        CHKEND  S
+
+        dec     <frmCnt     ; 6 update frame counter
+        lbne    f_new       ; 6 finished ? no ==> new frame
+
+        stx     <smpX       ; saves channel 1 sample position
+        sty     <smpY       ; saves channel 2 sample position
+        stu     <smpU       ; saves channel 3 sample position
+        sts     <smpS       ; saves channel 4 sample position
+
+        lds     #0          ; restore stack
+        VAR     2,bak_S
+        puls    u           ; restore ptr to song-data
+
+        JSR     KTST        ; key pressed ?
+        BCS     C_key       ; yes ==> handle pressed key
+
+* =============================================================
+* pseudo sound chip interpreter.
+* 0xxxxxxx ==> call/ret
+* 1000wwww ==> wait
+* 1ivfccii [ffffffff] [iiiivvvv]
+nextins lda     ,u+
+        bne     c_call
+        ldu     ,s++        ; 00000000
+        bne     nextins
+c_exit  jmp     exitmod     ; stop playing
+
+* =============================================================
+* calls a sub-routine
+c_call  bmi     c_cmd       ; 0xxxxxxx xxxxxxxx
+        ldb     ,u+
+        pshs    u
+        addd    <begsong
+        tfr     d,u
+        jmp     <nextins
+
+* =============================================================
+c_wait  anda    #%00001111
+        inca
+        jmp     <c_play
+
+C_key   jmp     c_key
+
+c_cmd   bita    #%01110000
+        beq     c_wait
+* ---- cc -- ==> x
+        ldx     #data
+        ldb     -1,u
+        andb    #%00001100
+        lslb
+        lslb
+        abx
+_ref    set     frqX
+REL     macro
+        ifeq    \1
+        \0     ,\2
+        else
+        \0     \1,\2
+        endc
+        endm
+        REL     ldy,_frq,x
+        ldb     ,u+
+* =============================================================
+* update frequency
+        bita    #%00010000      ; frequency changed ?
+        beq     c_vol           ; no => skip
+        REL     stb,frqX-_ref,y ; update freq reg
+        bita    #%01100000      ; other changes?
+        beq     nextins         ; no => execute next instruction
+        ldb     ,u+             ; get instr data for next change
+* =============================================================
+* update volume
+c_vol   bita    #%00100000      ; volume changed ?
+        beq     c_inst          ; no => skip
+        andb    #$0F            ; extract volume
+        REL     tst,chlX-_ref,y
+        bmi     c_vol2
+        lslb                    ; rotate volume mask
+        lslb                    ; if necessary
+        lslb
+        lslb
+c_vol2
+        REL     stb,volX-_ref,y ; update vol. reg.
+        ldb     -1,u            ; re-red instr data
+* =============================================================
+* update instrument
+c_inst  bita    #%01000000  ; instrument changed ?
+        beq     nextins     ; no=>done. execute next instruction
+c_inst2 ldy     #$0000
+        VAR     2,p_instr
+        anda    #$03
+        andb    #$F0        ; D = instru. no
+        lsra
+        rorb
+        leay    d,y         ; Y = ptr to instrument data
+* 1,y = bit
+* 2,y = smp
+* 4,y = end
+* 6,y = rpt
+
+* update sample pointer
+        ldd     2,y
+        addd    <begsong
+        std     [_smp,x]
+
+* update end pointer
+        ldd     4,y
+        addd    <begsong
+        std     [_end,x]
+
+* update channel data
+        ldb     1,y
+        cmpb    [_chl,x]
+        beq     updRPT      ; no change ?
+        stb     [_chl,x]
+        lsrb                ; C=1 if chl-mask is $0F
+        ldb     [_vol,x]
+        bcs     updCHL1     ; mask = $0F ?
+        lsrb                ; no => rotate volmask to the right
+        lsrb
+        lsrb
+        lsrb
+        bra     updCHL2
+updCHL1 lslb                ; yes => rotate volmask to the left
+        lslb
+        lslb
+        lslb
+updCHL2 stb     [_vol,x]    ; update vol-mask
+
+* update end-of-smaple code
+updRPT  ldd     6,y
+        subd    4,y         ; end==repeat ?
+        beq     non_loop    ; yes ==> non looping sample
+        ldy     _upd,x      ; get ptr to "update sample" code
+        std     ,y          ; update offset in update code
+        ldd     opLEA,x     ; looping uses lea to update samplez
+        std     -2,y        ; copy lea into proper place
+        jmp     <nextins    ; done => interpret next instruction.
+non_loop
+        ldy     _upd,x      ; no ==> non looping sample
+        ldd     [_end,x]
+        std     ,y          ; update offset in updatecode
+        ldd     opLD,x      ; get "nop;LD" opcode
+        std     -2,y        ; update opcode
+        jmp     <nextins    ; done => interpret next instruction
+
+* =============================================================
+* Handle key-press
+c_key   bsr     getc        ; get pressed key
+        bcs     c_kbd       ;  ok ==> proceed
+c_kXIT  jmp     <nextins    ;  ko ==> return
+
+		if		0
+getc    lda     $fff0       ; get machine type
+        suba    #2			
+		bhi     getTO8		; to8 ?
+		blo     getTO7		; TO7 ?
+		ldb     $E7DF
+		bra		ktst
+getTO7  inc     $605E
+getTO8  jsr     GETC
+ktst    jmp     KTST
+c_kbd   set     *
+		else
+getc    lda     $fff0       ; get machine type
+        deca                ; is it greater than to7/70 ?
+        bgt     getc2       ; yes => skip
+        inc     $605E       ; force key as being detect as new
+getc2   jsr     GETC        ; get key from monitor
+ktst    jmp     KTST        ; necessary for TO7/TO9
+c_kbd   deca                ; for some reason getc return
+        bne     c_kbd_      ; \0 on TO9 when key is pressed, so ignore this
+        tstb                ; then do not ignore that \0
+        beq     c_kPAUS     ; and go to pause instead
+c_kbd_  set     *
+		endc
+
+        cmpb    #27         ; ESC pressed ?
+        beq     c_kRST      ; or
+        cmpb    #3          ; ^C pressed ?
+        beq     c_kRST      ; yes ==> reset computer
+
+        cmpb    #13         ; ENTER pressed ?
+        beq     c_kEND      ; yes ==> stop current song
+        cmpb    #32         ; SPACE pressed ?
+        beq     c_kEND      ; yes ==> stop current song
+        blt     c_kXIT      ; ctrl-car ==> ignore
+
+* paused
+c_kPAUS ldb     #1          ; other keys ==> pause
+        bsr     tour        ; red border
+
+c_kbd0  bsr     ktst        ; wait till key released
+        bcs     c_kbd0
+
+c_kbd1  bsr     getc        ; wait till key pressed
+        bcc     c_kbd1
+        tstb
+        beq     c_kbd1
+
+* hidden part
+        lda     <hidden
+        cmpa    #7          ; already found ?
+        beq     c_kbd2      ; yes => skip
+        clr     <hidden     ; reset pressed key mask
+
+        cmpb    #3          ; ^C pressed ?
+        beq     c_kRST      ; yes ==> reset computer
+
+* check for T O 7
+        cmpb    #'7         ; was key '7'
+        beq     c_kHDN_7    ; or
+        cmpb    #''         ; key "'" (TO7, noshift)
+        beq     c_kHDN_7    ; or
+        cmpb    #$16        ; key ACC (to8/to9, noshift) pressed ?
+        beq     c_kHDN_7    ; yes ==> mark '7' as pressed
+
+        orb     #32         ; make lowercase
+        cmpb    #'t         ; was key 'T pressed ?
+        beq     c_kHDN_T    ; yes ==> mark 'T' as pressed
+
+        cmpb    #'o         ; was key 'O pressed ?
+        beq     c_kHDN_O    ; yes ==> mark 'O' as pressed
+
+c_kbd2  bsr     ktst        ; wait till key released
+        bcs     c_kbd2
+
+        bsr     black       ; black border
+        jmp     <nextins    ; done pause => next instruction
+
+c_kEND  jmp     <c_exit     ; end current song
+
+c_kRST  jmp     RESET       ; reset computer
+
+c_kHDN_7
+        ora     #4          ; mark '7' as currently pressed
+        bra     c_kHDN
+c_kHDN_O
+        ora     #2          ; mark 'O' as pressed
+        bra     c_kHDN
+c_kHDN_T
+        ora     #1          ; mark 'T' as pressed
+
+c_kHDN  clr     $6073       ; enable buzzer
+        ldb     #$7         ; bell-char
+        bsr     putc        ; outputs a beep signal
+        stb     $6073       ; disable buzzer
+
+        sta     <hidden
+        cmpa    #7          ; is TO7 pressed ?
+        bne     c_kbd0      ; no ==> loop
+
+c_kHDN0 ldb     #7          ; yes ==> hidden part found !!!
+        bsr     tour
+        bsr     delay
+        bsr     black       ; flashing border
+        bsr     delay
+        deca
+        bne     c_kHDN0
+
+        jmp     <c_exit     ; done
+
+black   clrb
+tour    stb     ,-s         ; change color of screen border
+        ldb     #$1B
+        bsr     putc
+        ldb     ,s+
+        addb    #$60
+putc    jmp     PUTC
+delay   ldx     #3906       ; wait 1/8 of a second
+        leax    -1,x
+        bne     *-2
+        rts
+
+        rts
+
+* =============================================================
+* plays the module pointed by U
+play    pshs    d,x,y,u,dp,cc
+        sts     exitmod+2
+
+*       andcc   #$FF-$50    ; enable interrupts (for keyboard)
+        lds     #$6300      ; local stack
+
+        ldd     #(nextins<-8)*256
+        JSR     BANK        ; bank 0 for module
+
+        setdp   nextins<-8
+        tfr     a,dp        ; set dp on the player page
+
+*       stu     <begsong    ; sets absolute adr of song
+        ldu     <begsong
+
+        clra
+        pshs    d           ; sentinel for end-of-song (d==0)
+
+        pulu    d           ; check signature 'M0D',$01
+        subd    #$4D30      ; 'M0' found ?
+        bne     exitmod     ; no ==> don't play
+        pulu    d
+        subd    #$4401      ; 'D'\01 found ?
+        bne     exitmod     ; no ==> don't play
+        pulu    d
+        subb    #SPEED      ; correct playback rate ?
+        bne     exitmod     ; no ==> don't play
+
+        pulu    d           ; get instru offset
+        leax    d,u         ; adjust relatif to song-pointer
+        leax    -8,x        ; compensate for "pulu" above
+        stx     p_instr     ; sets instrument pointer
+
+        jmp     <nextins    ; go interpret chip-code
+
+exitmod lds     #0          ; done => restore stack
+        puls    d,x,y,u,dp,cc,pc    ; and regs
+
+data    set     *           ; channels data
+        DATA    X
+        DATA    Y
+        DATA    U
+        DATA    S
+
+* =============================================================
+* fill screen in a random order.
+*
+* This is based on the fact that power of 5 are all of
+* the form m*4+1 with m enumerating all possible values
+* modulo 2^k in random order without repetition.
+dpy     pshs    d,x,y,dp    ; save context
+        ldd     #$E701      ; A=$E7 (PIA), B=$01 (bank)
+        tfr     a,dp        ; direct-page pointer to PIA
+        setdp   $E7
+        lda     <PRC
+        ora     #1
+        sta     <PRC
+        jsr     BANK        ; bank 1 for image
+        ldx     #8192       ; loop counter
+        clra                ; i=1
+loop1   pshs    d           ; saves i
+        lsra                ; compute i>>4 to
+        rorb                ; get "m"
+        lsra
+        rorb
+        anda    #$1f        ; modulo 8192
+        adda    #$40        ; point to video memory
+        tfr     d,y         ; y = ptr to video memory
+        lda     $6000,y     ; get ramA data
+        ldb     $8000,y     ; get ramB data
+        andb    #%00001111  ; convert from MO5
+        addb    #%01111000  ; (ABCD0123)
+        andb    #%10000111  ; to TO7 format:
+        stb     ,-s         ; (/A/0123BCD)
+        ldb     $8000,y     ;
+        lsrb                ;
+        andb    #%01111000  ;
+        orb     ,s+         ;
+        eorb    #%11000000  ; conversion done!
+        sta     ,y          ; update ramA data
+        dec     <PRC        ; switch memory mapping
+        stb     ,y          ; update ramB data
+        inc     <PRC        ; switch memory mapping
+        ldd     ,s          ; get i
+        lslb                ;
+        rola                ;
+        lslb                ;
+        rola                ; compute next power:
+        addd    ,s++        ; i=5*i
+        leax    -1,x        ; all bytes done ?
+        bne     loop1       ; no=>loop
+        puls    d,x,y,dp,pc ; restore context, return to caller
+
+* =============================================================
+* load data, display image and play song
+ldplay  bsr     ldplay1
+        bsr     ldplay1
+        bsr     ldplay1
+ldplay0 bsr     dpy
+*       ldu     #song
+        jmp     play
+ldplay1 jsr     LOAD
+        incb
+        rts
+* =============================================================
+* main loop
+main    ldb     #3*1+5
+        bsr     ldplay0
+mainlp  lda     hidden
+        cmpa    #7
+        beq     xtend
+        bsr     ldplay
+        cmpb    #3*7+5
+        bne     mainlp
+        ldb     #5
+        bra     mainlp
+
+* =============================================================
+* extended loop (hidden part found)
+xtend   ldb     #3*9+5
+        bsr     ldplay  ; extrapart found
+
+        ldb     #3*7+5
+xtend2  bsr     ldplay
+        cmpb    #3*9+5
+        bne     xtend2
+        ldb     #5
+        bra     xtend2
+
+* =============================================================
+* end of code
+STOP    set     START*0+*
+
+* =============================================================
+* check if code isn't too big
+        iflt    song-STOP
+        NOT_ENOUGH_SPACE
+        echo    OVFL = &STOP-song
+        endc
+
+* =============================================================
+* display useful data
+        echo    SIZE = &STOP-START
+        echo    SONG = $song
+        echo    MAIN = $main
+        echo    TIME = &SPEED
+
+* =============================================================
+        end     main

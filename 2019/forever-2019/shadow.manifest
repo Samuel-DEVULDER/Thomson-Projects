@@ -1,0 +1,77 @@
+#######################################
+# Music Disk for TO8/TO9+             #
+#                                     #
+# Forver-Party 2019 - Horna-Suca      #
+#                                     #
+# Samuel DEVULDER - PULS              #
+# http://www.pulsdemos.com            #
+#                                     #
+# March 2019                          #
+#######################################
+
+# Loader ------------------------------
+00 bin/loader.bin
+
+# Wait screen -------------------------
+00 bin/title.bin
+00 maps/title.map.rama
+00 maps/title.map.ramb
+
+# Player ------------------------------
+00 bin/player.bin
+
+# Pictures + Music --------------------
+
+# David Whittaker 	© 1989 Reflections / Psygnosis
+# https://www.exotica.org.uk/wiki/Shadow_of_the_Beast
+# http://amigamuseum.emu-france.info/Fichiers/sites/sotb/Fichiers/Musiques.html
+# http://amigamuseum.emu-france.info/Fichiers/sites/sotb/Fichiers/Musiques/SOTB_Musiques_Amiga.zip
+# PICS FROM https://jeux.dokokade.net/2012/07/21/shadow-of-the-beast-amiga-500-1989/
+01 maps/beast01.map.rama
+01 maps/beast01.map.ramb
+00 m0ds/SOTB_-_TITLE.m0d
+
+01 maps/Screenshot_Amiga_Jeu01.map.rama
+01 maps/Screenshot_Amiga_Jeu01.map.ramb
+00 m0ds/SOTB_-_EXPLORATION.m0d
+
+01 maps/beast12.map.rama
+01 maps/beast12.map.ramb
+00 m0ds/SOTB_-_IN_TREE.m0d
+
+01 maps/beast23.map.rama
+01 maps/beast23.map.ramb
+00 m0ds/SOTB_-_ATTACK.m0d
+
+01 maps/beast27.map.rama
+01 maps/beast27.map.ramb
+00 m0ds/SOTB_-_IN_CASTLE.m0d
+
+01 maps/beast31.map.rama
+01 maps/beast31.map.ramb
+00 m0ds/SOTB_-_FINAL.m0d
+
+01 maps/Screenshot_Amiga_Jeu07.map.rama
+01 maps/Screenshot_Amiga_Jeu07.map.ramb
+00 m0ds/SOTB_-_GAME_OVER.m0d
+
+# Hidden part --------------------
+
+# Tim Wright 	© 1992 Reflections / Psygnosis
+# https://www.exotica.org.uk/wiki/Shadow_of_the_Beast_III
+01 maps/artwork.map.rama
+01 maps/artwork.map.ramb
+00 m0ds/SOTBeast3Intro.m0d
+
+01 maps/shadow-of-the-beast-3-01.map.rama
+01 maps/shadow-of-the-beast-3-01.map.ramb
+00 m0ds/SOTBeast3Forest.m0d
+
+# http://amigamusic.tripod.com/Crack_tunes/GL/Hoodlum2a.zip
+# Noizzz!!! by fabian / desire
+01 maps/ShadowOfTheBeast2_KaramoonOasis.tft1.map.rama
+01 maps/ShadowOfTheBeast2_KaramoonOasis.tft1.map.ramb
+00 m0ds/Hoodlum2a.m0d
+
+# End of list -------------------------
+

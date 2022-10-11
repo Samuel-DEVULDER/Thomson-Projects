@@ -1,0 +1,87 @@
+*-----------------------------------------------------------------------------*
+*  DISKTO - (c) Prehisto 2019
+*-----------------------------------------------------------------------------*
+*  Trackload pour disquette
+*      * Tout TO
+*      * Simple face
+*      * Double densité
+*      * Switch de RAM par PIA
+*-----------------------------------------------------------------------------*
+
+
+LE FICHIER LISTE
+----------------
+
+Ce fichier contient la liste des fichiers binaires à inclure sur la disquette
+virtuelle. Il est au format TXT.
+
+Pour chaque ligne :
+
+* Premier paramètre : le numéro de banque (au format PIA)
+    00 : banque RAM 0 (équivalent banque RAM 2 sur TO8)
+    01 : banque RAM 1 (équivalent banque RAM 3 sur TO8)
+    02 : banque RAM 2 (équivalent banque RAM 4 sur TO8)
+    03 : banque RAM 3 (équivalent banque RAM 5 sur TO8)
+    04 : banque RAM 4 (équivalent banque RAM 6 sur TO8)
+    05 : banque RAM 5 (équivalent banque RAM 7 sur TO8)
+* Deuxième paramètre : le chemin du fichier
+
+Exemple:
+    00 bin/loader.BIN
+
+Toute ligne qui ne débute pas par un chiffre décimal est ignorée.
+
+
+LE LOADER
+---------
+
+Le loader (loader.ASS) est un programme assembleur 6809 à compiler. Une fois
+compilé, il sera intégré à la disquette en premier fichier de la liste.
+
+Au lancement de la disquette, le boot est chargé en $6200-62ff, puis le boot
+charge le loader en $6300-$6xxx (l'adresse de fin est dans la liste de sortie
+de DISKTO). L'emplacement pour le boot est alors utilisé comme buffer de
+secteur pour les chargements de fichiers.
+
+Le loader permet de charger des fichiers pendant l'exécution du programme :
+
+        ldb    #4       Fichier numéro 4 dans B
+        jsr    >$6300   Charge le fichier
+
+Le numéro de fichier est donné en début de chaque ligne de sortie lors
+de la création de la disquette virtuelle.
+
+Si le fichier binaire a une adresse d'exécution (non nulle), le programme
+sera lancé automatiquement à la fin du chargement à cette adresse.
+Si le fichier binaire n'a pas d'adresse d'exécution (nulle), le
+loader renda la main par un RTS.
+
+La banque associée au fichier dans la liste sera commutée en mode PIA par le
+loader en début de chargement.
+
+En retour de la routine de chargement, tous les registres seront perdus (sauf
+DP et S).
+
+Erreurs générées par le loader:
+ * Si la zone de RAM ne répond pas correctement, le loader affichera un
+   "Memory Error".
+ * Si une erreur survient pendant le chargement, le loader affichera
+   un "Disk Error".
+ * Si la disquette est lancée sur un MO, le loader affichera un "Only for TO".
+
+LE PROGRAMME DISKTO.C
+---------------------
+
+Le programme DISKTO permet de créer la disquette virtuelle simple face double
+densité au format FD et au format SAP. Le programme nécessite 2 paramètres.
+
+Usage:
+    diskto <liste_des_fichiers> <chemin_de_la_disquette_virtuelle_sans_extension>
+
+
+SPECIFICATION POUR LES DISQUETTES PHYSIQUE
+------------------------------------------
+
+Pour une disquette physique, le formatage devra être en entrelacement 7
+(entrelacement par défaut lors d'un formatage par un simple DSKINI sous Basic).
+

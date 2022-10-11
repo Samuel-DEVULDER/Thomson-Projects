@@ -1,0 +1,153 @@
+(main)title
+
+        ORG     $6600
+
+STATUS  set     $6019
+
+LOAD    set     $6300
+PUTC    set     $E803
+GETC    set     $E806
+KTST    set     $E809
+
+CRC     set     $E7C1
+PRC     set     $E7C3
+PRB1    set     $E7CD
+CRA1    set     $E7CE
+CRB1    set     $E7CF
+
+* ========================================================
+* macro to shift register D to the left
+lsld    macro
+        lslb            ; D=D<<1
+        rola
+        endm
+* ========================================================
+* macro to shift register D to the right
+lsrd    macro
+        lsra            ; D=D>>1
+        rorb
+        endm
+
+* ========================================================
+* title screen
+title   lda     #$e7    ; i/o-page
+        tfr     a,dp    ; set dp=$E7
+        setdp   $e7
+
+        sta     $6073   ; no beeps on kbd please
+        bsr     initDAC ; init the DAC
+
+        ldb     $FFF0   ; get machine
+        cmpb    #2      ; to9 ?
+        bne     notTO9  ; no ==> skip
+        ldb     STATUS
+        orb     #2      ; mouse interfere with GETC
+        stb     STATUS  ; on the TO9, so we tell the
+        ldb     #$FE    ; kbd to stop sending mouse
+        jsr     GETC    ; data.
+notTO9  set     *
+
+        ldb     #1      ; title-pic index - 1
+        bsr     ld2     ; load title pic
+        bsr     black   ; black border
+        bsr     display ; display title picture
+
+        ldb     #5-1    ; load first music & img
+        bsr     ld3
+
+        bsr     pause   ; pause for a while
+
+        ldb     #4-1    ; player index
+        bra     ld1     ; load & run the playe
+
+* ========================================================
+* Load the data at 'B' index
+ld3     bsr     ld1     ; load 3 consecutive entries
+ld2     bsr     ld1     ; load 2 consecutive entries
+ld1     incb            ; load next entry
+        jmp     LOAD
+
+* ========================================================
+* black border
+black   ldb     #$1B
+        bsr     putc
+        ldb     #$60
+putc    jmp     PUTC
+
+* ========================================================
+* Pauses for a while
+pause   ldx     #0      ; counter
+pause2  jsr     KTST    ; key pressed ?
+        bcs     pause3  ; yes ==> return
+        leax    -1,x    ; decrements counter
+        bne     pause2  ; counter==0 ? no ==> loop
+pause3  jsr     GETC    ; flush kbd buffer
+        tstb            ; got key ?
+        bne     pause3  ; yes => loop
+return  rts
+
+* ========================================================
+* init DAC
+initDAC lda     <CRB1
+        anda    #$FA
+        sta     <CRB1
+        lda     <PRB1
+        ora     #$3F
+        sta     <PRB1
+        lda     <CRB1
+        ora     #4
+        sta     <CRB1
+        lda     <CRC
+        anda    #$f7
+        sta     <CRC
+        rts
+
+* ========================================================
+* copy screen @$A000-$DFFF into video ram in
+* a pseudo random order
+
+* This is based on the fact that power of 5 are all of
+* the form m*4+1 with m enumerating all possible values
+* modulo 2^k in random order without repetition.
+display lda     <PRC        ; sets video to ramA
+        ora     #1
+        sta     <PRC
+
+        ldx     #8192       ; counter
+        ldd     #1          ; i=1
+loop1   pshs    d           ; saves i value
+        lsrd                ; i>>1
+        lsrd                ; i>>2
+        anda    #$1f        ; (i>>2&8191)
+        adda    #$40        ; (i>>2&8191)+$4000
+        tfr     d,y         ; y = ptr to video ram
+
+        leau    $8000,y     ; u = ptr to ramB data
+        lda     -$2000,u    ; A = ramA data
+        ldb     ,u          ; B = ramB data
+
+        andb    #%00001111  ; convert from MO5
+        addb    #%01111000  ; (ABCD0123)
+        andb    #%10000111  ; to TO7 format:
+        stb     ,-s         ; (/A/0123BCD)
+        ldb     ,u          ;
+        lsrb                ;
+        andb    #%01111000  ;
+        orb     ,s+         ;
+        eorb    #%11000000  ; conversion done!
+
+        sta     ,y          ; write ramA data to video
+        dec     <PRC        ; switch to ramB
+        stb     ,y          ; write ramB data to video
+        inc     <PRC        ; switch to ramA
+
+        ldd     ,s          ; i
+        lsld                ; 2*i
+        lsld                ; 4*i
+        addd    ,s++        ; 4*i+i = 5*i
+
+        leax    -1,x        ; decrement
+        bne     loop1       ; finished? no==>loop
+        rts
+
+        end     title

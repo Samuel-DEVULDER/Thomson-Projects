@@ -1,0 +1,336 @@
+(main)LOADER
+* TO LOADER
+
+STRUCT macro
+cstruc set    0
+       endm
+
+BYTE   macro
+\0     equ    cstruc
+cstruc set    cstruc+1
+       endm
+
+POINTR macro
+\0     equ    cstruc
+cstruc set    cstruc+2
+       endm
+
+SIZEOF macro
+\0     equ    cstruc
+       endm
+
+* Gfx structure       
+       STRUCT ENTRY
+       BYTE   E_BANK
+       BYTE   E_NSEC
+       BYTE   E_TRACK
+       BYTE   E_SECT
+       POINTR E_ADDR
+       BYTE   E_SIZEA
+       BYTE   E_OFFSA
+       BYTE   E_SIZEZ
+       POINTR E_EXEC
+       SIZEOF E_SIZEOF
+
+*---------------------------------------
+* Disk boot
+       org    $6200
+       setdp  $60
+
+* Check computer type
+       orcc   #$D0    Freeze interrupts + E=1 for TO9
+       tfr    dp,a    DP in A
+       leax   mess1,pcr Error message
+       asla           Check DP
+       bpl    err     Error if not TO
+       ldd    #$0260  DP/Machine code
+       cmpa   >$fff0  ! Error if not
+       bhi    boot2   ! TO9/8/D/9+
+* Switch to Basic 1.0 if necessary
+       lds    #$60cc  System stack
+       cmpb   >$001a  ! Skip if
+       beq    boot1   ! BASIC1.0
+       ldu    #boot0   ! Switch to
+       jmp    >$ec03   ! BASIC 1.0
+boot0  jmp    >[$001e] Reset cartridge
+* PIA memory switch
+boot1  cmpa   >$fff0  ! Error if not
+       beq    boot2   ! TO9/8/D/9+
+       ldb    #$ff-$10 !
+       andb   <$6081   ! PIA switch
+       stb    <$6081   ! RAM mode
+       stb    >$e7e7   !
+* Initialize system
+boot2  ldb    #$fe    Terminators
+       stb    <$601a  ! Line
+       stb    <$601c  ! terminators
+       stb    <$601e  ! point to ROM
+	   clr	  <$60fe  ! 
+	   clr	  <$60ff  ! force hard
+	   inc    <$60d1  ! -reset
+* Load launcher sectors
+       ldd    #$6300  ! Loading
+       std    <$604f  ! address
+       ldd    #$0200   ! Read /
+       std    <$6048   ! Head 0
+       ldu    #blist  Interleave list
+       ldx    #mess2  Error message
+boot3  lda    b,u     ! Get sector
+       sta    <$604c  ! number
+       jsr    >$e004  Load sector
+       bcc    boot4   Skip if no error
+       jsr    >$e004  Reload sector
+       bcs    err     Skip if error
+boot4  inc    <$604f  Move sector ptr
+       incb           Sector+1
+       dec    >secnbr ! Next
+       bne    boot3   ! sector
+       ldb    #1      Program number
+       jmp    >load   Run loader
+
+       echo  Reste boot0= &$6280-* (>=8)
+
+       rmb    $6280-*,$e5
+
+secnbr fcb    $00     Sector number
+
+* Display error message
+err    leau   <mess0,pcr Location
+       bsr    err2    Display location
+       leau   ,x      Message pointer
+       bsr    err2    Display message
+err0   bra    err0    Infinite loop
+* Display message
+err1   bsr    err3    Display char
+err2   ldb    ,u+     Read char
+       bpl    err1    Next if not last
+       andb   #$7f    Mask char
+err3   tfr    dp,a    Read DP
+       asla           Check if MO or TO
+       lbmi   $e803   Display for TO
+       goto   $02     Display for MO
+
+* Interleave table
+blist  fcb    $0f,$0d,$0b
+       fcb    $09,$07,$05,$03
+       fcb    $08,$06,$04,$02
+       fcb    $10,$0e,$0c,$0a
+
+* Location message
+mess0  fcb    $1f,$21,$21
+       fcb    $1f,$11,$13
+       fcb    $1b,$43
+       fcb    $1b,$54
+       fcb    $0c
+       fcb    $07+$80
+* Message "Only for TO"
+mess1  fcb    $1f,$40+12,$41+(40-11)/2
+       fcn    "Only for TO"
+* Message "Disk Error"
+mess2  fcb    $1f,$40+12,$41+(40-10)/2
+       fcn    " Disk Error"
+
+       echo  Reste boot2= &$6300-* (>=0)
+
+       rmb    $6300-*,$e5
+
+*---------------------------------------
+* Loader reset (org $6300)
+
+       org    $6300
+ptsec  equ    $6200
+
+load   pshs   d,u,x,dp
+       lda    #$60
+	   tfr    a,dp
+* Load a file
+       ldu    #flist-(E_SIZEOF-2) List
+       bra    ld1     Next entry
+ld0    lda    E_BANK,u ! Next if
+       bpl    ld1      ! no exec
+       leau   2,u     Skip exec
+ld1    leau   E_SIZEOF-2,u Skip entry
+       decb           ! Next
+       bne    ld0     ! entry
+* Switch bank
+       ldb    E_BANK,u ! Next if
+       bsr    bank
+* Get read parameters
+       ldb    E_NSEC,u ! Exit if
+       stb    >nsect
+       ldd    E_TRACK,u Save track/sectr
+       std    >track
+       ldy    E_ADDR,u Start address
+* First sector
+       ldb    E_SIZEA,u ! Skip if
+       beq    ld3       ! full sect
+       ldx    #ptsec  ! Init sector
+       stx    <$604f  ! pointer
+       bsr    ldsec   Load sector
+       ldx    <$604f  Data pointer
+       ldd    E_SIZEA,u Read offs
+       abx            Adjust data ptr
+       bsr    tfraxy  Copy data
+* Intermediate sectors
+ld3    sty    <$604f   Init ptr secteur
+ld4    ldb    >nsect   ! Exit if
+       beq    ld7      ! no sector
+       cmpb   #1        !
+       bhi    ld5       ! Exit if 
+       lda    E_SIZEZ,u ! last sector
+       bne    ld6       !
+ld5    bsr    ldsec   Load sector
+       inc    <$604f  Move sector ptr
+       bra    ld4     Next sector
+* Last sector
+ld6    ldb    >nsect   ! Skip if
+       beq    ld7      ! no sector
+       ldy    <$604f  Data pointer
+       ldx    #ptsec  ! Init sector
+       stx    <$604f  ! pointer
+       bsr    ldsec   Load sector
+       ldx    #ptsec  Data pointer
+       lda    E_SIZEZ,u Copy data+exit
+       bsr    tfraxy
+ld7    tst    E_BANK,u ! Exit if
+       bpl    ldexit   ! no exec
+       ldu    E_EXEC,u 
+       stu    ldexit-2
+	   puls   d,x,u,dp
+	   jmp    $0000    Exec
+ldexit puls   d,x,u,dp,pc
+
+* Copy memory area
+tfraxy ldb    ,x+      Read data
+       stb    ,y       Write data
+       cmpb   ,y+       ! Out of mem
+       bne    outofm    ! if error
+       deca            ! Until las
+       bne    tfraxy   ! data reached
+       rts
+
+
+*------------
+* Bank switch
+bank   pshs   d,x
+       ldx    #mtab   PIA list
+       lda    >$fff0  ! Skip if
+       cmpa   #2      ! not
+       bls    bk2     ! TO8/8D/9+
+       leax   6,x     PIA list
+bk2    lda    >$e7cb  !
+       anda   #$fb    ! Program PIA
+       sta    >$e7cb  !
+       andb   #$7f
+       ldb    b,x     Read switch code
+       stb    >$e7c9  Switch RAM
+       ora    #$04    ! Restore
+       sta    >$e7cb  ! PIA
+       puls   d,x,pc
+       
+*------------
+* Load sector
+ldsec  clr    <$6049  Side 0
+       ldb    >track  !
+       aslb           ! Compute
+       andb   #$06    ! sector
+       addb   >sector ! offset
+       andb   #$0f    !
+       ldx    #sclist Interleave table
+       ldb    b,x     Read sector number
+       lda    >track  !
+       std    <$604b  Init track/sector
+       ldx    #rmess1 Error ptr
+       jsr    >$e004  Load sector
+       bcc    ldsec0  Skip if ok
+       jsr    >$e004  Reload sector
+       bcs    error   >Disk Error
+* Next sector
+ldsec0 ldd    >track  Read track/sect
+       addd   #$f1    Add offset
+       andb   #$0f    Sector bits
+       std    >track  Save track/sectr
+       dec    >nsect  Counter-1
+* Check if loading ok
+       ldx    <$604f  Data pointer
+       com    ,x      Commute memory
+       ldb    ,x      Read memory
+       com    ,x      Restaure memory
+       comb           Commute value
+       cmpb   ,x      ! Out of mem
+       beq    prts    ! if different
+
+outofm ldx    #rmess2 >Memory Error
+error  equ    *
+       ldu    #rmess0 Init ptr
+       bsr    puts    Display init
+       leau   ,x      Message ptr
+       bsr    puts    Display message
+* Keyboard test
+key0   jsr    >$e806  Read keyboard
+       tstb           ! Loop if no
+       bne    key0    ! key pushed
+       jsr    >$e809  Test keyboard
+       bcs    key0    Loop if key
+key1   jsr    >$e809  Test keyboard
+       bcc    key1    Loop if no key
+* Reset screen
+reset  jmp    >[$fffe] Reset computer
+
+* Display a string
+puts0  jsr    >$e803  Display char
+puts   ldb    ,u+     Read char
+       bne    puts0   Next if not last
+prts   rts
+       
+* Location message
+rmess0 fcb    $1f,$21,$21
+       fcb    $1f,$11,$13
+       fcb    $1b,$43
+       fcb    $1b,$54
+       fcb    $0c
+       fcb    0
+* Message "Disk Error"
+rmess1 fcb    $1f,$40+12,$41+(40-10)/2
+       fcc    "Disk Error"
+       fcb    0
+* Message "Memory Error"
+rmess2 fcb    $1f,$40+12,$41+(40-12)/2
+       fcc    "Memory Error"
+       fcb    0
+
+* PIA code list for TO7/TO7-70/TO9
+mtab   fcb    $0f     Bank 2
+       fcb    $17     Bank 3
+       fcb    $e7     Bank 4
+       fcb    $67     Bank 5
+       fcb    $a7     Bank 6
+       fcb    $27     Bank 7
+* PIA code list for TO8/TO8D/TO9+
+       fcb    $0f     Bank 2
+       fcb    $17     Bank 3
+       fcb    $e7     Bank 4
+       fcb    $a7     Bank 5
+       fcb    $67     Bank 6
+       fcb    $27     Bank 7
+
+* Interleave 7 (1 every 2)
+sclist fcb    $01,$0f,$0d,$0b
+       fcb    $09,$07,$05,$03
+       fcb    $08,$06,$04,$02
+       fcb    $10,$0e,$0c,$0a
+
+nsect  fcb    0
+track  fcb    0
+sector fcb    0
+
+* Entry list
+flist  equ    *+0*reset
+
+       echo   load  = $load
+	   echo	  bank  = $bank
+	   echo   reset = $reset
+	   echo   flist = $flist
+
+       end
+
