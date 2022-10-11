@@ -1338,7 +1338,7 @@ void PrintSymbolLine(struct SYMBLIST *slist)
 
     int error = 0 ;
     int type = 0 ;
-    char errorstring[LINE_MAX_SIZE+2] ;
+    char errorstring[LINE_MAX_SIZE+2+128] ;
 
     while(slist->error != ErrorTable[error].type) error++ ;
     while(slist->type != TypeTable[type].type) type++ ;
@@ -1347,7 +1347,7 @@ void PrintSymbolLine(struct SYMBLIST *slist)
                          slist->time,
                          ErrorTable[error].string,
                          TypeTable[type].string,
-                         (unsigned short)slist->value,
+                         (int)(unsigned short)slist->value,
                          slist->name) ;
     fprintf(fp_lst, "%s\n", errorstring) ;
     /* Affiche la ligne si WS */
@@ -4277,7 +4277,7 @@ int LoadFile(char *name)
 {
     FILE *fp_file ;
 
-    int fsize = 1 ;
+    int fsize = 1, off, len;
     int error ;
 
     if (!(fp_file = fopen(name,"rb")))
@@ -4290,7 +4290,11 @@ int LoadFile(char *name)
     fclose(fp_file) ;
     filebuffer = malloc(fsize+1) ;
     fp_file = fopen(name,"rb") ;
-    fread(filebuffer, sizeof(char), fsize, fp_file) ;
+	for(len = fsize, off = 0; len>0;) {
+    	int t = fread(filebuffer + off, sizeof(char), len, fp_file);
+		off += t;
+		len -= t;
+	}
     fclose(fp_file) ;
     filebuffer[fsize] = '\0' ;
 
