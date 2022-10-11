@@ -8,8 +8,10 @@ endif
 
 C6809=../../c6809/c6809$(EXE)
 SAPFS=../../sapfs/sapfs$(EXE)
+TEODIR=../../TEO_WIN_187_BETA3_20220907/
 
 ASM=$(wildcard *.ass)
+BIN=$(ASM:%.ass=build/%.BIN)
 
 all: compile fill_sapdir #test
 
@@ -21,6 +23,10 @@ list:	compile
 clean: 
 	rm -rf build/*
 
+$(DISK): $(BIN) fill_sapdir
+	$(SAPFS) -c $@
+	$(SAPFS) -a $@ build/sapdir/*
+	
 $(SAPFS): 
 	cd $(dir $@) && make "CC=$(CC) -Dlinux" sapfs
 
@@ -45,6 +51,7 @@ fill_sapdir: $(SAPFS)
 	$(SAPFS) -c $(DISK)
 	$(SAPFS) -a $(DISK) build/sapdir/*
 
-test:	
-	../teo/teow.exe -fast -window -m MASS6809.M7 -disk0 `cygpath -w -s "$(PWD)/sapdir"`
+test: all $(DISK)
+	cp $(DISK) $(TEODIR)/disk.sap
+	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.sap
 	

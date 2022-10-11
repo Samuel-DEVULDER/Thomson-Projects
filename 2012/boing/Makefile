@@ -11,7 +11,10 @@ endif
 C6809=../../c6809/c6809$(EXE)
 SAPFS=../../sapfs/sapfs$(EXE)
 
+TEODIR=../../TEO_WIN_187_BETA3_20220907/
+
 ASM=$(wildcard *.ass)
+BIN=$(ASM:%.ass=build/%.BIN)
 
 all: compile fill_sapdir
 
@@ -40,3 +43,8 @@ fill_sapdir:
 	cp bas/*.BA* sapdir
 	$(SAPFS) -c $(DISK)
 	$(SAPFS) -a $(DISK) sapdir/*
+	
+test: all $(DISK)
+	cp $(DISK) $(TEODIR)/disk.sap
+	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.sap
+	
