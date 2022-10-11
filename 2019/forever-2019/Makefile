@@ -97,5 +97,5 @@ test2: $(DSK)
 
 TEODIR=../../TEO_WIN_187_BETA3_20220907/
 tst: $(DSK)
-	cp $(DSK) $(TEODIR)/disk.sap
-	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.sap
+	cp $(DSK) $(TEODIR)/disk.fd
+	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.fd
