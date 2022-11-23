@@ -25,6 +25,7 @@ opIM_nxt
    STA   <opIM       ; (write CMPA as the first instructon of opIM)
    BRA   incPC       ; next instruction (B already fetched)
 
+
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
@@ -112,21 +113,15 @@ decode
    BMI   opEMULATE_x ; opcode=001xxxxx ? yes => emulate_x
    BITB  #%01000000  ; opcode=0001xxxx ? yes => addsp_x
    BNE   opADDSP_x   ; at this point opcode=0000xxxx
-   LSLB
-   LSLB
-   LSLB
-   LDX   #opBREAKPT
-   ABX
-   ABX
-   JMP   ,X          ; jump tp BRAKPT+opcode*32
+   ldx   #basicOPs
+   LSRB
+   JMP   [B,X]
 
 opEMULATE_x
-   LDX   #opLOADH-34*32
-   LSLB              ; lookup table here to
-   LSLB              ; opcode*16
-   ABX               ; use ABX because B is unsigned byte
-   ABX               ; X=lo1dH-34*32+opcode*32
-   JMP   ,X
+   SUBB  #%10100010
+   LSRB
+   LDX   #extendedOPs
+   JMP   [B,X]
 
 * COMmon part between opLD and opST depending on N flag
 opLDSTsp
@@ -169,30 +164,21 @@ opADDSP_x
    STD   ,U          ; store result to TOS (high word)
    BRA   fetch       ; next instruction
 
-opTabl SET *         ; start of operation table
 
-* MACRO to align operation correctly wrt "opTabl"
-opcode      MACRO
-tmp  SET  opTabl+32*\0
-   IFGT  *-tmp
-      ERROR overflow
-   ELSE
-      RMB   tmp-*,$12  ; align znf fill with NOPs
-   ENDC
-op\1  SET   *
-      ENDM
+opUNK
+   BRA   opUNK
 
-   opcode %0000,BREAKPT
+opBREAKPT
    BRA   opBREAKPT   ; do nothing (breakpoint)
 
-   opcode %0010,PUSHSP
 * Pushes stack address
+opPUSHSP
    LDD   #0          ; stack address is $0000:9xxx
    LEAX  ,U          ; this should be mapped to
    PSHU  D,X         ; bank 0, $Dxxx
    JMP   <fetch
 
-   opcode %0100,POPPC
+opPOPPC
    LDD   2,U         ; lower word of PC
    ANDA  #$03        ; map 16k address to $A000...$DFFF
    ADDA  #$A0
@@ -202,7 +188,7 @@ op\1  SET   *
    LEAU  4,U         ; fixup stack
    JMP   <updatePC+3 ; update page etc
 
-   opcode %0101,ADD
+opADD
    LEAU  4,U         ; add TOS with NOS
    LDD   2,U         ; load lower word of NOS
    ADDD  -2,U        ; adds lower word of TOS
@@ -213,7 +199,7 @@ op\1  SET   *
    STD   ,U          ; store uppdr world result
    JMP   <fetch      ; next intruction
 
-   opcode %0110,AND
+opAND
    LDD   ,U          ; bitwise "and" of TOS with NOS
    LEAU  4,U
    ANDA  ,U
@@ -225,7 +211,7 @@ op\1  SET   *
    STD   2,U
    JMP   <fetch
 
-   opcode %0111,OR
+opOR
    LDD   ,U          ; bitwise "or" of TOS with NOS
    LEAU  4,U
    ORA   ,U
@@ -237,7 +223,7 @@ op\1  SET   *
    STD   2,U
    JMP   <fetch
 
-   opcode %1000,LOAD
+opLOAD
    JSR   <getAddrL   ; convert adress
    LDD   ,X          ; load high word
    STD   ,U          ; store in TOS
@@ -245,7 +231,7 @@ op\1  SET   *
    STD   2,U         ; store in TOS
    JMP   <updatePC   ; resync PC page and execute next instruction
 
-   opcode %1001,NOT
+opNOT
    COM   ,U          ; bitwise complement of TOS
    COM   1,U
    COM   2,U
@@ -272,7 +258,7 @@ flip2
    ADCA  #0
    RTS
 
-   opcode %1010,FLIP
+opFLIP
    LDA   ,U          ; flips the bits of tje TOS
    LDB   3,U
    BSR   flip2
@@ -283,10 +269,10 @@ flip2
    STD   1,U
    JMP   <fetch
 
-   opcode %1011,NOP
+opNOP
    JMP   <fetch      ; do nothing
 
-   opcode %1100,STORE
+opSTORE
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
@@ -295,25 +281,12 @@ flip2
    LEAU  8,U
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
-   opcode %1101,POPSP
+opPOPSP
    PULU  D,X         ; change SP with the value of TOS
    LEAU  ,X          ; presumably we just keep the lower part of the address
    JMP   <fetch
 
-
-opExTbl  set   *
-
-excode MACRO
-tmp  SET  opExTbl+32*(\0-34)
-   IFGT  *-tmp
-      ERROR overflow
-   ELSE
-      RMB   tmp-*,$12  ; align znf fill with NOPs
-   ENDC
-op\1  SET   *
-   ENDM
-
-   excode 34,LOADH
+opLOADH
    JSR   <getAddr    ; loads 16 bits
    LEAU  4,U
    LDX   ,X
@@ -327,14 +300,14 @@ opLoadH2
    PSHU  D,X
    JMP   <updatePC
 
-   excode 35,STOREH
+opSTOREH
    JSR   <getAddr    ; stores 16 bitx
    LEAU  8,U
    LDD   -2,U
    STD   ,X
    JMP   <updatePC
 
-   excode 36,LESSTHAN
+opLESSTHAN
    LDD   ,U
    LEAU  4,U
    SUBD  ,U
@@ -351,7 +324,7 @@ TOS_0
    STD   2,U
    JMP   <fetch
 
-   excode 37,LESSTHANOREQUAL
+opLESSTHANOREQUAL
    LDD   ,U
    LEAU  4,U
    SUBD  ,U
@@ -368,3 +341,61 @@ TOS_1
    INCB
    STD   2,U
    JMP   <fetch
+
+basicOPs
+   FDB   opBREAKPT   ; %0000 legitimate
+   FDB   opUNK       ; %0001
+   FDB   opPUSHSP    ; %0010
+   FDB   opUNK       ; %0011
+   FDB   opPOPPC     ; %0100
+   FDB   opADD       ; %0101
+   FDB   opAND       ; %0110
+   FDB   opOR        ; %0111
+   FDB   opLOAD      ; %1000
+   FDB   opNOT       ; %1001
+   FDB   opFLIP      ; %1010
+   FDB   opNOP       ; %1011
+   FDB   opSTORE     ; %1100
+   FDB   opPOPSP     ; %1101
+   FDB   opUNK       ; %1110
+   FDB   opUNK       ; %1111
+
+extendedOPs
+   FDB   opLOADH     ; 34
+   FDB   opSTOREH    ; 35
+   FDB   opLESSTHAN  ; 36
+   FDB   opLESSTHANOREQUAL ; 37
+   FDB   opUNK       ; 38
+   FDB   opUNK       ; 39
+   FDB   opUNK       ; 40
+   FDB   opUNK       ; 41
+   FDB   opUNK       ; 42
+   FDB   opUNK       ; 43
+   FDB   opUNK       ; 44
+   FDB   opUNK       ; 45
+   FDB   opUNK       ; 46
+   FDB   opUNK       ; 47
+   FDB   opUNK       ; 48
+   FDB   opUNK       ; 49
+   FDB   opUNK       ; 50
+   FDB   opUNK       ; 51
+   FDB   opUNK       ; 52
+   FDB   opUNK       ; 53
+   FDB   opUNK       ; 54
+   FDB   opUNK       ; 55
+   FDB   opUNK       ; 56
+   FDB   opUNK       ; 57
+   FDB   opUNK       ; 58
+   FDB   opUNK       ; 59
+   FDB   opUNK       ; 60
+   FDB   opUNK       ; 61
+   FDB   opUNK       ; 62
+   FDB   opUNK       ; 63
+   FDB   opUNK       ; 64
+   FDB   opUNK       ; 65
+   FDB   opUNK       ; 66
+   FDB   opUNK       ; 67
+   FDB   opUNK       ; 68
+   FDB   opUNK       ; 69
+
+   END
