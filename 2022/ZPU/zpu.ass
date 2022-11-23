@@ -452,14 +452,14 @@ opLoadH2
    JMP   <updatePC
 
 opSTOREH
-   JSR   <getAddr    ; stores 16 bitx
+   JSR   <getAddr    ; stores 16 bits
    LEAU  8,U
    LDD   -2,U
    STD   ,X
    JMP   <updatePC
 
 opLOADB
-   JSR   <getAddr    ; loads 16 bits
+   JSR   <getAddr    ; loads 8 bits
    LEAU  4,U
    LDB   ,X
    SEX
@@ -469,7 +469,7 @@ opLOADB
    JMP   <updatePC
 
 opSTOREB
-   JSR   <getAddr    ; stores 16 bitx
+   JSR   <getAddr    ; stores 8 bits
    LEAU  8,U
    LDB   -1,U
    STB   ,X
