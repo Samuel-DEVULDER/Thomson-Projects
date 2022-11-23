@@ -164,12 +164,14 @@ opADDSP_x
    STD   ,U          ; store result to TOS (high word)
    BRA   fetch       ; next instruction
 
-
 opUNK
    BRA   opUNK
 
 opBREAKPT
    BRA   opBREAKPT   ; do nothing (breakpoint)
+
+opNOP
+   JMP   <fetch      ; do nothing
 
 * Pushes stack address
 opPUSHSP
@@ -188,6 +190,10 @@ opPOPPC
    LEAU  4,U         ; fixup stack
    JMP   <updatePC+3 ; update page etc
 
+***************************************
+* ARITHMETIC
+***************************************
+
 opADD
    LEAU  4,U         ; add TOS with NOS
    LDD   2,U         ; load lower word of NOS
@@ -198,6 +204,97 @@ opADD
    ADCA  -4,U        ; with carry
    STD   ,U          ; store uppdr world result
    JMP   <fetch      ; next intruction
+
+opSUB
+   LEAU  4,U         ; add TOS with NOS
+   LDD   2,U         ; load lower word of NOS
+   SUBD  -2,U        ; adds lower word of TOS
+   STD   2,U         ; store result to NOS lower part
+   LDD   ,U          ; load NOS top word
+   SBCB  -3,U        ; adds TOS top word
+   SBCA  -4,U        ; with carry
+   STD   ,U          ; store uppdr world result
+   JMP   <fetch      ; next intruction
+
+opNEG
+   LDD   #0
+   SUBD  2,U
+   STD   2,U
+   LDD   #0
+   BCC   opNEG2
+   LDD   #-1
+opNEG2
+   SUBD  ,U
+   STD   ,U
+   JMP   <fetch
+
+opMULT
+   LDD   #0          ; clear upper word
+   STD   -4,U        ; 0123
+   LDA   3,U         ; 4567
+   LDB   7,U
+   MUL               ; compute byte #4
+   STD   -2,U        ; 3*7
+   LEAX  -3,U
+   LDD   #$0108      ; compute byte #3
+   BSR   MULT1       ; 2*7
+   BSR   MULT1       ; 3*6
+   LEAX  -4,U
+   LDD   #$0208      ; compute byte #2
+   BSR   MULT2       ; 1*7
+   BSR   MULT2       ; 2*6
+   BSR   MULT2       ; 3*5
+   LDD   #$0308      ; compute byte #1
+   BSR   MULT3       ; 0*7
+   BSR   MULT3       ; 1*6
+   BSR   MULT3       ; 2*5
+   BSR   MULT3       ; 3*4
+   LEAU  4,U         ; copy result to TOS
+   LDD   ,X
+   STD   ,U
+   LDD   2,X
+   STD   2,U
+   JMP   <fetch
+MULT1
+   ADDD  #255        ; A++ B--
+   PSHS  D
+   LDA   A,U
+   BEQ   MULT0
+   LDB   B,U
+   BEQ   MULT0
+   MUL
+   ADDD  ,X
+   STD   ,X
+   BNE   MULT0
+   INC   -1,X
+MULT0
+   PULS  D,PC
+MULT2
+   ADDD  #255        ; A++ B--
+   PSHS  D
+   LDA   A,U
+   BEQ   MULT0
+   LDB   B,U
+   BEQ   MULT0
+   MUL
+   ADDD  ,X
+   STD   ,X
+   PULS  D,PC
+MULT3
+   ADDD  #255        ; A++ B--
+   PSHS  D
+   LDA   A,U
+   BEQ   MULT0
+   LDB   B,U
+   BEQ   MULT0
+   MUL
+   ADDB  ,X
+   STB   ,X
+   PULS  D,PC
+
+***************************************
+* LOGIC
+***************************************
 
 opAND
    LDD   ,U          ; bitwise "and" of TOS with NOS
@@ -223,13 +320,17 @@ opOR
    STD   2,U
    JMP   <fetch
 
-opLOAD
-   JSR   <getAddrL   ; convert adress
-   LDD   ,X          ; load high word
-   STD   ,U          ; store in TOS
-   LDD   2,X         ; load lower word
-   STD   2,U         ; store in TOS
-   JMP   <updatePC   ; resync PC page and execute next instruction
+opXOR
+   LDD   ,U          ; bitwise "or" of TOS with NOS
+   LEAU  4,U
+   EORA  ,U
+   EORB  2,U
+   STD   ,U
+   LDD   -2,U
+   EORA  2,U
+   EORB  3,U
+   STD   2,U
+   JMP   <fetch
 
 opNOT
    COM   ,U          ; bitwise complement of TOS
@@ -269,10 +370,60 @@ opFLIP
    STD   1,U
    JMP   <fetch
 
-opNOP
-   JMP   <fetch      ; do nothing
+opSWAP
+   LDD   ,U
+   LDX   2,U
+   STX   ,U
+   STD   2,U
+   JMP   <fetch
+
+***************************************
+* MEMORY
+***************************************
+
+opLOADIO
+   LDD   2,U
+   CMPD  #12         ; UART
+   BEQ   opLOADUART
+   CMPD  #24         ; UART
+   BEQ   opLOADUART
+opLOADIO_end
+   CLRA
+   STD   2,U
+   STA   1,U
+   STA   ,U
+   JMP   <fetch
+opLOADUART
+   JSR   $E806
+   BRA   opLOADIO_end
+
+opSTOREIO
+   LDD   2,U
+   CMPD  #12         ; UART
+   BEQ   opSTOREUART
+   CMPD  #24         ; UART
+   BEQ   opSTOREUART
+opSTOREIO_end
+   LEAU  8,U
+   JMP   <fetch
+opSTOREUART
+   LDB   7,U
+   JSR   $E803
+   BRA   opSTOREIO_end
+
+opLOAD
+   LDB   ,U
+   BMI   opLOADIO
+   JSR   <getAddrL   ; convert adress
+   LDD   ,X          ; load high word
+   STD   ,U          ; store in TOS
+   LDD   2,X         ; load lower word
+   STD   2,U         ; store in TOS
+   JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
+   LDB   ,U
+   BMI   opSTOREIO
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
@@ -307,19 +458,38 @@ opSTOREH
    STD   ,X
    JMP   <updatePC
 
+opLOADB
+   JSR   <getAddr    ; loads 16 bits
+   LEAU  4,U
+   LDB   ,X
+   SEX
+   LDX   #0
+   LEAX  A,X
+   PSHU  D,X
+   JMP   <updatePC
+
+opSTOREB
+   JSR   <getAddr    ; stores 16 bitx
+   LEAU  8,U
+   LDB   -1,U
+   STB   ,X
+   JMP   <updatePC
+
+***************************************
+* COMPARISON
+***************************************
+
 opLESSTHAN
    LDD   ,U
    LEAU  4,U
    SUBD  ,U
-   BLT   TOS_1
-   BGT   TOS_0
+   BLT   outTRUE
+   BGT   outFALSE
    LDD   -2,U
    SUBD  2,U
-   BMI   TOS_1
-
-* writes 0 on top of stack
-TOS_0
-   LDD   #0
+   BMI   outTRUE
+outFALSE
+   LDD   #0          ; writes 0 on top of stack
    STD   ,U
    STD   2,U
    JMP   <fetch
@@ -328,22 +498,294 @@ opLESSTHANOREQUAL
    LDD   ,U
    LEAU  4,U
    SUBD  ,U
-   BGT   TOS_0
-   BLT   TOS_1
+   BGT   outFALSE
+   BLT   outTRUE
    LDD   -2,U
    SUBD  2,U
-   BPL   TOS_0
-
-* write 1 on top of stack
-TOS_1
-   LDD   #0
+   BPL   outFALSE
+outTRUE
+   LDD   #0          ; write 1 on top of stack
    STD   ,U
    INCB
    STD   2,U
    JMP   <fetch
 
+opULESSTHAN
+   LDD   ,U
+   LEAU  4,U
+   SUBD  ,U
+   BLO   outTRUE
+   BHI   outFALSE
+   LDD   -2,U
+   SUBD  2,U
+   BMI   outTRUE
+   BRA   outFALSE
+
+opULESSTHANOREQUAL
+   LDD   ,U
+   LEAU  4,U
+   SUBD  ,U
+   BHI   outFALSE
+   BLO   outTRUE
+   LDD   -2,U
+   SUBD  2,U
+   BHI   outFALSE
+   BRA   outTRUE
+
+opEQ
+   LDD   ,U
+   LEAU  4,U
+   SUBD  ,U
+   BNE   outFALSE
+   LDD   -2,U
+   SUBD  2,U
+   BNE   outFALSE
+   BRA   outTRUE
+
+opNEQ
+   LDD   ,U
+   LEAU  4,U
+   SUBD  ,U
+   BNE   outTRUE
+   LDD   -2,U
+   SUBD  2,U
+   BNE   outTRUE
+   BRA   outFALSE
+
+***************************************
+* SHIFT
+***************************************
+
+LSHIFTRIGHT MACRO
+   LSRA
+   RORB
+   ROR   1,U
+   ROR   2,U
+   ENDM
+
+opLSHIFTRIGHT
+   LEAU  4,U
+   LDD   ,U
+   BEQ   opLSHIFTRIGHT_
+   LSR  -1,U
+   BCC   opLSHIFTRIGHT2
+   LSHIFTRIGHT
+opLSHIFTRIGHT2
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT4
+   LSHIFTRIGHT
+   LSHIFTRIGHT
+opLSHIFTRIGHT4
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT8
+   LSHIFTRIGHT
+   LSHIFTRIGHT
+   LSHIFTRIGHT
+   LSHIFTRIGHT
+opLSHIFTRIGHT8
+   STD   ,U
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT16
+   LDD   1,U
+   STD   2,U
+   CLRA
+   LDB   ,U
+   STD   ,U
+opLSHIFTRIGHT16
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT32
+   LDD   ,U
+   STD   2,U
+   LDD   #0
+   STD   ,U
+opLSHIFTRIGHT32
+   JMP   <fetch
+
+LSRD  MACRO
+   LSRA
+   RORB
+   ENDM
+
+opLSHIFTRIGHT_
+   LDD   2,U
+   LSR  -1,U
+   BCC   opLSHIFTRIGHT_2
+   LSRD
+opLSHIFTRIGHT_2
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT_4
+   LSRD
+   LSRD
+opLSHIFTRIGHT_4
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT_8
+   LSRD
+   LSRD
+   LSRD
+   LSRD
+opLSHIFTRIGHT_8
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT_16
+   TFR   A,B
+   CLRA
+opLSHIFTRIGHT_16
+   LSR   -1,U
+   BCC   opLSHIFTRIGHT_32
+   LDD   #0
+opLSHIFTRIGHT_32
+   STD   2,U
+   JMP   <fetch
+
+ASHIFTLEFT MACRO
+   LSLB
+   ROLA
+   ROL   1,U
+   ROL   ,U
+   ENDM
+
+opASHIFTLEFT
+   LEAU  4,U
+   LDD   2,U
+   BEQ   opASHIFTLEFT_
+   LSR  -1,U
+   BCC   opASHIFTLEFT2
+   ASHIFTLEFT
+opASHIFTLEFT2
+   LSR  -1,U
+   BCC   opASHIFTLEFT4
+   ASHIFTLEFT
+   ASHIFTLEFT
+opASHIFTLEFT4
+   LSR  -1,U
+   BCC   opASHIFTLEFT8
+   ASHIFTLEFT
+   ASHIFTLEFT
+   ASHIFTLEFT
+   ASHIFTLEFT
+opASHIFTLEFT8
+   STD   2,U
+   LSR  -1,U
+   BCC   opASHIFTLEFT16
+   LDD   1,U
+   STD   ,U
+   LDA   3,U
+   CLRB
+   STD   2,U
+opASHIFTLEFT16
+   LSR  -1,U
+   BCC   opASHIFTLEFT32
+   LDD   2,U
+   STD   ,U
+   LDD   #0
+   STD   2,U
+opASHIFTLEFT32
+   JMP   <fetch
+
+LSLD  MACRO
+   LSLB
+   ROLA
+   ENDM
+
+opASHIFTLEFT_
+   LDD   ,U
+   LSR  -1,U
+   BCC   opASHIFTLEFT_2
+   LSLD
+opASHIFTLEFT_2
+   LSR  -1,U
+   BCC   opASHIFTLEFT_4
+   LSLD
+   LSLD
+opASHIFTLEFT_4
+   LSR  -1,U
+   BCC   opASHIFTLEFT_8
+   LSLD
+   LSLD
+   LSLD
+   LSLD
+opASHIFTLEFT_8
+   LSR  -1,U
+   BCC   opASHIFTLEFT_16
+   TFR   B,A
+   CLRB
+opASHIFTLEFT_16
+   LSR  -1,U
+   BCC   opASHIFTLEFT_32
+   LDD   #0
+opASHIFTLEFT_32
+   STD   ,U
+   JMP   <fetch
+
+ASHIFTRIGHT MACRO
+   ASRA
+   RORB
+   ROR   1,U
+   ROR   2,U
+   ENDM
+
+opASHIFTRIGHT
+   LEAU  4,U
+   LDD   ,U
+   LSR  -1,U
+   BCC   opASHIFTRIGHT2
+   ASHIFTRIGHT
+opASHIFTRIGHT2
+   LSR   -1,U
+   BCC   opASHIFTRIGHT4
+   ASHIFTRIGHT
+   ASHIFTRIGHT
+opASHIFTRIGHT4
+   LSR   -1,U
+   BCC   opASHIFTRIGHT8
+   ASHIFTRIGHT
+   ASHIFTRIGHT
+   ASHIFTRIGHT
+   ASHIFTRIGHT
+opASHIFTRIGHT8
+   STD   ,U
+   LSR   -1,U
+   BCC   opASHIFTRIGHT16
+   LDD   1,U
+   STD   2,U
+   LDB   ,U
+   SEX
+   STD   ,U
+opASHIFTRIGHT16
+   LSR   -1,U
+   BCC   opASHIFTRIGHT32
+   LDB   ,U
+   SEX
+   TFR   A,B
+   STD   ,U
+   STD   2,U
+opASHIFTRIGHT32
+   JMP   <fetch
+
+opCALL
+   LDD   ,U
+   LDX   2,U
+   PSHS  D,X
+   LDA   <PC_HI+1
+   ANDA  #-$30
+   STA   ,U
+   LDD   <PC_LO
+   ANDA  #$30
+   ORA   ,U
+   STD   2,U
+   CLRA
+   LDB   <PC_HI
+   STD   ,U
+   LDD   1,S
+   STD   <PC_HI
+   LDD   2,S
+   ANDA  #$3F
+   ADDA  #$A0
+   STD   <PC_LO
+   LEAS  4,S
+   JMP   <updatePC
+
 basicOPs
-   FDB   opBREAKPT   ; %0000 legitimate
+   FDB   opBREAKPT   ; %0000
    FDB   opUNK       ; %0001
    FDB   opPUSHSP    ; %0010
    FDB   opUNK       ; %0011
@@ -364,24 +806,24 @@ extendedOPs
    FDB   opLOADH     ; 34
    FDB   opSTOREH    ; 35
    FDB   opLESSTHAN  ; 36
-   FDB   opLESSTHANOREQUAL ; 37
-   FDB   opUNK       ; 38
-   FDB   opUNK       ; 39
-   FDB   opUNK       ; 40
-   FDB   opUNK       ; 41
-   FDB   opUNK       ; 42
-   FDB   opUNK       ; 43
-   FDB   opUNK       ; 44
-   FDB   opUNK       ; 45
-   FDB   opUNK       ; 46
-   FDB   opUNK       ; 47
-   FDB   opUNK       ; 48
-   FDB   opUNK       ; 49
-   FDB   opUNK       ; 50
-   FDB   opUNK       ; 51
-   FDB   opUNK       ; 52
-   FDB   opUNK       ; 53
-   FDB   opUNK       ; 54
+   FDB   opLESSTHANOREQUAL  ; 37
+   FDB   opULESSTHAN ; 38
+   FDB   opULESSTHANOREQUAL ; 39
+   FDB   opSWAP      ; 40
+   FDB   opMULT      ; 41
+   FDB   opLSHIFTRIGHT      ; 42
+   FDB   opASHIFTLEFT       ; 43
+   FDB   opASHIFTRIGHT      ; 44
+   FDB   opCALL      ; 45
+   FDB   opEQ        ; 46
+   FDB   opNEQ       ; 47
+   FDB   opNEG       ; 48
+   FDB   opSUB       ; 49
+   FDB   opXOR       ; 50
+   FDB   opLOADB     ; 52
+   FDB   opSTOREB    ; 52
+   FDB   opDIV       ; 53
+   FDB   opMOD       ; 54
    FDB   opUNK       ; 55
    FDB   opUNK       ; 56
    FDB   opUNK       ; 57
