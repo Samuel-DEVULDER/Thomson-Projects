@@ -1,9 +1,13 @@
-; COMmon part between opLD and opST depending on N flag
+   ORG   $6300
+
+* COMmon part between opLD and opST depending on N flag
 opLDSTsp
    BPL   opStoresp_x
 
-; Load on stack the value at stack[x]
-; B=-xxxxx00 (4*x)
+***************************************
+* Load on stack the value at stack[x]
+* B=-xxxxx00 (4*x)
+***************************************
 opLoadsp_x
    ANDB  %01111100   ; clear bit 7 of 4*x
    LEAX  B,U         ; X points to source
@@ -59,11 +63,11 @@ opImX
 
 ; loads a 7 bit immediate value
 ; B=xxxxxxx0 (value*2)
-opIm:
+opIm
    BRN   opImX       ; hook to go to continued version (dynamic code)
    ASRB              ; left align signed value
    SEX               ; extends sign to A ($00 or $FF)
-   PSHS  D           ; push lower word
+   PSHU  D           ; push lower word
    STA   ,-U         ; push high byte (sign)
    STA   ,-U         ; push high byte (sign)
    LDB   [fetch+1]   ; is next opcode an immediate value?
@@ -74,11 +78,11 @@ opIm:
 
 ; safe version of getAddr for long values
 getAddrLong
-   if safe
+   IF safe
    LDB   #%11111100
    ANDB  3,U         ; just clear the 2 lower bits of TOS
    STB   3,U
-   endc
+   ENDC
 
 ; make X points to the address in TOS (stack unmodified)
 getAddr
@@ -93,50 +97,53 @@ getAddr
 updatePage
    ANDB  #$c0        ; just keep the 2 top bits
    CMPD  #page       ; compare wit current page index
-page equ*-2          ; page index (dynamic code)
-   BEQ   updatePage2 ; same => just return
+page equ *-2         ; page index (dynamic code)
+   BEQ   donePage    ; same => just return
    STD   <page       ; different => update page index
    LSLB              ; compute the proper memory bank
    ROLA
    LSLB
-   ROLA
+   ROLA '
 ; map proper bank onto $A000...$DFFF space
 ; A=bank number
-bank
+chgBank
    STA   $e7e6       ; need to check, might use PIA instead
-updatePage2
+donePage
    RTS               ; done
 
 ; restore the page back to the instruction page
 updatePC
-    LDD  #pchigh     ; load instruction page
-pchigh set *-2       ; instruction page (dynamic code)
-    BSR  updatePage  ; update page if needed
+   LDD  #PC_HI       ; load instruction page
+PC_HI SET *-2        ; instruction page (dynamic code)
+   BSR  updatePage   ; update page if needed
 
 ; fetches and execute an instruction
 fetch
    LDB   >$a000      ; load instruction byte
-INCPC
-   INC   <fetch+2    ; update lower byte of the PC
+   PC_LO equ *-2
+
+; increments PC register
+incPC
+   INC   <PC_LO+1    ; update lower byte of the PC
    BNE   decode      ; no overflow => just decode instruction
-   INC   <fetch+1    ; update upper part of the PC
-   LDA   <fetch+l
+   INC   <PC_LO      ; update upper part of the PC
+   LDA   <PC_LO
    CMPA  #$E0        ; crossing $E000 ?
    BNE   decode      ; no => just decode the instruction
    LDA   #$A0        ; yes => next instruction page
-   STA   <fetch+1    ; make PC point to $A000
+   STA   <PC_LO      ; make PC point to $A000
    PSHS  B           ; saves current opcode
-   LDD   <updatePC+1 ; advance instruction page
+   LDD   <PC_HI      ; advance instruction page
    ADDD  #$40        ; by 16kb (a memory bank)
-   STD   <updatePC+1 ; update instruction page
+   STD   <PC_HI      ; update instruction page
    PULS  B
    BSR   updatePage  ; update bank
 
 ; deocdes the current opcode (in B)
-decode:
+decode
    LSLB              ; double the opcode
    BCS   opIm        ; opcode=1xxxxxxx ? yes => immediate value
-   LSLB              ; else make B = xxxxxx00
+   LSLB              ; ELSE make B = xxxxxx00
    BCS   opLDSTsp    ; opcode=01xxxxxx ? yes => LDsp_x or STsp_x
    BMI   opEmulate_x ; opcode=001xxxxx ? yes => emulate_x
    BITB  #%01000000  ; opcode=0001xxxx ? yes => addsp_x
@@ -146,30 +153,27 @@ decode:
    LSLB
    LSLB
    ROLA              ; D=opcode*32
-   JMP   D,pc        ; jump to proper implemetation of opcode
+   JMP   D,PCR       ; jump to proper implemetation of opcode
 
-;    34*4 136*4 272-256=12
-
-emulate_x
-   LDX   #lo1dH-34*32
+opEmulate_x
+   LDX   #loadH-34*32
    LSLB              ; lookup table here to
    LSLB              ; opcode*16
    ABX               ; use ABX because B is unsigned byte
    ABX               ; X=lo1dH-34*32+opcode*32
    JMP   ,X
 
-; start of operation table
-optab set *
+opTabl SET *          ; start of operation table
 
-; macro to align operation correctly wrt "optab"
-opcode macro
-tmp set optab+32*\0
-   ifgt *-tmp
-   error overflow
-   else
-   RMB tmp-*,$12     ; align znf fill with NOPs
-   endif
-   endm
+; MACRO to align operation correctly wrt "opTabl"
+opcode      MACRO
+@tmp  SET  opTabl+32*\0
+   IFGT  *-@tmp
+      ERROR overflow
+   ELSE
+      RMB   @tmp-*,$12   ; align znf fill with NOPs
+   ENDC
+      ENDM
 
    opcode %0000
 breakpt
@@ -180,42 +184,44 @@ op0001
    BRA   op0001      ; unexistant opcode
 
    opcode %0010
-opPushsp:
-   LDD   #0
-   LEAX  ,U
-   PSHU  D,X
+; Pushes stack address
+opPushsp
+   LDD   #0          ; stack address is $0000:9xxx
+   LEAX  ,U          ; this should be mapped to
+   PSHU  D,X         ; bank 0, $Dxxx
    JMP   <fetch
 
    opcode %0011
-op0011:
-   JMP   op0011
+op0011
+   JMP   op0011      ; inexistant opcode
 
    opcode %0100
-opPoppc:
-   LDD   2,U
-   ANDA  #$03
-   ADDA  #$a0
-   STD   <fetch+1
-   LDD   1,U
-   STD   <pcHigh
-   LEAU  4,U
-   JMP   <updatePC+3
+; pop pc
+opPoppc
+   LDD   2,U         ; lower word of PC
+   ANDA  #$03        ; map 16k address to $A000...$DFFF
+   ADDA  #$A0
+   STD   <fetch+1    ; update pc reg
+   LDD   1,U         ; load page field
+   STD   <pcHigh     ; upodate high word of PC
+   LEAU  4,U         ; fixup stack
+   JMP   <updatePC+3 ; update page etc
 
    opcode %0101
-opAdd:
-   LEAU  4,U
-   LDD   2,U
-   ADDD  -2,U
-   STD   2,U
-   LDD   ,U
-   ADCB  -3,U
-   ADCA  -4,U
-   STD   ,U
-   JMP   <fetch
+opAdd
+   LEAU  4,U         ; add TOS with NOS
+   LDD   2,U         ; load lower word of NOS
+   ADDD  -2,U        ; adds lower word of TOS
+   STD   2,U         ; store result to NOS lower part
+   LDD   ,U          ; load NOS top word
+   ADCB  -3,U        ; adds TOS top word
+   ADCA  -4,U        ; with carry
+   STD   ,U          ; store uppdr world result
+   JMP   <fetch      ; next intruction
 
    opcode %0110
-opAnd:
-   LDD   ,U
+opAnd
+   LDD   ,U          ; bitwise "and" of TOS with NOS
    LEAU  4,U
    ANDA  ,U
    ANDB  2,U
@@ -227,8 +233,8 @@ opAnd:
    JMP   <fetch
 
    opcode %0111
-opOr:
-   LDD   ,U
+opOr
+   LDD   ,U          ; bitwise "or" of TOS with NOS
    LEAU  4,U
    ORA   ,U
    ORB   2,U
@@ -240,24 +246,24 @@ opOr:
    JMP   <fetch
 
    opcode %1000
-opLoad:
-   BSR   getAddrLong
-   LDD   ,X
-   STD   ,U
-   LDD   2,X
-   STD   2,U
-   JMP   <updatePC
+opLoad
+   BSR   getAddrLong_safe  ; convert adress
+   LDD   ,X          ; load high word
+   STD   ,U          ; store in TOS
+   LDD   2,X         ; load lower word
+   STD   2,U         ; store in TOS
+   JMP   <updatePC   ; resync PC page and execute next instruction
 
    opcode %1001
-opNot:
-   COM   ,U
+opNot
+   COM   ,U          ; bitwise complement of TOS
    COM   1,U
    COM   2,U
    COM   3,U
    JMP   <fetch
 
 flip2
-   LSLA
+   LSLA              ; helper to flip A and B bits
    RORB
    ROLA
    RORB
@@ -277,8 +283,8 @@ flip2
    RTS
 
    opcode %1010
-opFlip:
-   LDA   ,U
+opFlip
+   LDA   ,U          ; flips the bits of tje TOS
    LDB   3,U
    BSR   flip2
    STA   ,U
@@ -289,27 +295,27 @@ opFlip:
    JMP   <fetch
 
    opcode %1011
-opNop:
-   JMP   <fetch
+opNop
+   JMP   <fetch      ; do nothing
 
    opcode %1100
-opStore:
-   BSR   getAddrLong
+opStore
+   BSR   getAddrLong_safe  ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
    LDD   6,U
    STD   2,X
    LEAU  8,U
-   JMP   <updatePC
+   JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
    opcode %1101
-opPopsp:
-   pulu  D,X
-   LEAU  ,X
+opPopsp
+   pulu  D,X         ; change SP with the value of TOS
+   LEAU  ,X          ; presumably we just keep the lower part of the address
    JMP   <fetch
 
    opcode %1110
-opStore:
+opStore
    BSR   getAddr
    LEAU  8,U
    LDD   -4,U
@@ -319,10 +325,10 @@ opStore:
    JMP   <updatePC
 
   opcode %1111
-op1111:
+op1111
    BRA   op1111
 
-optab EQU *
+opTabl EQU *
 
    opcode 34-34
 opLoadH
