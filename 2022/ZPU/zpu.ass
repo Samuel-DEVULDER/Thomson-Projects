@@ -4,8 +4,6 @@
 FIRST_PAGE  SET 4
 SAFE        SET 0
 
-
-
    SETDP PAGE0
 
 main
