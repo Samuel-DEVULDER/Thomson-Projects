@@ -1,6 +1,6 @@
 (image)[img/menu.gif]
 # What?
-|                Description                           |
+| Entry        |  Description                           |
 |--------------|---------------------------------------|
 |**Title**     | TO8 deMODed?                          |
 |**Category**  | Demo (other 8 bits)                   |
