@@ -3,7 +3,19 @@
 
 safe SET 0
 
-   SETDP */256
+   SETDP PAGE0
+
+main
+   LDD   #PAGE0*256
+   TFR   A,DP
+   CLRB
+   STD   <PC_PG
+   LDY   #$A000
+   JMP   <fetch
+
+PAGE0   SET   */256
+
+   ORG   PAGE0*256
 
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
@@ -1021,4 +1033,4 @@ opTable
    FDB   opCALLPCREL          ; 63 %0011 1111
 
 (info)
-   END
+   END   main
