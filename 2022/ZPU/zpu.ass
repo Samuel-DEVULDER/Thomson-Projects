@@ -6,15 +6,25 @@ SAFE        SET 0
 
    SETDP PAGE0
 
+STACK
+   RMB   64
+
 main
    LEAS  main,PCR
-   LDD   #PAGE0
+
+   LDD   #PAGE0+$1000
    TFR   B,DP
+
+   ORA   >$6081      ; Activate
+   STA   >$6081      ; direct
+   STA   >$e7e7      ; RAM
+
    LDU   #$A000      ; set stack ptr
    STU   <page       ; force page to be out of address space
-   CLRB
-   PSHU  D
-   PSHU  D           ; push address $0000 0000
+
+   LDD   #0
+   LDX   #0
+   PSHU  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
 
 PAGE0   SET   */256
