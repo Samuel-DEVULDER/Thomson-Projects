@@ -1,8 +1,7 @@
 (image)[img/menu.gif]
 # What?
-| Entry        |  Description                           |
-|--------------|---------------------------------------|
 |**Title**     | TO8 deMODed?                          |
+|--------------|---------------------------------------|
 |**Category**  | Demo (other 8 bits)                   |
 |**Rank**      | 1st                                   |
 |**Party**     | Forever-Party 2017 - Horna Suca       |
