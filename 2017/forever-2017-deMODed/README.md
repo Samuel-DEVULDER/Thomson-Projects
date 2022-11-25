@@ -1,7 +1,7 @@
 
 # Overview
 
-| FEATURE      | DESCRIPTION                           |
+|              | DESCRIPTION                           |
 |--------------|---------------------------------------|
 |**Title**     | TO8 deMODed?                          |
 |**Category**  | Demo (other 8 bits)                   |
@@ -13,9 +13,11 @@
 |**Machine(s)**| Thomson TO8, TO8D, TO9+ (6809e @ 1Mhz)|
 |**Format**    | Single standard Thomson disk in various emulator formats (SAP, FD).|
 
-# Screenshot
+# Screenshots
 
-!(Screenshot)[img/menu.gif]
+![Screenshot](img/pulko9.gif)
+![Screenshot](img/puls.gif)
+![Screenshot](img/menu.gif)
 
 # HISTORY
 
