@@ -2,21 +2,16 @@
 # Description-
 
 |------------|---------------------------------------|
-|*Title*     | TO8 deMODed?                          |
-|------------|---------------------------------------|
+|_Title_     | TO8 deMODed?                          |
 |*Category*  | Demo (other 8 bits)                   |
 |*Rank*      | 1st                                   |
 |*Party*     | Forever-Party 2017 - Horna Suca       |
-|------------|---------------------------------------|
 |*Features*  | Over one hour of a technical demonstration of a new sound routine.|
-|------------|---------------------------------------|
 |*Group*     | PULS (http://www.pulsdemos.com)       |
-|*Author(s)* | Samuel Devulder (conception, code),   |
-|            | Prehisto (bootloader + trackloader),  |
-|            | Exocet (menu & puls images)           |
-|------------|---------------------------------------|
+|*Author(s)* | Samuel Devulder (conception, code),
+               Prehisto (bootloader + trackloader),
+               Exocet (menu & puls images)           |
 |*Machine(s)*| Thomson TO8, TO8D, TO9+ (6809e @ 1Mhz)|
-|------------|---------------------------------------|
 |*Format*    | Single standard Thomson disk in various emulator formats (SAP, FD).|
 |------------|---------------------------------------|
 # HISTORY
