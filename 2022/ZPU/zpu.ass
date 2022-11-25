@@ -148,8 +148,6 @@ opADDSP_x
 
 opUNKNOWN
 
-opEMULATE_x
-
 opBREAKPT
    BRA   opBREAKPT   ; do nothing (breakpoint)
 
@@ -852,6 +850,19 @@ opASHIFTRIGHT32
 * CONTROL FLOW (PC RELATED)
 ***************************************
 
+
+opEMULATE_x
+   LSLB              ; B=01xx xxx0
+   LSLB              ; B=1xxx xx00
+   LSLB              ; B=xxxx x000
+   CLRA              ; D=0000 0000 xxxx x000
+   LSLD              ; D=0000 000x xxxx 0000
+   LSLD              ; D=x*32
+   TFR   D,X
+   LDD   #0
+   PSHU  D,X
+   * BRA   opCALL
+
 opCALL
    LDD   1,U
    ANDB  #$C0        ; clear lower bit
@@ -937,26 +948,6 @@ opPUSHPC
    JMP   <fetch
 
 ***************************************
-* MISC
-***************************************
-
-opCONFIG
-   PULU  D,X         ; todo
-   JMP   <fetch
-
-opSYSCALL
-   LDD   10,S        ; syscallID
-   CMPD  #4
-   BEQ   sysREAD
-   CMPD  #5
-   BEQ   sysWRITE
-   JMP   <fetch
-
-sysREAD
-sysWRITE
-   JMP   <opUNKNOWN  ; TODO
-
-***************************************
 * INSTRUCTION TABLE
 ***************************************
 opTable
@@ -1021,9 +1012,9 @@ opTable
    FDB   opEQBRANCH           ; 55 %0011 0111
    FDB   opNEQBRANCH          ; 56 %0011 1000
    FDB   opPOPPCREL           ; 57 %0011 1001
-   FDB   opCONFIG             ; 58 %0011 1010
+   FDB   opEMULATE_x          ; 58 %0011 1010 opCONFIG
    FDB   opPUSHPC             ; 59 %0011 1011
-   FDB   opSYSCALL            ; 60 %0011 1100
+   FDB   opEMULATE_x          ; 60 %0011 1100 opSYSCALL
    FDB   opPUSHSPADD          ; 61 %0011 1101
    FDB   opMULT16X16          ; 62 %0011 1110
    FDB   opCALLPCREL          ; 63 %0011 1111
