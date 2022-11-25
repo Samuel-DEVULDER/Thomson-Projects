@@ -15,8 +15,6 @@ main
 
 PAGE0   SET   */256
 
-   ORG   PAGE0*256
-
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
 opIM_nxt
