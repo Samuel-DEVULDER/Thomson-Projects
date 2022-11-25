@@ -858,7 +858,7 @@ opEMULATE_x
    LSLB              ; B=xxxx x000
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
-   LSLD              ; D=x*32
+   LSLD              ; D=0000 00xx xxx0 0000=x*32
    TFR   D,X
    LDD   #0
    PSHU  D,X
