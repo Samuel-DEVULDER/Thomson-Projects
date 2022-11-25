@@ -1,6 +1,7 @@
 
 # What?
-|              |  (Screenshot)[/assets/img/menu.gif]   |
+
+| KEY          | DESCRIPTION                           |
 |--------------|---------------------------------------|
 |**Title**     | TO8 deMODed?                          |
 |**Category**  | Demo (other 8 bits)                   |
@@ -11,6 +12,10 @@
 |**Author(s)** | Samuel Devulder (conception, code) <br>Prehisto (bootloader + trackloader), <br>Exocet (menu & puls images)|
 |**Machine(s)**| Thomson TO8, TO8D, TO9+ (6809e @ 1Mhz)|
 |**Format**    | Single standard Thomson disk in various emulator formats (SAP, FD).|
+
+# Screenshot
+
+(Screenshot)[/assets/img/menu.gif]
 
 # HISTORY
 
