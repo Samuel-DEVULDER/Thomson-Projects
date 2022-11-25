@@ -1,0 +1,406 @@
+(main)WAIT
+* Displays an image behin the boot curtain
+* and load the menu
+
+KTST    equ     $E809
+
+STEP	equ		1		; 1 is too slow
+ACCMAP 	equ	  	1   	; decomp rapide ?
+BORDER1	equ		6		; blue (14?)
+BORDER2	equ		$FF0	; blue
+VBL		equ		1		; wait for VBL ?
+
+FAST	equ		0
+
+        ORG     $6600
+        
+        setdp   $E7
+
+init    orcc    #$50    ; no interrupts
+
+		ifeq	1
+		lda		#$ff	; restore palette
+		ldx		#palette
+		jsr		$EC00
+		ldb     #BORDER1	; and border
+        stb     <$E7DD
+		endc
+		
+        ldb     #$e7
+        tfr     b,dp
+		
+		ldd    	$00fe  Load reset/termin.
+		sta    	$60ff  Cold reset
+		sta    	$60d1  Reset application
+		stb    	$601a  ! Line
+		stb    	$601c  ! terminators
+		stb    	$601e  ! point to ROM
+		
+        ldb     $6081   ; direct bank access
+        orb     #%01010000
+        stb     <$E7E7
+        stb     $6081
+
+* load files
+		lda		#2		; pulko4.map => bank 15
+		jsr		$6300
+		
+		lda		#1		; pulko3.map => bank 14
+		jsr		$6300
+		
+		ifeq	FAST
+		bsr     rideau
+		endc
+		jsr		pulko2
+
+		ifne	0
+		ifeq	FAST
+		lda		#10
+loop	set		*
+		ldx		#0
+		leax	-1,x
+		bne		*-2
+		deca
+		bne		loop
+		endc
+		endc
+		
+*		lds    	#$60cc  ; System stack
+        lda     #4
+        jmp     $6300	; call menu
+
+rideau  set		*
+* bank0 @ $A000
+        clra
+        sta     <$E7E5
+
+* bank3 @ $0000
+        lda     #$63
+        sta     <$E7E6
+
+* make bank3 = copy of screen
+		lda		#200
+		ldx		#$DF40
+		ldu		#$1F40
+		bsr		cpy
+		ldx		#$BF40
+		ldu		#$3F40
+		bsr		cpy
+
+* display bank 3
+        lda     #$c0+BORDER1
+        sta     <$E7DD
+
+		jsr		pulko
+		
+* bank3 @ $A000, bank2 @ $0000
+        ldd     #$0362
+        std     <$E7E5
+
+        lda     #200
+rideau1 bsr     scroll
+        bsr     swap
+		jsr		KTST
+		bcs		rideau2
+        suba	#STEP
+        bne     rideau1
+
+rideau2 rts
+        
+swap    pshs    d
+        ldd     <$E7E5   ; swap $0000, $A000 banks
+        andb    #$0F
+        ora     #$60
+        stb     <$E7E5
+        sta     <$E7E6
+        lda     #$40    ; display $A000
+        mul
+        orb     #BORDER1
+		ifne	VBL
+        bsr     waitvbl
+		endc
+        stb     <$E7DD
+        puls    d,pc
+
+waitvbl tst     <$E7E7
+        bpl     *-2
+        tst     <$E7E7
+        bmi     *-2
+        rts
+
+* scroll $A000 into $0000
+scroll  pshs    d,y
+        ldb     #40
+        mul
+        tfr     d,y
+        lda     ,s
+        
+		leax	$C000,y
+		leau	-STEP*40,y
+		bsr     cpy
+        
+		leax	$A000,y
+		leau	$2000-STEP*40,y
+        bsr     cpy
+        
+        lda     <$e7c3
+        anda    #254
+        sta     <$e7c3
+        
+        lda     #STEP*2
+        leax    $4000+STEP*40,y
+        leau    $2000+STEP*40,y
+        bsr     cpy
+
+        inc     <$e7c3
+        leax    $4000+STEP*40,y
+        leau    $0000+STEP*40,y
+        bsr     cpy
+                
+        puls    d,y,pc
+
+* copy "a" lines from "x" to "u" (backward)
+cpy     pshs    d,y
+		tsta
+		beq		cpy2
+        sts     cpy2-2
+        leas    -5,x
+cpy1    puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		puls	x,y,b
+		pshu	x,y,b
+		leas	-10,s
+		deca
+        bne     cpy1
+        lds     #0
+cpy2    puls    d,y,pc
+
+***************************************
+* Decompresse le fichier MAP pointe
+* par X.
+***************************************
+DECMAP	pshs	d,y,u
+		ldb		<$E7C3
+		orb		#1
+		stb		<$E7C3
+		ldd		,x++
+		incb
+		pshs 	d
+		ldb    	,x+
+		incb
+		lda    	#8
+		mul
+		tfr    	d,y
+decm1	lda    	1,s
+		ldu		#$4000
+		pshs   	a,y,u
+decm3	ldb    	,x+
+		bne    	decm7
+		ldb    	,x+
+decm4  	set    	*
+		if     	ACCMAP
+		cmpb   	#6
+		bls    	decm41
+		cmpy   	#6
+		bls    	decm41
+		leay   	-6,y    ; deroule
+		subb   	#6      ; l'algo
+		lda    	,x      ; pour
+		sta    	,u      ; traiter 7
+		lda    	1,x     ; lignes
+		sta    	40,u    ; d'un coup
+		lda    	2,x
+		sta    	80,u
+		lda    	3,x
+		leau   	120,u
+		sta    	,u
+		lda    	4,x
+		sta    	40,u
+		lda    	5,x
+		sta    	80,u
+		leax   	6,x
+		leau   	120,u
+decm41 	set    	*
+		endc
+		lda    	,x+
+		sta    	,u
+		leau   	40,u
+		leay   	-1,y
+		beq    	decm6
+decm5  	decb
+		bne    	decm4
+		bra    	decm3
+decm6  	puls   	a,y,u
+		bsr		decm12
+		deca
+		pshs   	a,y,u
+		bne    	decm5
+		bra    	decm10
+decm7  	lda    	,x
+		if     	ACCMAP
+		cmpb   	#6
+		bls    	decm71
+		cmpy   	#6
+		bls    	decm71
+		subb   	#6
+		leay   	-6,y
+		sta    	,u      ; deroule l'algo
+		sta    	40,u    ; pour avoir
+		sta    	80,u    ; 7 lignes d'un
+		leau   	120,u   ; coup
+		sta    	,u
+		sta    	40,u
+		sta    	80,u
+		leau   	120,u
+decm71 	set    	*
+		endc
+		sta    	,u
+		leau   	40,u
+		leay   	-1,y
+		beq    	decm9
+decm8  	decb
+		bne    	decm7
+		leax   	1,x
+		if     	ACCMAP
+		jmp    	decm3
+		else
+		bra		decm3
+		endc
+decm9  	puls   	a,y,u
+		bsr		decm12
+		deca
+		pshs   	a,y,u
+		bne    	decm8
+		leax   	1,x
+decm10 	puls   	a,y,u
+		tst		,s
+		bne		decm11
+		ldb		<$E7C3
+		bitb	#1
+		beq		decm11
+		andb	#$FE
+		stb		<$E7C3
+		leax	2,x
+		if     	ACCMAP
+		jmp    	decm1
+		else
+		bra		decm1
+		endc
+decm11	leas	2,s 
+		puls	d,y,u,pc
+decm12	pshs	b
+		tst		3,s
+		beq		decm13
+		ldb		<$E7C3
+		eorb	#1
+		stb		<$E7C3
+		andb	#1
+		beq		decm14
+decm13	leau	1,u
+decm14	puls	b,pc
+	   
+pulko	lda		#$6e
+		sta		<$E7E6
+		ldx		#$0000
+		jsr		DECMAP
+		ldx		#0
+		jmp		DECMAP
+				
+pulko2	lda		#$6f	; bank 15 in rom space
+		sta		<$E7E6
+		ldx		#$0000
+		jsr		DECMAP	; decompress
+		leax	9,x		; palette
+		ldd		#BORDER2
+		bsr		closest	; matching color
+		lda		#$ff
+		jsr		$EC00	; set palette
+		stb		<$E7DD	; set matching color border
+		rts		
+
+closest	pshs	a,b,x,u
+		leau	32,x
+		ldb		#255
+		pshs	b,x,u
+		
+loop	set		*
+		ldb		5,s		; blue*1
+		andb	#$0F
+		stb		,-s
+		ldb		,x
+		andb	#$0F
+		subb	,s
+		bcc		*+3
+		negb
+		
+		stb		,s
+		
+		ldb		7,s		; green
+		andb	#$F0
+		stb		,-s
+		ldb		1,x
+		andb	#$F0
+		subb	,s+
+		bcc		*+3
+		negb
+		
+		lsrb			; green*2 + blue*1
+		lsrb		
+		lsrb		
+		addb	,s
+		stb		,s
+		
+		ldb		7,s		; red
+		andb	#$0F
+		stb		,-s
+		ldb		1,x
+		andb	#$0F
+		subb	,s+
+		bcc		*+3
+		negb
+		
+		lslb			; red*2 + green*2 + blue*1
+		addb	,s+
+
+		cmpb	,s
+		bhs		*+6
+		leau	,x
+		stb		,s
+		
+		leax	2,x
+		cmpx	3,s
+		bne		loop
+		
+		tfr		u,d
+		subd	1,s
+		lsrb
+		
+		leas	5,s
+		stb		1,s
+		puls	d,x,u,pc
+		
+palette fdb	$000,$00f,$0f0,$0ff
+		fdb	$f00,$f0f,$ff0,$eec
+		fdb	$ee7,$33a,$3a3,$3aa
+		fdb $420,$a3a,$ee7,$07b
+
+        end     init

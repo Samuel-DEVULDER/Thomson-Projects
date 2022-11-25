@@ -1,0 +1,102 @@
+(main)BMPTOMAP
+
+*======================================*
+*=====                            =====*
+*=====                            =====*
+*=====      Display an image      =====*
+*=====                            =====*
+*=====                            =====*
+*======================================*
+
+GFX    equ    $a000
+
+       org    $7000
+       
+debut  equ    *
+       ldb    #$0c      ! Clear
+       jsr    >$e803    ! screen
+* Load image
+       lda    #1        ! Load
+       jsr    >$6300    ! image
+* Standard screen in cartridge space
+       ldb    #$60      ! Switch 
+       stb    >$e7e6    ! cartridge
+
+* Display image
+       ldx    #GFX+2+32 Load image ptr
+       bsr    PutImg    Display image
+* Set palette
+       ldx    #GFX+2    Palette pointer
+       lda    #$ff      >Full palette
+       jsr    $ec00     Set palette
+* Set display mode
+       ldd    >GFX      Load codes
+       sta    >$e7dc    >Hard code
+       stb    >$605f    >Display code
+
+zzz    bra    zzz       Infinite loop
+
+*---------------------------------------
+
+* Unpack a full screen image
+* X = data start pointer
+* No protection/No return
+PutImg equ    *
+       pshs   a,b,x,y,u
+       ldy    #$0000  Screen ptr
+       ldb    #2      Planes number
+puti0  pshs   b,y      !
+* Update end pointers
+       leau   8000,y  Add screen size
+       stu    >puti7  End of screen
+       leau   ,x      Color table ptr
+       leax   6,x     Skip color table
+* Start display
+       ldb    #40     Column count
+puti1  pshs   b,y      !
+* Select code
+puti2  ldb    ,x+     Read code
+       bitb   #$07    ! Skip if
+       beq    puti5   ! inequality
+       bitb   #$06     ! Skip if
+       bne    puti3    ! code
+       lda    ,x+     Read color
+       bra    puti4   Display color
+* Display special colors
+puti3  andb   #$07    Mask code
+       subb   #$02    Adjust offset
+       lda    b,u     Read code
+       ldb    -1,x    Re-read counter
+* Display equalities
+puti4  sta    ,y      Write color
+       leay   40,y    ! Next
+       subb   #$08    ! line
+       bcc    puti4   Next line
+       bra    puti6   Next sequence
+* Display inequalities
+puti5  lda    ,x+     Read color
+       sta    ,y      Write color
+       leay   40,y    ! Next
+       subb   #$08    ! line
+       bcc    puti5   Next line
+* Next sequence
+puti6  cmpy   #$0000  ! Loop if not
+puti7  equ    *-2     ! end of screen
+       blo    puti2   !
+       puls   b,y      !
+       leay   1,y     Next column
+       decb            ! Loop if not
+       bne    puti1    ! last column
+       lda    1,s     !
+       eora   #$20    ! Switch pointer
+       sta    1,s     !
+       puls   b,y      !
+       decb           ! Next
+       bne    puti0   ! plane
+       puls   a,b,x,y,u,pc
+(info)
+
+*---------------------------------------
+
+       end    debut
+

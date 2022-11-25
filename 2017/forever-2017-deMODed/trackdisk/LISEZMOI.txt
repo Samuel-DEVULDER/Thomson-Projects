@@ -1,0 +1,184 @@
+
+                        TO Trackdisk Kit
+                       (c) 2017 Prehisto
+
+Ceci est un programme de trackdisk pour les TO8, TO8D et TO9+ par les routines
+Moniteur. Il permet un chargement rapide de fichiers binaire linéaires en
+mémoire à partir d'une disquette formatée en entrelacement 7 (DSKINI sans
+argument dans le BASIC). Il tient compte du temps d'exécution entre les
+secteurs et du temps de déplacement des têtes. Il enregistre et lit les fichiers
+sur la disquette à l'octet près.
+
+================================================================================
+
+                          Le programme "splitm0d"
+
+
+I. DESCRIPTION
+
+Ce programme va extraire du fichier binaire M0D les hunks binaires d'un seul
+tenant et créer plusieurs fichiers de sortie. Il doit être exécuté avant
+"createdisk".
+
+II. USAGE
+
+Le programme exige un argument :
+    - le chemin du fichier M0D à décomposer. Le programme créera des fichiers
+      dans le même répertoire avec la même extension que le fichier d'entrée
+      en ajoutant l'adresse de chargement au nom de fichier.
+
+================================================================================
+
+                          Le programme "createdisk"
+
+
+I. DESCRIPTION
+
+Ce programme créé une disquette virtuelle double densité de 80 pistes
+utilisable sur un émulateur. Cette disquette peut être au format SAP ou FD
+selon l'extension du fichier utilisé pour l'argument de sortie (".sap" ou
+".fd").
+
+II. LE FICHIER LISTE
+
+Un fichier liste au format '.txt' doit être créé. Une ligne commençant par un
+chiffre décimal est un élément de la liste, sinon c'est un commentaire (la
+ligne sera ignorée).
+Un élément de la liste commence par le numéro de banque (pour implantation en
+RAM) suivi du chemin vers le fichier séparé par au moins un espace.
+Si l'adresse d'implantation est inférieure à $4000, le loader commutera
+avant le chargement la RAM mappée en espace cartouche ($0000-$3FFF), sinon
+la RAM ($A000-$DFFF).
+
+Exemple :
+
+#======================================#
+#                                      #
+#  Music loading list                  #
+#                                      #
+#======================================#
+
+# Loader -------------------------------
+02 bin/loader.BIN
+# Music data ---------------------------
+14 m0d/xenon2_7900.M0D
+15 m0d/xenon2_0000.M0D
+# Player program -------------------------
+14 bin/player.BIN
+# End of list --------------------------
+
+III. USAGE
+
+Le programme exige deux arguments :
+    - le chemin du fichier liste
+    - le chemin du fichier de sortie avec l'extension '.fd' ou '.sap'. Pour les
+      fichiers '.sap', le programme créera deux disquettes SAP numérotées.
+
+
+================================================================================
+
+                          Le programme "loader.ASS"
+
+I. DESCRIPTION
+
+Ce programme comporte le programme de boot et le loader. Le boot est implanté
+entre $6200 et $62ff. Le loader (taille variable à cause de la liste des
+paramètres de fichiers) est implanté à partir de $6300 et utilise la zone
+$6200-$62FF comme buffer de secteur pour le chargement.
+
+II. POINTS D'ENTREE
+
+Points d'entrée (appelés par un JSR):
+
+    $6300   jmp    >load
+        Entrée : A = numéro de fichier (donné par output de "createdisk")
+        Retourn : DP = inchangé
+
+        Le fichier est chargé. Si le fichier binaire d'origine comporte une
+        adresse d'exécution, le programme est alors exécuté, sinon le loader
+        redonne la main par un RTS. Le premier programme de la liste après
+        "loader.BIN" doit toujours avoir une adresse d'exécution. Les
+        programmes comportant une adresse d'exécution seront appelés par un
+        JMP (pas de retour possible).
+        
+                 Exemple :
+                      ...
+                      LDA    #1      Fichier numéro 1 de la liste
+                      JSR    >$6300  Charge le fichier
+                      ...
+
+    $6303   jmp    >number   
+        Entrée : A = numéro de fichier (donné par output de "createdisk")
+        Retour : B = nombre de secteurs du fichier
+                 DP = inchangé
+
+                 Exemple :
+                      ...
+                      LDA    #1      Fichier numéro 1 de la liste
+                      JSR    >$6303  Récupère le nombre de secteurs du fichier
+                      ...
+
+III. VECTEURS
+
+Vecteurs à initialiser éventuellement :
+
+    $6307-$6308   
+        Ce vecteur est utilisé par le loader pour la gestions des erreurs
+        disque. Le code des erreurs disque est contenu dans $604E. Par défaut,
+        ce vecteur pointe sur un reset de la machine.
+        Retour par RTS dans le cas d'une routine personnelle.
+
+    $630A-$630B   
+        Vecteur sur traitement à chaque chargement d'un secteur.
+        Programme court et rapide exigé. Par défaut, ce vecteur pointe sur un
+        RTS.
+        Retour par RTS dans le cas d'une routine personnelle.
+
+
+================================================================================
+
+                          Le programme "pngtomap"
+
+
+I. DESCRIPTION
+
+Ce programme charge des images PNG et les sauve en images plein écran affichables
+par le programme "pngtomap.ASS". Le fichier de sortie est un fichier binare
+Thomson.
+
+II. USAGE
+
+Le programme exige deux arguments (et éventuellement trois) :
+    - le chemin du fichier PNG à lire
+    - le chemin du fichier binaire à sauver
+    - Le chemin du fichier LOG pour le traçage
+
+Les options du programme sont :
+    --bitmap16  : force la conversion en bitmap16 (par défaut)
+    --40columns : force la conversion en 40 colonnes
+    --gamma x.x : définit la gamma correction (1 par défaut)
+
+
+================================================================================
+
+                          Le programme "pngtomap.ASS"
+
+
+I. DESCRIPTION
+
+Ce programme affiche les images créées par le programme "pngtomap".
+
+II. STRUCTURE D'UN FICHIER DE SORTIE
+
+- Offset 0 : Hard code pour le registre d'affichage $E7DC
+- Offset 1 : Code pour le registre d'affichage $605F
+- Offsets 2-33 : Palette
+- Offset 34 et suivants : données de l'image
+
+III. USAGE
+
+L'image est chargée en mémoire haute ($6000-$DFFF) puis décompressée
+en mémoire basse ($0000-$3FFF). Les paramètres d'affichage
+
+Exemple : voir ass/pngtomap.ASS
+

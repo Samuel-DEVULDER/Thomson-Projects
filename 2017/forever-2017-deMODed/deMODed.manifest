@@ -1,0 +1,129 @@
+#######################################
+# Music Disk for TO8/TO9+             #
+#                                     #
+# Forver-Party 2017 - Horna-Suca      #
+#                                     #
+# Samuel DEVULDER - PULS              #
+# http://www.pulsdemos.com            #
+#                                     #
+# March 2017                          #
+#######################################
+
+# Loader ------------------------------
+02 bin/loader.bin
+
+# Wait screen -------------------------
+02 bin/wait.bin
+14 img/pulko3.map
+15 img/pulko9.map
+
+# Player program (3) ------------------
+02 bin/player.bin
+
+# Menu (4,5) --------------------------
+15 bin/menu.bin
+14 img/menu.map
+09 img/puls.map
+10 img/auteurs.map
+
+# Music data --------------------------
+
+http://janeway.exotica.org.uk/release.php?id=8625
+# _ Hallucinations
+# by Mad Max/Katharsis
+11 img/8746a.map
+12 m0d/hallucinations.m0d
+
+https://demozoo.org/music/5947/
+# _ Banana split
+# by Dizzy/CNCD
+11 img/banana_split.map
+12 m0d/banana_split_6B00.m0d
+13 m0d/banana_split_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=47573
+# _ Crack the eggshell!
+# by Jester/Sanity
+11 img/crack_the_eggshell.map
+12 m0d/crack_the_eggshell!_6B00.m0d
+
+http://janeway.exotica.org.uk/release.php?id=747
+# _ Lightchamber
+# by Deelite/Eurochart 28
+11 img/699a.map
+12 m0d/lightchamber_6B00.m0d
+13 m0d/lightchamber_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=32233
+# _ Cream of the earth
+# by Romeo Knight/R.S.I.
+11 img/cebig90_1.map
+12 m0d/cream_of_the_earth_6B00.m0d
+
+https://www.youtube.com/watch?v=nXrwgy-uFg8
+# _ Adrenaline
+# by Blazer/Digital Illusions
+11 img/Pinball_Fantasies_4.map
+12 m0d/adrenaline_6B00.m0d
+
+http://janeway.exotica.org.uk/release.php?id=504
+# _ Hardwired2
+# by Jesper Kyd/Silent
+11 img/hardwired0.map
+12 m0d/hardwired2_6B00.m0d
+
+# _ Global trash 3 v2
+# by Jesper Kyd/Silent
+11 img/hardwired2.map
+12 m0d/global_trash_3_v2_6B00.m0d
+13 m0d/global_trash_3_v2_0000.m0d
+
+https://www.scenemusic.net/demovibes/song/7169/
+# _ Condom Corruption
+# by Travolta/Spaceballs
+11 img/sota.map
+12 m0d/corruption_6B00.m0d
+13 m0d/corruption_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=1060
+# _ Testlast
+# by Travolta/Spaceballs
+11 img/9-fingers.map
+12 m0d/testlast_6B00.m0d
+13 m0d/testlast_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=279
+# _ Livin' insanity
+# by Moby/Sanity
+11 img/amiga_artet.map
+12 m0d/livinins_6B00.m0d
+13 m0d/livinins_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=279
+# _ Elekfunk!
+# by Moby/Sanity
+11 img/arte.map
+12 m0d/elekfunk_!_6B00.m0d
+13 m0d/elekfunk_!_0000.m0d
+
+https://www.scenemusic.net/demovibes/song/8478/
+# _ Klisje paa klisje
+# Walkman/Cryptoburners
+11 img/8421.103571.map
+12 m0d/klisje_paa_klisje_6B00.m0d
+13 m0d/klisje_paa_klisje_0000.m0d
+
+http://janeway.exotica.org.uk/release.php?id=49664
+# _ A way to freedom 
+# by LizardKing/Razor 1911
+11 img/10473a.map
+12 m0d/a_way_to_freedom_6B00.m0d
+13 m0d/a_way_to_freedom_0000.m0d
+
+https://demozoo.org/music/141810/
+# _ Blur
+# by Oxide/Sonik Clique
+11 img/blur.map
+12 m0d/blur_6B00.m0d
+# End of list -------------------------
+

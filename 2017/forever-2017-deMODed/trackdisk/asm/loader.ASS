@@ -1,0 +1,268 @@
+(main)LOADER
+
+*======================================*
+*=====                            =====*
+*=====                            =====*
+*=====          Loader TO         =====*
+*=====                            =====*
+*=====                            =====*
+*======================================*
+
+STRUCT macro
+cstruc set    0
+       endm
+
+BYTE   macro
+\0     equ    cstruc
+cstruc set    cstruc+1
+       endm
+
+POINTR macro
+\0     equ    cstruc
+cstruc set    cstruc+2
+       endm
+
+SIZEOF macro
+\0     equ    cstruc
+       endm
+
+* Gfx structure       
+       STRUCT ENTRY
+       BYTE   E_BANK
+       BYTE   E_NSEC
+       BYTE   E_TRACK
+       BYTE   E_SECT
+       POINTR E_ADDR
+       BYTE   E_SIZEA
+       BYTE   E_OFFSA
+       BYTE   E_SIZEZ
+       POINTR E_EXEC
+       SIZEOF E_SIZEOF
+
+*---------------------------------------
+* Disk boot
+
+       org    $6200
+       setdp  $60
+
+* Check computer type
+       ldx    #mess1  Error message
+       ldd    #$0260  Load code
+       cmpa   >$fff0  Check machine code
+       bhs    err     Error if not TO+
+* Switch to Basic 1.0 if necessary
+       cmpb   >$001a  ! Skip if
+       beq    boot1   ! BASIC1.0
+       ldu    #boot0   ! Switch to
+       jmp    >$ec03   ! BASIC 1.0
+boot0  jmp    >[$001e] Reset cartridge
+* Prepare to load
+* Initialize system
+boot1  lds    #$60cc  System stack
+       orcc   #$50    Freeze interrupts
+* Load loader sectors
+       ldd    #$6300  ! Loading
+       std    <$604f  ! address
+       stb    <$60ff  Cold reset
+       lda    #$02    >read code
+       std    <$6048  Read/Head 0
+       ldu    #blist  Interleave list
+       ldx    #mess3  Error message
+boot2  lda    b,u     ! Get sector
+       sta    <$604c  ! number
+       jsr    >$e004  Load sector
+       bcc    boot3   Skip if no error
+       jsr    >$e004  Reload sector
+       bcs    err     Skip if error
+boot3  inc    <$604f  Move sector ptr
+       incb           Sector+1
+       dec    >secnbr ! Next
+       bne    boot2   ! sector
+       clra            ! Load first
+       jmp    >load    ! program
+
+* Display error message
+err    leau   <mess0,pcr Location
+       bsr    err2    Display location
+       leau   ,x      Message pointer
+       bsr    err2    Display message
+err0   bra    err0    Infinite loop
+* Display message
+err1   bsr    err3    Display char
+err2   ldb    ,u+     Read char
+       bpl    err1    Next if not last
+       andb   #$7f    Mask char
+err3   tfr    dp,a    Read DP
+       asla           Check if MO or TO
+       lbmi   $e803   Display for TO
+       goto   $02     Display for MO
+
+* Interleave table
+blist  equ    *
+       fcb    $0f,$0d,$0b
+       fcb    $09,$07,$05,$03
+       fcb    $08,$06,$04,$02
+       fcb    $10,$0e,$0c,$0a
+
+       echo  Reste boot0= &$6280-* (>=8)
+
+       rmb    $6280-*,$00
+
+secnbr fcb    $00     Sector number
+
+* Location message
+mess0  fcb    $1f,$21,$21
+       fcb    $1f,$11,$13
+       fcb    $1b,$43
+       fcb    $1b,$54
+       fcb    $0c
+       fcb    $1f,$4c,$4b+$80
+* Error messages
+mess1  fcn    "Only for TO8/8D/9+"
+mess3  fcn    "     I/O|Error"
+       echo  Remain1= &$6300-* (>=0)
+
+       rmb    $6300-*,$00
+
+*---------------------------------------
+* Loader reset (org $6300)
+
+ptsec  equ    $6200
+
+* A = File number
+       jmp    >load   Load file
+* A = File number
+       jmp    >number Get sector count
+* $604e = disk error
+error  jmp    >dskerr Error
+pulse  jmp    >return Load pulse
+
+nsect  fcb    $00     Sector counter
+track  fcb    $00     Track number
+sector fcb    $00     Sector number
+
+*---------------------------------------
+* Get sector count
+*---------------------------------------
+number ldy    #list   List pointer
+       bra    numb2   Enter program
+numb0  ldb    E_BANK,y Read bank number
+       bpl    numb1   Skip if no exec
+       leay   2,y     Skip exec
+numb1  leay   E_SIZEOF-2,y Next entry
+numb2  deca           ! Next
+       bpl    numb0   ! entry
+       ldb    E_NSEC,y Read sector count
+       rts
+       
+*---------------------------------------
+* Load file
+*---------------------------------------
+load   pshs   dp
+       bsr    number  Point to file
+       stb    >nsect  Set sector count
+       ldd    #$1060  Direst RAM code/DP
+       tfr    b,dp    Set DP
+       ora    <$6081  ! Activate
+       sta    <$6081  ! direct
+       sta    >$e7e7  ! RAM
+* Switch bank
+       ldb    E_BANK,y Read bank number
+       ldu    E_ADDR,y Start address
+       cmpu   #$4000   ! Skip if
+       blo    ld0      ! ROM space
+       stb    >$e7e5   Switch RAM bank
+       bra    ld1      Load file
+ld0    orb    #$60     >Write
+       stb    >$e7e6   Switch ROM bank
+* Prepare loading
+ld1    ldd    E_TRACK,y ! Set track and
+       std    >track    ! sector number
+* First sector
+       ldb    E_SIZEA,y ! Skip if
+       beq    ld3       ! full sect
+       ldx    #ptsec  ! Init sector
+       stx    <$604f  ! pointer
+       bsr    ldsec   Load sector
+       ldd    E_SIZEA,y Read offs
+       abx            Adjust data ptr
+       bsr    tfrxua  Copy data
+* Intermediate sectors
+ld3    stu    <$604f  Init ptr secteur
+ld4    ldb    >nsect  ! Exit if
+       beq    ld7     ! no sector
+       cmpb   #1        !
+       bhi    ld5       ! Exit if 
+       lda    E_SIZEZ,y ! last sector
+       bne    ld6       !
+ld5    bsr    ldsec   Load sector
+       inc    <$604f  Move sector ptr
+       bra    ld4     Next sector
+* Last sector
+ld6    ldb    >nsect  ! Skip if
+       beq    ld7     ! no sector
+       ldu    <$604f  Data pointer
+       ldx    #ptsec  ! Init sector
+       stx    <$604f  ! pointer
+       bsr    ldsec   Load sector
+       lda    E_SIZEZ,y ! Copy
+       bsr    tfrxua    ! data
+* Next entry
+ld7    puls   dp
+       ldb    E_BANK,y ! Next if
+       bpl    ld8      ! no exec
+       jmp    [E_EXEC,y] Exec
+ld8    rts
+
+* Copy memory area
+tfrxua equ    *
+       ldb    ,x+      Read data
+       stb    ,u+      Write data
+       deca            ! Until las
+       bne    tfrxua   ! data reached
+return equ    *
+       rts
+
+* Load a sector
+ldsec  equ    *
+       pshs   x,y,u
+       lda    >track  !
+       lsr    <$6049  ! Initialize
+       lsra           ! head
+       rol    <$6049  !
+       ldb    >track   !
+       andb   #$06     ! Compute
+       addb   >sector  ! sector offset
+       andb   #$0f     !
+       ldx    #sclist Interleave table
+       ldb    b,x     Read sector number
+       clr    <$604a  ! Init
+       std    <$604b  ! track/sector
+       jsr    >$e004  Load sector
+       bcc    ldsec1  Skip if ok
+       jsr    >$e004  Reload sector
+       lbcs   error   >I/O Error
+* Next sector
+ldsec1 ldd    >track  Read track/sect
+       addd   #$f1    Add offset
+       andb   #$0f    Sector bits
+       std    >track  Save track/sectr
+       dec    >nsect  Counter-1
+* Update load bar
+       jsr    >pulse  Send sector pulse
+       puls   x,y,u,pc
+
+* Default exit if disk error
+dskerr jmp    [$fffe]
+
+* Interleave 7
+sclist equ    *
+       fcb    $01,$0f,$0d,$0b
+       fcb    $09,$07,$05,$03
+       fcb    $08,$06,$04,$02
+       fcb    $10,$0e,$0c,$0a
+
+* Entry list
+list   equ    *
+
+       end

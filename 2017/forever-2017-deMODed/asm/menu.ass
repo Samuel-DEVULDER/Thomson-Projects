@@ -1,0 +1,1358 @@
+(main)MENU
+* choses the music to play
+
+        ORG     $A000
+
+KTST    equ     $E809
+GETC    equ     $E806
+PUTC    equ     $E803
+PLAYER	equ		$6600
+LOADER	equ		$6300
+
+SAFELD  equ     $5F40
+SONG    equ     $B000
+
+LOOPCNT equ     5       ; number of patterns before auto next (5=~1min)
+
+ACCMAP  equ     1       ; fast MAP decrunch
+ZIK     equ     1       ; 1 or 2
+
+ini     lds     #$e000  ; use our own stack
+state   set     *-2
+
+        andcc   #$ff-$50 ; enable interrupts to get correct keypress
+
+        setdp   $e7
+        lda     #$e7
+        tfr     a,dp
+
+        lda     $6081   ; direct bank access
+        ora     #%01010000
+        sta     <$E7E7
+        sta     $6081
+
+        jsr     safeini
+
+        cmps    #$e000      ; firt time ?
+        bne     showMenu    ; no => skip load
+
+* first-time loading
+        lda     #3			; player
+        jsr     SAFELD
+		lda     #7			; auteurs.map
+        jsr     SAFELD
+		lda		#6			; puls.map
+		jsr		SAFELD
+		lda		#9
+		ldx		#$0000
+		jsr		display
+        lda     #5			; menu.map
+        jsr     SAFELD
+        
+* init menu song
+        ldu     #SONG
+        leax    -8,u
+        stu     begsong
+        pulu    d       ; 'M0'
+        pulu    d       ; 'D',0
+        pulu    d       ; playback
+        pulu    d       ; retrieve intrument decription
+        leax    d,x
+        stu     start
+        stx     p_instr
+        lda     #c_play<-8
+        tfr     a,dp
+        clra
+        clrb
+        pshs    d       ; 0=sentinel
+        pshs    d,x,y,u,dp
+        lda     #$E7
+        tfr     a,dp
+
+* init CNA
+        lda     <$E7CF
+        anda    #$FA
+        sta     <$E7CF
+        lda     #$3F
+        sta     <$E7CD
+        lda     <$E7CF
+        ora     #4
+        sta     <$E7CF
+        lda     <$E7C1
+        anda    #$f7
+        sta     <$E7C1
+
+* init screen data
+		
+		clrb
+showMenu
+		tstb
+		bne		showM1
+		ldx		lastPlayed
+		ldb		-1,x
+		cmpb	#'7
+		beq		specialCase
+		
+showM1	ldx		#printMenu
+        lda     #14
+        jsr     display ; display image @ bank 14
+		cmpb	#13
+		beq		continueNext
+continue
+        puls    d,x,y,u,dp
+        jmp     nextins ; let the music play!
+		
+continueNext
+		puls    d,x,y,u,dp
+		jmp		playNext
+
+specialCase
+		ldx		lastPlayed
+		jsr		skipEntry
+		tst		,x+
+		beq		continue
+		stx		lastPlayed
+		jsr		skipToNul
+		jsr		skipToNul
+		lda		#1
+		jmp		loadFiles
+		
+safeini lda     <$E7C3
+        ora     #1
+        sta     <$E7C3
+        ldx     #safeload
+        ldu     #SAFELD
+safep1  lda     ,x+
+        dec     <$E7C3
+        sta     ,u
+        inc     <$E7C3
+        sta     ,u+
+        cmpx    #safeend
+        bne     safep1
+        rts
+
+safeload
+        pshs    d,x,y,u,cc,dp
+*       sts     <saferet-1,pcr  ; /!\c6809 bug!
+        sts     <saferet,pcr
+        lds     #$60CC  ; system stack
+        setdp   $00
+        ldx     >$E7E5
+        pshs    x
+        jsr     LOADER
+        puls    x
+        stx     >$E7E5
+        setdp   $E7
+        lds     #0
+saferet set     *-2
+        puls    d,x,y,u,cc,dp,pc
+safeplay
+		lds		#$60CC	; system stack
+        ldd     #$0C6D  ; bank12 @ $A000
+        std     <$E7E5  ; bank13 @ $0000
+        jmp     PLAYER  ; jump to player
+safeend
+
+prepInf	pshs	d,x,u,dp
+		ldb		#$E7
+		tfr		b,dp
+		
+		ldb		<$E7C3
+		lda		<$E7E6
+		pshs	d
+		
+		orb		#1
+		stb		<$E7C3
+		ldb		#$6A
+		stb		<$E7E6
+		
+		ldx     #$0000
+        jsr     DECMAP		; decompress info texts
+		
+		ldx		#$0000
+		ldu		#$4000		; copy decompressed img
+prep1	pulu	d			; back to bank 10
+		std		,x++
+		cmpx	#$1F40
+		bne		prep1
+		
+		dec		<$E7C3
+		ldx		#$2000
+		ldu		#$4000
+prep2	pulu	d
+		std		,x++
+		cmpx	#$3F40
+		bne		prep2
+		
+		puls	d
+		stb		<$E7C3
+		sta		<$E7E6
+		puls	d,x,u,dp,pc
+		
+ligne7	bsr		ligne1
+ligne6	bsr		ligne3
+ligne3	bsr		ligne1
+ligne2	bsr		ligne1
+ligne1	ldd		#18*256+%11001000
+		stb		a,u
+		deca	
+		bne		*-3
+ligne4	ldd		#%1111100011011111
+		std		,u
+		sta		2,u
+		leau	40,u
+		rts
+		
+COLOR	macro
+COL1	set		(\0<-4)^8
+COL2	set		(\0&15)^8
+COL1	set		(COL1*8)
+COL2	set		(COL2*17)&$87
+COL		set		COL1+COL2
+COL1	set		(\1<-4)^8
+COL2	set		(\1&15)^8
+COL1	set		(COL1*8)
+COL2	set		(COL2*17)&$87
+COL		set		COL*256+COL1+COL2
+		endm
+
+delite	pshs	d,x,u,dp
+		COLOR	$88,$20
+		ldb		#COL
+		COLOR	$30,$73
+		ldx		#COL
+		COLOR	$00,$00
+		ldu		#COL
+		bra		hilite1
+		
+hilite	pshs	d,x,u,dp
+*		COLOR	$88,$10
+		COLOR	$88,$37
+		ldb		#COL
+*		COLOR	$70,$37
+		COLOR	$37,$73
+		ldx		#COL
+*		COLOR	$00,$00
+		COLOR	$77,$77
+		ldu		#COL
+
+* couleur=forme*16+fond
+* B=couleur titre
+* X=couleur chiffre
+* U=couleur dessous chiffre
+hilite1	pshs	b,x,u
+		ldb		#$E7
+		tfr		b,dp
+		
+		ldx		5+2+1,s
+		ldu		5+4+1,s
+		
+		ldb		<$E7C3
+		lda		<$E7E6
+		pshs	d
+		andb	#254
+		stb		<$E7C3
+
+		ldb		#$6A
+		stb		<$E7E6		; info img @ $0000
+		
+		ldx		#$4000
+		COLOR	$88,$10
+		LDB		#COL
+
+		ldb		2,s
+		stb		ligne1+2
+		ldd		3,s
+		std		ligne4+1
+		bsr		ligne7
+		ldd		5,s
+		std		ligne4+1
+		bsr		ligne1
+
+		leau	-$4000-8*40,u
+		ldx		#$4000+165*40
+		bsr		cpy8
+		inc		<$E7C3
+		leau	$2000,u
+		bsr		cpy8
+		
+		puls	d
+		stb		<$E7C3
+		sta		<$E7E6
+
+		puls	b,x,u
+		
+zzz	
+		puls	d,x,u,dp,pc
+
+cpy8	lda		#8
+		pshs	a,x,u
+cpy8b	lda		#20
+cpy8a	ldb		a,u
+		stb		a,x
+		deca
+		bne		cpy8a
+		leax	40,x
+		leau	40,u
+		dec		,s
+		bne		cpy8b
+		puls	a,x,u,pc
+		
+printMenu	
+		pshs	d,x,y,u
+
+		ldu		#$4000+34*40
+		ldx		#liste+1
+printMenu1
+		cmpx	lastPlayed
+		bne		printMenu2
+		jsr		hilite
+		bra		printMenu3
+printMenu2
+		leau	40*8,u
+		bsr		skipEntry
+		tst		,x+
+		bne		printMenu1
+
+printMenu3		
+		puls	d,x,y,u,pc
+
+		
+keypress
+		setdp	tmp<-8
+		stb		<tmp
+		jsr     GETC 
+		bne		keypress
+		ldb		<tmp
+		setdp	$e7
+		
+        cmpb    #13
+        beq     playNext
+
+        cmpb    #'=
+        beq     playSame
+
+search  pshs    d,x,y,u,dp
+		ldx     #liste
+find    cmpb    ,x+
+        beq     found
+        tst     -1,x
+        lbeq    continue
+        bsr     skipEntry
+        bra     find
+
+skipEntry
+		bsr		skipToNul
+		bsr		skipToNul
+skipToNul
+        tst     ,x+
+        bne     *-2
+        rts
+
+playSame
+		pshs    d,x,y,u,dp
+        ldx     lastPlayed
+		bne		found
+		bra		playBeg
+
+playNext
+		pshs    d,x,y,u,dp
+        ldx     lastPlayed
+		beq		playBeg
+        bsr     skipEntry
+		tst     ,x+
+        bne     found
+playBeg ldx     #liste+1
+		bra     found
+		
+found   clra				; flag same file
+
+		pshs	x,u			; delight prev sel
+		ldu		#$4000+34*40
+		ldx		#liste+1
+found1	cmpx	lastPlayed
+		bne		found2
+		jsr		delite
+		bra		found3
+found2	leau	40*8,u
+		bsr		skipEntry
+		tst		,x+
+		bne		found1
+found3	puls	x,u
+
+        cmpx    #0
+lastPlayed set *-2
+        beq     printTitle
+        stx     lastPlayed
+		inca				; flag=1
+printTitle
+		ldu		#$4000+34*40
+		ldx		#liste+1
+
+found4	cmpx	lastPlayed
+		bne		found5
+		jsr		hilite
+		bsr		skipToNul
+		bsr		skipToNul
+		bra		loadFiles
+found5	leau	40*8,u
+		bsr		skipEntry
+		tst		,x+
+		bne		found4
+		
+loadFiles 
+        tsta				; same file?
+		beq		showImg		; yes => skip
+loadFi1	lda     ,x+
+        beq     showImg
+        jsr     SAFELD
+        bra     loadFi1
+
+showImg ldb     #$E7 
+        tfr     b,dp
+		ldx		#0		; no callback
+        lda     #11     ; image @ bank11
+        bsr     display
+		
+		lda		#LOOPCNT
+		sta		loopcnt
+		sts     state
+		jmp     safeplay-safeload+SAFELD
+
+display pshs    d,x,y,u
+        ldb     <$E7E6  ; bakup
+        pshs    b
+
+        jsr     fade2bk
+		
+
+		ldb		#1
+disp1	set		*-1
+		beq		disp2
+		dec		disp1
+		bne		disp2
+		jsr		prepInf	; yes=>prepare info menu
+
+disp2	ora     #$60
+        sta     <$E7E6  ; bank 'a' to cartridge space
+        ldx     #$0000
+        jsr     DECMAP
+        leau    ,x
+		
+		ldx     ,u
+        cmpx    #$A55A
+        beq     tosnap
+        ldu     #tabmod ; fake snap extension
+tosnap  lda     -38+1,u
+        sta     $605F
+        ldy     #tabmod
+        lda     -38+5,u
+        lda     a,y     ; mode
+        ldb     -38+3,u ; tour + ecran0 visible
+        std     <$E7DC  ; chg tour + mode + make visible
+
+		ldx		3,s
+		beq		noCB
+		jsr		,x
+
+noCB    leax    -38+6,u ; img palette
+        jsr     fade
+
+        puls    b
+        stb     <$E7E6  ; restore cartridge space
+        puls    d,x,y,u,pc
+        fdb     0,0,0
+        fdb     0,15,240,255
+        fdb     3840,3855,4080,4095
+        fdb     1911,826,931,938
+        fdb     2611,2618,3815,123
+tabmod  fcb     0,42,33,123
+initxt1 fcb     $14     ; cursor off
+        fcb     $1b,$6b ; no scroll
+        fcb     $1b,$69 ; RAMA/B only
+        fcb     $1b,$40 ; forme=noir
+        fcb     $1b,$57 ; fond=blanc
+        fcb     $1f,$40+1,$40+1 ; locate 1,1
+		fcb		0
+initxt2 fcb     $1f,$40+22,$40+1 ; locate 1,22
+        fcb     $1b,$69 ; RAMA/B only
+        fcb     $1b,$40 ; forme=noir
+        fcb     $1b,$57 ; fond=blanc
+        fcc     / >/
+*       fcb     $1b,$68 ; RAMA only
+        fcb     0
+
+CHAR	macro
+		fcb		\0*16+\1
+		endm
+		
+		ifne	0
+		
+____	equ		0
+___X	equ		1
+__X_	equ		2
+__XX	equ		3
+_X__	equ		4
+_X_X	equ		5
+_XX_	equ		6
+_XXX	equ		7
+X___	equ		8
+X__X	equ		9
+X_X_	equ		10
+X_XX	equ		11
+XX__	equ		12
+XX_X	equ		13
+XXX_	equ		14
+XXXX	equ		15
+
+		CHAR	____,____
+		CHAR	____,XXXX
+		CHAR	XXXX,____
+		CHAR	XXXX,XXXX
+TCHAR	set		*
+		CHAR	____,_X__
+		CHAR	____,_X__
+		CHAR	____,_X__
+		CHAR	____,____
+		CHAR	____,_X__
+		CHAR	____,____
+
+		CHAR	X_X_,X_X_
+		CHAR	X_X_,XXXX
+		CHAR	____,X_X_
+		CHAR	____,XXXX
+		CHAR	____,X_X_
+		CHAR	____,____
+
+		CHAR	_X__,X_X_
+		CHAR	XXX_,__X_
+		CHAR	XX__,_X__
+		CHAR	_XX_,X___
+		CHAR	XXX_,X_X_
+		CHAR	_X__,____
+
+		CHAR	_X__,__X_
+		CHAR	XX_X,_X__
+		CHAR	_XX_,____
+		CHAR	X_X_,____
+		CHAR	_X_X,____
+		CHAR	____,____
+
+		CHAR	__X_,_X__
+		CHAR	_X__,__X_
+		CHAR	_X__,__X_
+		CHAR	_X__,__X_
+		CHAR	__X_,_X__
+		CHAR	____,____
+
+		CHAR	____,____
+		CHAR	X_X_,_X__
+		CHAR	_X__,XXX_
+		CHAR	X_X_,_X__
+		CHAR	____,____
+		CHAR	____,____
+
+		CHAR	____,____
+		CHAR	____,____
+		CHAR	____,XXX_
+		CHAR	__X_,____
+		CHAR	_X__,____
+		CHAR	____,____
+
+		CHAR	____,__X_
+		CHAR	____,__X_
+		CHAR	____,_X__
+		CHAR	____,X___
+		CHAR	_X__,X___
+		CHAR	____,____
+
+		CHAR	XXX_,__X_
+		CHAR	X_X_,__X_
+		CHAR	X_X_,__X_
+		CHAR	X_X_,__X_
+		CHAR	XXX_,__X_
+		CHAR	____,____
+
+		CHAR	XXX_,XXX_
+		CHAR	__X_,__X_
+		CHAR	XXX_,_XX_
+		CHAR	X___,__X_
+		CHAR	XXX_,XXX_
+		CHAR	____,____
+
+		CHAR	X_X_,XXX_
+		CHAR	X_X_,X___
+		CHAR	XXX_,XXX_
+		CHAR	__X_,__X_
+		CHAR	__X_,XXX_
+		CHAR	____,____
+
+		CHAR	XXX_,XXX_
+		CHAR	X___,__X_
+		CHAR	XXX_,__X_
+		CHAR	X_X_,__X_
+		CHAR	XXX_,__X_
+		CHAR	____,____
+
+		CHAR	XXX_,XXX_
+		CHAR	X_X_,X_X_
+		CHAR	XXX_,XXX_
+		CHAR	X_X_,__X_
+		CHAR	XXX_,XXX_
+		CHAR	____,____
+
+		CHAR	____,____
+		CHAR	__X_,__X_
+		CHAR	____,____
+		CHAR	__X_,__X_
+		CHAR	____,_X__
+		CHAR	____,____
+
+		CHAR	__X_,____
+		CHAR	_X__,XXX_
+		CHAR	X___,____
+		CHAR	_X__,XXX_
+		CHAR	__X_,____
+		CHAR	____,____
+
+		CHAR	X___,XX__
+		CHAR	_X__,__X_
+		CHAR	__X_,_X__
+		CHAR	_X__,____
+		CHAR	X___,_X__
+		CHAR	____,____
+
+		CHAR	_X__,_X__
+		CHAR	X_X_,X_X_
+		CHAR	XXX_,XXX_
+		CHAR	X_X_,X_X_
+		CHAR	_XXX,X_X_
+		CHAR	____,____
+
+		CHAR	XX__,_XX_
+		CHAR	X_X_,X___
+		CHAR	XX__,X___
+		CHAR	X_X_,X___
+		CHAR	XXX_,_XX_
+		CHAR	____,____
+
+		CHAR	XX__,XXX_
+		CHAR	X_X_,X___
+		CHAR	X_X_,XX__
+		CHAR	X_X_,X___
+		CHAR	XX__,XXX_
+		CHAR	____,____
+
+		CHAR	XXX_,_XX_
+		CHAR	X___,X___
+		CHAR	XX__,X_X_
+		CHAR	X___,X_X_
+		CHAR	X___,_XX_
+		CHAR	____,____
+
+		CHAR	X_X_,XXX_
+		CHAR	X_X_,_X__
+		CHAR	XXX_,_X__
+		CHAR	X_X_,_X__
+		CHAR	X_X_,XXX_
+		CHAR	____,____
+
+		CHAR	_XXX,X_X_
+		CHAR	__X_,X_X_
+		CHAR	__X_,XX__
+		CHAR	X_X_,X_X_
+		CHAR	_X__,X_X_
+		CHAR	____,____
+
+		CHAR	X___,X_X_
+		CHAR	X___,XXX_
+		CHAR	X___,XXX_
+		CHAR	X___,X_X_
+		CHAR	XXX_,X_X_
+		CHAR	____,____
+
+		CHAR	X_X_,_X__
+		CHAR	XXX_,X_X_
+		CHAR	XXX_,X_X_
+		CHAR	XXX_,X_X_
+		CHAR	X_X_,_X__
+		CHAR	____,____
+
+		CHAR	XX__,_X__
+		CHAR	X_X_,X_X_
+		CHAR	XX__,X_X_
+		CHAR	X___,X_X_
+		CHAR	X___,_XXX
+		CHAR	____,____
+
+		CHAR	XX__,_XX_
+		CHAR	X_X_,X___
+		CHAR	XX__,_X__
+		CHAR	X_X_,__X_
+		CHAR	X_X_,XX__
+		CHAR	____,____
+
+		CHAR	XXX_,X_X_
+		CHAR	_X__,X_X_
+		CHAR	_X__,X_X_
+		CHAR	_X__,X_X_
+		CHAR	_X__,XXX_
+		CHAR	____,____
+
+		CHAR	X_X_,X_X_
+		CHAR	X_X_,X_X_
+		CHAR	X_X_,XXX_
+		CHAR	X_X_,XXX_
+		CHAR	_X__,_XX_
+		CHAR	____,____
+
+		CHAR	X_X_,X_X_
+		CHAR	X_X_,X_X_
+		CHAR	_X__,XXX_
+		CHAR	X_X_,_X__
+		CHAR	X_X_,_X__
+		CHAR	____,____
+
+		CHAR	XXX_,XXX_
+		CHAR	__X_,X___
+		CHAR	_X__,X___
+		CHAR	X___,X___
+		CHAR	XXX_,XXX_
+		CHAR	____,____
+
+		CHAR	X___,XXX_
+		CHAR	X___,__X_
+		CHAR	_X__,__X_
+		CHAR	__X_,__X_
+		CHAR	__X_,XXX_
+		CHAR	____,____
+
+		CHAR	_X__,____
+		CHAR	X_X_,____
+		CHAR	____,____
+		CHAR	____,____
+		CHAR	____,____
+		CHAR	____,XXXX
+		
+PCHAR	cmpb	#32
+		bhs		PCH32
+		cmpb	#8
+		bne		PCH9
+		leax	-1,x
+		rts
+PCH9	cmpb	#9
+		bne		PCH10
+		leax	1,x
+		rts
+PCH10	cmpb	#10
+		bne		PCH11
+		pshs	x
+		ldx		#$4000
+		bra		PCH10b
+PCH10a	leax	40*6,x
+PCH10b	cmpx	,s
+		bls		PCH10a
+		leax	-40*6,x
+		leas	2,s
+		rts
+PCH11	cmpb	#11
+		bne		PCH13
+		leax	-6*40,x
+		rts
+PCH13	cmpb	#13
+		beq		PCH32
+		leax	6*40,x
+		rts
+PCH32	pshs	d,x,y,u
+		cmpb	#'a
+		blo		PCHAR1
+		cmpb	#'z
+		bhi		PCHAR1
+		addb	#'a-'A
+PCHAR1	cmpb	#32
+		bhs		PCHAR2
+		ldb		#32
+PCHAR2	cmpb	#'_
+		blo		PCHAR3
+		ldb		#'_
+PCHAR3	subb	#32
+		pshs	b
+		
+		leay	,x+
+		stx		3,s
+		ldu		#TCHAR
+		ldx		#TCHAR-4
+		
+		andb	#$fe
+		abx
+		lslb
+		abx	
+		
+		lsr		,s
+		ror		,s
+		
+		lda		#6
+PCHAR4	ldb		,x
+		lsrb
+		lsrb
+		bsr		PCHAR5
+		dec		<$E7C3
+		ldb		,x+
+		bsr		PCHAR5
+		inc		<$E7C3
+		leay	40,y
+		deca
+		bne		PCHAR4
+		puls	d,x,y,u,pc
+		
+PCHAR5	tst		3,s
+		bmi		PCHAR6
+		lsrb
+		lsrb
+		lsrb
+		lsrb
+PCHAR6	andb	#3
+		ldb		b,u
+		stb		3,s
+		comb
+		andb	#$00	; fond
+		stb		,y
+		ldb		#$CC	; couleur
+		andb	3,s
+		orb		,y
+		stb		,y
+		rts
+		
+		endc
+		
+***************************************
+* Decompresse le fichier MAP pointe
+* par X.
+***************************************
+DECMAP  pshs    d,y,u
+        ldb     <$E7C3
+        orb     #1
+        stb     <$E7C3
+        ldd     ,x++
+        incb
+        pshs    d
+        ldb     ,x+
+        incb
+        lda     #8
+        mul
+        tfr     d,y
+decm1   lda     1,s
+        ldu     #$4000
+        pshs    a,y,u
+decm3   ldb     ,x+
+        bne     decm7
+        ldb     ,x+
+decm4   set     *
+        if      ACCMAP
+        cmpb    #6
+        bls     decm41
+        cmpy    #6
+        bls     decm41
+        leay    -6,y    ; deroule
+        subb    #6      ; l'algo
+        lda     ,x      ; pour
+        sta     ,u      ; traiter 7
+        lda     1,x     ; lignes
+        sta     40,u    ; d'un coup
+        lda     2,x
+        sta     80,u
+        lda     3,x
+        leau    120,u
+        sta     ,u
+        lda     4,x
+        sta     40,u
+        lda     5,x
+        sta     80,u
+        leax    6,x
+        leau    120,u
+decm41  set     *
+        endc
+        lda     ,x+
+        sta     ,u
+        leau    40,u
+        leay    -1,y
+        beq     decm6
+decm5   decb
+        bne     decm4
+        bra     decm3
+decm6   puls    a,y,u
+        bsr     decm12
+        deca
+        pshs    a,y,u
+        bne     decm5
+        bra     decm10
+decm7   lda     ,x
+        if      ACCMAP
+        cmpb    #6
+        bls     decm71
+        cmpy    #6
+        bls     decm71
+        subb    #6
+        leay    -6,y
+        sta     ,u      ; deroule l'algo
+        sta     40,u    ; pour avoir
+        sta     80,u    ; 7 lignes d'un
+        leau    120,u   ; coup
+        sta     ,u
+        sta     40,u
+        sta     80,u
+        leau    120,u
+decm71  set     *
+        endc
+        sta     ,u
+        leau    40,u
+        leay    -1,y
+        beq     decm9
+decm8   decb
+        bne     decm7
+        leax    1,x
+        if      ACCMAP
+        jmp     decm3
+        else
+        bra     decm3
+        endc
+decm9   puls    a,y,u
+        bsr     decm12
+        deca
+        pshs    a,y,u
+        bne     decm8
+        leax    1,x
+decm10  puls    a,y,u
+        tst     ,s
+        bne     decm11
+        ldb     <$E7C3
+        bitb    #1
+        beq     decm11
+        andb    #$FE
+        stb     <$E7C3
+        leax    2,x
+        if      ACCMAP
+        jmp     decm1
+        else
+        bra     decm1
+        endc
+decm11  leas    2,s
+        leay    38,x    ; make x point to
+        ldd     #$A55A  ; TOSNAP marker
+        bsr     decm15
+        puls    d,y,u,pc
+decm12  pshs    b
+        tst     3,s
+        beq     decm13
+        ldb     <$E7C3
+        eorb    #1
+        stb     <$E7C3
+        andb    #1
+        beq     decm14
+decm13  leau    1,u
+decm14  puls    b,pc
+decm15  bsr     *+2
+        bsr     *+2
+        bsr     *+2
+        cmpd    ,y+
+        bne     *+4
+        leax    -1,y
+        rts
+* fondu sur noir
+fade2bk pshs    d,x
+        ldd     #32
+        sta     ,-s
+        decb
+        bne     *-3
+        leax    ,s
+        jsr     fade
+        leas    32,s
+        puls    d,x,pc
+
+* fait progressivement passer la
+* palette actuelle vers celle
+* pointee par x
+fade    pshs    d,x,y,u
+        leas    -32,s
+        leau    ,s
+        clra            ; recup pal actuelle
+fade1   ldx     #$ffff
+        leay    1,x
+        jsr     $EC00
+        stx     ,u++
+        inca
+        cmpa    #16
+        bne     fade1   ; u=fin pal actuelle
+fade2   ldx     2,u     ; recup x origine
+        leax    32,x    ; fin x origine
+        deca
+        bsr     fade3   ; mix palette
+        bne     fade2
+        leas    ,u
+        puls    d,x,y,u,pc
+* calcule et affiche une palette mixée avec
+* la formule: src*a/16 + tgt*(16-a)/16
+* (a=0 -> on a la target)
+fade3   pshs    d,x,y,u,cc
+        leay    ,s
+        leas    -32,s
+
+        ldb     #16     ; on itere sur les 16 couls
+fade4   leau    -2,u
+        bsr     fade5
+        decb
+        bne     fade4
+
+        leax    ,s      ; x = buffer
+        lda     #$ff
+        jsr     $EC00
+
+        leas    32,s
+        puls    d,x,y,u,cc,pc
+
+*       u -> src
+*       x -> tgt
+*       y -> buf
+*       a = coef
+
+* met à jour la couleur pointee par
+* y (buf) en fonction de:
+*  a = coef
+*  x = tgt
+*  y = src
+* en sortie a et u sont conservés.
+* x et y sont avancés d'une couleur.
+fade5   pshs    d,u
+        ldu     ,u
+        bsr     fade6
+        pshs    u
+        suba    #16
+        nega
+        ldu     ,--x
+        bsr     fade6
+        tfr     u,d
+        addd    ,s++
+        std     ,--y
+        puls    d,u,pc
+
+* u<-a*u/16
+fade6   pshs    d,u
+        ldb     2,s ; bleue
+        andb    #15
+        bsr     fade7
+        stb     ,-s
+        ldb     4,s ; vert+rluge
+        lsrb
+        lsrb
+        lsrb
+        lsrb        ; vert
+        bsr     fade7
+        lslb        ; retour en haut
+        lslb
+        lslb
+        lslb
+        stb     ,-s
+        ldb     5,s
+        andb    #15 ; rouge
+        bsr     fade7
+        orb     ,s+ ; reconstruction
+        lda     ,s+
+        std     2,s ; modif u au retour
+        puls    d,u,pc
+* b<-a*b/16
+fade7   pshs    a
+        mul
+        lsrb
+        lsrb
+        lsrb
+        lsrb
+*       adcb    #0  ; arrondi
+        puls    a,pc
+
+DEF0    macro
+        IFEQ    \2
+\0      set     *-\1
+        ENDC
+        endm
+
+* gere le compteur d'une voix, et fait le mixing
+* (resultat dans A. Les reg B, et X sont trashés)
+VOICE   macro
+        LDB     #0          ; 2
+        ADDB    #0          ; 2 low(freq)
+        DEF0    ch_flo,1,\0 ; ^ref pour auto-modif
+        STB     <*-3        ; 4
+        LDB     #0          ; 2
+        ADCB    #0          ; 2 high(freq)
+        DEF0    ch_fhi,1,\0 ; ^ref pour auto-modif
+smp\0   LDX     #0          ; 3 addr. echantillon
+        DEF0    ch_smp,2,\0 ; ^ref pour auto-modif
+        ABX                 ; 3
+        CMPX    #0          ; 4 fin instrument?
+        DEF0    ch_end,2,\0 ; ^ref pour auto-modif
+        BCC     *+4         ; 3
+        BRA     *+5         ; 3
+        LDX     #0          ; (3) boucle ou fin instrument
+        DEF0    ch_rpt,2,\0 ; ^ref pour auto-modif
+        STX     <smp\0+1    ; 5
+        LDB     ,X          ; 4
+        ANDB    #$0F        ; 2 haut/bas de l'octet?
+        DEF0    nibble,1,\0 ; ^ref pour auto-modif
+vol\0   ORB     #$A0        ; 2 volume
+        DEF0    ch_vol,1,\0 ; ^ref pour auto-modif
+        ifeq    \0
+        LDA     b,u         ; (5)
+        else
+        ADDA    b,u         ; 5 => 46
+        endc
+        endm
+
+        rmb     ((*+255)<-8)*256-*,0
+
+        setdp   *<-8
+tmp		fcb		0
+
+* plays one frame
+c_play  pshs    U,X,Y,CC
+        sts     <back_sp
+        orcc    #$50        ; no interrupt since s is used
+        ldu     #voltab1+128
+        lds     #voltab2+128
+
+        ldy     #0
+f_loop  set     *
+        VOICE   0           ; 46
+        VOICE   1           ; 46
+        VOICE   2           ; 46
+        VOICE   3           ; 46
+
+        sta     $E7CD       ; 5 sortie son
+
+        leay    -1,y        ; 5
+        lbne    f_loop      ; 6 ==> 200 cycles (5000hz tout pile)
+
+        lds     #0
+back_sp set     *-2
+        PULS    CC,U,X,Y
+
+        JSR     KTST
+        BCS     C_key
+
+* lit les instructions de notre pseudo
+* chip sonore et place les infos dans
+* les parametres de la boucle "f_loop"
+* pour produire les sons desires.
+nextins lda     ,u+
+        bne     c_call
+        ldu     2,s
+        bne     c_ret
+        dec     <loopcnt
+        bne     c_ret
+        ldb     #LOOPCNT
+        stb     <loopcnt
+		ldu     ,s++  
+        jmp     playNext
+c_ret   ldu     ,s++        ; 00000000
+        bne     nextins
+again   pshs    u
+        ldu     #0
+start   set     *-2
+        jmp     <nextins     ; MOD finished
+loopcnt fcb     LOOPCNT
+
+* calls a sub-routine
+c_call  bmi     c_vol       ; 0xxxxxxx xxxxxxxx
+        ldb     ,u+
+        pshs    u
+        addd    #$0000
+begsong set     *-2
+        tfr     d,u
+        bra     nextins
+* reference address to work relatively to x
+* for channel registers (choose a value neear
+* middle of code)
+ch_ref  equ     ch_end+1
+
+bnc     macro
+        bpl     \0
+        endm
+bns     macro
+        bmi     \0
+        endm
+
+c_vol   lsla                ; 11ccvvvvv
+        bnc     c_frq
+        ldx     #ch_ref
+        lsla
+        bnc     *+5
+        ldx     #ch_ref+(vol2-vol0)
+        lsla
+        bnc     *+5
+        leax    vol1-vol0,x
+
+        lsla
+        ldb     #16         ; A=vvvv0000 B=00010000
+        mul                 ; A=0000vvvv
+
+        tst     nibble-ch_ref,x ; check if high or low nibble
+        bmi     r_vol2
+        lsla                ; high nibble
+        lsla
+        lsla
+        lsla
+r_vol2  sta     ch_vol-ch_ref,x
+        jmp     <nextins
+
+C_key   jmp     c_key       ; trampoline to use short jumps
+
+c_ext   lda     ,u+
+        anda    #15
+        sta     $E7DD
+        jmp     <nextins
+
+c_frq   lsla                ; 101ccfff ffffffff
+        bnc     c_wait
+
+        ldx     #ch_ref
+        lsla
+        bnc     *+5
+        ldx     #ch_ref+(vol2-vol0)
+        lsla
+        bnc     *+5
+        leax    vol1-vol0,x
+
+        lda     #7
+        anda    -1,u
+        ldb     ,u+
+
+        stb     ch_flo-ch_ref,x
+        sta     ch_fhi-ch_ref,x
+        jmp     <nextins
+
+c_wait  lsla                ; 1000wwww
+        bns     c_inst
+        beq     c_ext
+
+        ldd     #15*256+100 ; tempo is 100 for MODs
+tempo   set     *-1
+        anda    -1,u
+        mul
+        std     <f_loop-2   ; delay
+        jmp     <c_play
+
+c_inst  lda     -1,u        ; 1001iiii
+        anda    #$0F
+        bne     *+4
+        lda     ,u+         ; 10010000 iiiiiiii
+        beq     c_tempo
+        ldb     #8
+        mul
+        addd    #$0000
+p_instr set     *-2
+        tfr     d,y
+
+        ldb     1,y         ; get nibble
+        lsrb
+
+        ldd     #$0FC5      ; A=$0F B="b,u"
+        bcc     *+5
+        ldd     #$F0E5      ; B=$F0 B="b,s"
+* any change ?
+        cmpa    nibble-ch_ref,x
+        beq     r_inst2
+
+* yes: upate nibble mask and volume-table pointers
+        sta     nibble-ch_ref,x
+        stb     vol0+3-ch_ref,x
+* and rotate volume mask
+        lda     ch_vol-ch_ref,x ;A=abcd0000 or 0000abcd
+        anda    #$F0            ;A=abcd0000 or 00000000
+        adda    ch_vol-ch_ref,x ;A=bcd00000 or 0000abcd
+        rola                    ; A=cd00000a or 000abcd0
+        rola                    ; A=d00000ab or 00abcd00
+        rola                    ; A=00000abc or 0abcd000
+        rola                    ; A=0000abcd or abcd0000
+        sta     ch_vol-ch_ref,x
+
+r_inst2 ldd     2,y
+        addd    <begsong
+        std     ch_smp-ch_ref,x
+
+        ldd     4,y
+        addd    <begsong
+        std     ch_end-ch_ref,x
+
+        ldd     6,y
+        addd    <begsong
+        std     ch_rpt-ch_ref,x
+
+        jmp     <nextins 
+
+c_tempo lda     ,u+             ; 10010000 ttttttttt
+        sta     tempo
+        jmp     <nextins
+
+* Gestion d'un appui sur une touche
+* STOP = pause du player. Reprise par
+*        appui sur une touche
+* SPACE ou ESC = sortie du player
+* 0 = on/off de toutes les voix
+* 1 = on/off de la voix 1
+* 2 = on/off de la voix 2
+* 3 = on/off de la voix 3
+* 4 = on/off de la voix 4
+c_key   jsr     GETC
+        lbne    keypress
+        jmp     <nextins
+
+* volume tables
+voltab1 set     *
+/
+perl -e 'for($i=-128;$i<128;++$i) {my($a,$b)=($i&15,($i>>4)&15); my $c=int($b*($a-8)/15)+8; print (($i&0xf)?",":"\n fcb ");print sprintf("\$%x",$c);}'
+/
+ fcb $4,$5,$5,$6,$6,$7,$7,$8,$8,$8,$9,$9,$a,$a,$b,$b
+ fcb $4,$4,$5,$5,$6,$7,$7,$8,$8,$8,$9,$9,$a,$b,$b,$c
+ fcb $3,$4,$4,$5,$6,$6,$7,$8,$8,$8,$9,$a,$a,$b,$c,$c
+ fcb $3,$3,$4,$5,$6,$6,$7,$8,$8,$8,$9,$a,$a,$b,$c,$d
+ fcb $2,$3,$4,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$c,$d
+ fcb $2,$2,$3,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$d,$e
+ fcb $1,$2,$3,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$d,$e
+ fcb $0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$a,$b,$c,$d,$e,$f
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8
+ fcb $7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9
+ fcb $7,$7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9,$9
+ fcb $7,$7,$7,$7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9
+ fcb $6,$7,$7,$7,$7,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9,$9
+ fcb $6,$6,$6,$7,$7,$7,$8,$8,$8,$8,$8,$9,$9,$9,$a,$a
+ fcb $5,$6,$6,$6,$7,$7,$8,$8,$8,$8,$8,$9,$9,$a,$a,$a
+ fcb $5,$5,$6,$6,$7,$7,$8,$8,$8,$8,$8,$9,$9,$a,$a,$b
+/
+perl -e 'for($i=-128;$i<128;++$i) {my($b,$a)=($i&15,($i>>4)&15); my $c=int($b*($a-8)/15)+8; print (($i&0xf)?",":"\n fcb ");print sprintf("\$%x",$c);}'
+/
+voltab2
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9,$9,$9,$9,$9,$a
+ fcb $8,$8,$8,$8,$8,$9,$9,$9,$9,$9,$a,$a,$a,$a,$a,$b
+ fcb $8,$8,$8,$8,$9,$9,$9,$9,$a,$a,$a,$a,$b,$b,$b,$c
+ fcb $8,$8,$8,$9,$9,$9,$a,$a,$a,$b,$b,$b,$c,$c,$c,$d
+ fcb $8,$8,$8,$9,$9,$a,$a,$a,$b,$b,$c,$c,$c,$d,$d,$e
+ fcb $8,$8,$8,$9,$9,$a,$a,$b,$b,$c,$c,$d,$d,$e,$e,$f
+ fcb $8,$8,$7,$7,$6,$6,$5,$5,$4,$4,$3,$3,$2,$2,$1,$0
+ fcb $8,$8,$8,$7,$7,$6,$6,$5,$5,$4,$4,$3,$3,$2,$2,$1
+ fcb $8,$8,$8,$7,$7,$6,$6,$6,$5,$5,$4,$4,$4,$3,$3,$2
+ fcb $8,$8,$8,$7,$7,$7,$6,$6,$6,$5,$5,$5,$4,$4,$4,$3
+ fcb $8,$8,$8,$8,$7,$7,$7,$7,$6,$6,$6,$6,$5,$5,$5,$4
+ fcb $8,$8,$8,$8,$8,$7,$7,$7,$7,$7,$6,$6,$6,$6,$6,$5
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$7,$7,$7,$7,$7,$7,$7,$6
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$7
+* end of volume tables
+
+liste
+        incbin  bin/list.bin
+
+* zik du menu
+        rmb     SONG-*,0
+        incbin  m0d/menu.m0d
+
+        end     ini

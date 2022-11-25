@@ -1,0 +1,491 @@
+(main)PLAYER
+
+        ORG     $6600
+
+KTST    equ     $E809
+GETC    equ     $E806
+* PUTC	equ		$E803
+SONG	equ		$6B00
+
+KEYDBG  equ     0
+KEYEXT	equ		0
+
+main    ldu     #SONG
+        jsr     playmod
+		lda		#15		; bank12 @ $A000
+		sta		>$E7E5
+		jmp		$A000	; jump to menu
+
+playmod pshs    a,x,y,u,dp,cc
+        sts     backSP
+
+        setdp   nextins<-8
+        ldd     #(nextins<-8)*256
+        tfr     a,dp
+ 
+        clra
+        pshs    d   		; sentinel for end-of-song
+
+        stu     <begsong
+		leax	-8,u
+
+		pulu	d			; check signature
+		subd	#$4D30		; 'M0D'0
+		bne		exitmod
+		pulu	d
+		subd	#$4400
+		bne		exitmod
+		pulu	d
+		subb	#200		; check playback rate
+		bne		exitmod
+		
+		pulu    d			; retrieve intrument decription
+        leax	d,x 		; offset
+        stx     p_instr
+
+        jmp     <nextins
+
+exitmod clrb 
+		lds     #0
+backSP	set		*-2
+        puls    a,x,y,u,dp,cc,pc
+
+c_tempo	lda		,u+				; 10010000 ttttttttt
+		sta		tempo
+		jmp		<nextins
+
+* Gestion d'un appui sur une touche
+* STOP = pause du player. Reprise par
+*        appui sur une touche
+* SPACE ou ESC = sortie du player
+* 0 = on/off de toutes les voix
+* 1 = on/off de la voix 1
+* 2 = on/off de la voix 2
+* 3 = on/off de la voix 3
+* 4 = on/off de la voix 4
+c_key   stb		<tmp
+		jsr     GETC
+		bne		c_key
+		ldb		<tmp
+        bne     c_key0
+        jmp     <nextins
+c_key0  cmpb    #32
+        beq     c_kEND
+        cmpb    #27
+        beq     c_kEND
+		cmpb	#13
+		beq		c_kEND
+		
+		ifne	KEYEXT
+        cmpb    #'0
+        bne     c_key1
+        ldb     <vol0
+        eorb    #14     ; orb <=> andb (on/off)
+        stb     <vol0
+        stb     <vol1
+        stb     <vol2
+        stb     <vol3
+        jmp     <nextins
+c_key1  pshs    x
+        cmpb    #'1
+        bne     c_key2
+        ldx     #vol0
+        bra     c_onoff
+c_key2  cmpb    #'2
+        bne     c_key3
+        ldx     #vol1
+        bra     c_onoff
+c_key3  cmpb    #'3
+        bne     c_key4
+        ldx     #vol2
+        bra     c_onoff
+c_key4  cmpb    #'4
+        bne     c_kSTOP
+        ldx     #vol3
+* allume ou eteint la voix pointee
+* par x en auto-modifiant le orb en
+* andb dans l'affectation du volume
+* (avec un and le volume tombe a 0)
+c_onoff ldb     ,x          ; 1010 0100
+        eorb    #14         ; orb <=> andb (on/off)
+        stb     ,x
+        puls    x
+        jmp     <nextins
+c_kSTOP puls    x
+        cmpb    #2          ; stop
+        bne     c_kPLUS
+c_kWAIT JSR     GETC        ; wait another keypress
+        BEQ     c_kWAIT
+		ifne    KEYDBG
+		andb	#255-32		; upper-case
+		cmpb	#'P
+		beq		c_PRPAT
+		cmpb	#'S
+		beq		c_PRSTK
+		endc
+		jmp		<nextins
+c_kPLUS cmpb	#'+
+		bne		c_kMINUS
+		ldb		<vol
+		cmpb	#16
+		bge		*+3
+		incb	
+		stb		<vol
+		jmp		<nextins
+c_kMINUS
+		cmpb	#'-
+		bne		c_kZZZ
+		ldb		<vol
+		ble		*+3
+		decb	
+		stb		<vol
+		jmp		<nextins
+		endc
+		
+c_kZZZ  jmp     <nextins
+c_kEND  jmp     exitmod+1	; key in "B"
+        
+		ifne    KEYDBG
+c_PRPAT ldx		#PRDAT
+		bsr		PRSTR
+		leax	,s			; unwind stack
+		ldd		,x++
+		bne		*-2
+		ldd		-4,x		; get first call
+		subd	begsong
+		subd	#27
+		lsra
+		rorb				; convert it to position
+		lslb			
+		orb		#1
+		rola
+		daa
+		lslb
+		bne		*-3
+		sta		,-s
+		tfr		a,b
+		lsrb
+		lsrb
+		lsrb
+		lsrb
+		bsr		PRHEX1
+		ldb		,s+
+		andb	#15
+		bsr		PRHEX1
+PRXIT	jmp		c_kWAIT
+PRINT	jmp		PUTC
+PRSTR	ldb		,x+
+		bsr		PRINT
+		bne		PRSTR
+		rts
+PRDAT	fcb 	27,$77,12
+		fcc		/POS/
+		fcb		0
+c_PRSTK ldx		#PRDAT
+		bsr		PRSTR
+		pshs	u
+		ldb		#'$
+		bsr		PRINT
+		ldb		,s
+		bsr		PRHEX2
+		ldb		1,s
+		bsr		PRHEX2
+		ldb		#10
+		bsr		PRINT
+		puls	u
+		leax	,s			; unwind stack
+c_PRST1	ldd		,x++
+		beq		PRXIT
+		pshs	b
+		ldb		#13
+		bsr		PRINT
+		ldb		#'$
+		bsr		PRINT
+		tfr		a,b
+		bsr		PRHEX2
+		puls	b
+		bsr		PRHEX2
+		ldb		#10
+		bsr		PRINT
+		bra		c_PRST1
+PRHEX2	stb		,-s
+		lsrb
+		lsrb
+		lsrb
+		lsrb
+		bsr		PRHEX1
+		ldb		,s+
+		andb	#15
+PRHEX1	cmpb	#10
+		blo		*+4
+		addb	#55-'0
+		addb	#'0
+		bra		PRINT
+		endc
+		
+DEF0    macro
+        IFEQ    \2
+\0      set     *-\1
+        ENDC
+        endm
+
+* gere le compteur d'une voix, et fait le mixing
+* (resultat dans A. Les reg B, et X sont trashés)
+VOICE   macro
+        LDB     #0          ; 2
+        ADDB    #0          ; 2 low(freq)
+        DEF0    ch_flo,1,\0 ; ^ref pour auto-modif
+        STB     <*-3        ; 4
+        LDB     #0          ; 2
+        ADCB    #0          ; 2 high(freq)
+        DEF0    ch_fhi,1,\0 ; ^ref pour auto-modif
+smp\0   LDX     #0          ; 3 addr. echantillon
+        DEF0    ch_smp,2,\0 ; ^ref pour auto-modif
+        ABX                 ; 3
+        CMPX    #0          ; 4 fin instrument?
+        DEF0    ch_end,2,\0 ; ^ref pour auto-modif
+        BCC     *+4         ; 3
+        BRA     *+5         ; 3
+        LDX     #0          ; (3) boucle ou fin instrument
+        DEF0    ch_rpt,2,\0 ; ^ref pour auto-modif
+        STX     <smp\0+1    ; 5
+        LDB     ,X          ; 4
+        ANDB    #$0F        ; 2 haut/bas de l'octet?
+        DEF0    nibble,1,\0 ; ^ref pour auto-modif
+vol\0   ORB     #$A0        ; 2 volume
+        DEF0    ch_vol,1,\0 ; ^ref pour auto-modif
+        ifeq    \0
+        LDA     b,u         ; (5)
+        else
+        ADDA    b,u         ; 5 => 46
+        endc
+        endm
+		
+		rmb		((*+255)<-8)*256-*,0
+ 
+        setdp   *<-8
+
+* plays one frame
+c_play  pshs    U,X,Y,CC
+        sts     <back_sp
+        orcc    #$50        ; no interrupt since s is used
+        ldu     #voltab1+128
+        lds     #voltab2+128
+
+f_loop  set     *
+        VOICE   0           ; 46
+        VOICE   1           ; 46
+        VOICE   2           ; 46
+        VOICE   3           ; 46
+
+        sta     $E7CD       ; 5 sortie son
+
+        leay    -1,y        ; 5
+        lbne    f_loop      ; 6 ==> 200 cycles (5000hz tout pile)
+
+        lds     #0
+back_sp set     *-2
+        PULS    CC,U,X,Y
+		
+* pour le fun: change la couleur du tour
+		ifne	0
+		suba	#32
+		bge		*+3
+		nega
+		lsra
+		sta		$E7DD
+		endc
+
+        JSR     KTST
+        BCS     C_key
+
+* lit les instructions de notre pseudo
+* chip sonore et place les infos dans
+* les parametres de la boucle "f_loop"
+* pour produire les sons desires.
+nextins lda     ,u+
+        bne     c_call
+* retour de "c_call"
+* c_ret
+        ldu     ,s++        ; 00000000
+        bne     nextins
+c_exit  jmp     exitmod     ; MOD finished
+
+* calls a sub-routine
+c_call  bmi     c_vol       ; 0xxxxxxx xxxxxxxx
+        ldb     ,u+
+        pshs    u
+        addd    #$0000
+begsong set     *-2
+        tfr     d,u
+        bra     nextins
+
+tmp		fcb		0
+		
+* reference address to work relatively to x
+* for channel registers (choose a value neear
+* middle of code)
+ch_ref  equ     ch_end+1
+
+bnc		macro
+		bpl		\0
+		endm
+bns		macro
+		bmi		\0
+		endm
+ 
+c_vol   lsla   				; 11ccvvvvv 
+		bnc     c_frq
+do_vol	ldx		#ch_ref
+		lsla
+		bnc		*+5
+		ldx		#ch_ref+(vol2-vol0)
+		lsla
+		bnc		*+5
+		leax	vol1-vol0,x
+
+		lsla
+		ldb	 	#16			; A=vvvv0000 B=00010000
+vol		set		*-1
+		mul					; A=0000vvvv
+		
+        tst     nibble-ch_ref,x ; check if high or low nibble
+        bmi     r_vol2
+        lsla                ; high nibble
+        lsla
+        lsla
+        lsla
+r_vol2  sta     ch_vol-ch_ref,x
+        jmp     <nextins
+		
+c_ext	lda		,u+
+		anda	#15
+		sta		$E7DD
+		jmp		<nextins
+		
+C_key	jmp		c_key		; trampoline to use short jumps
+
+c_frq	lsla				; 101ccfff ffffffff
+		bnc		c_wait
+do_frq	ldx		#ch_ref
+		lsla
+		bnc		*+5
+		ldx		#ch_ref+(vol2-vol0)
+		lsla
+		bnc		*+5
+		leax	vol1-vol0,x
+		
+		lda		#7
+		anda	-1,u
+		ldb		,u+
+		
+		stb     ch_flo-ch_ref,x
+        sta     ch_fhi-ch_ref,x
+		jmp     <nextins
+
+
+c_wait	lsla				; 1000wwww
+		bns		c_inst
+		beq		c_ext
+		
+		ldd		#15*256+100	; tempo is 100 for MODs
+tempo	set		*-1
+		anda	-1,u
+        mul
+		tfr		d,y 		; delay
+		jmp		<c_play
+		
+c_inst	lda		-1,u		; 1001iiii
+		anda	#$0F
+		bne		*+4			
+		lda		,u+			; 10010000 iiiiiiii
+		lbeq	c_tempo
+		ldb		#8
+		mul
+        addd    #$0000
+p_instr set     *-2
+        tfr     d,y
+
+        ldb     1,y         ; get nibble
+        lsrb
+
+        ldd     #$0FC5      ; A=$0F B="b,u"
+        bcc     *+5
+        ldd     #$F0E5      ; B=$F0 B="b,s"
+* any change ?
+        cmpa    nibble-ch_ref,x
+        beq     r_inst2
+
+* yes: upate nibble mask and volume-table pointers
+        sta     nibble-ch_ref,x
+        stb     vol0+3-ch_ref,x
+* and rotate volume mask
+        lda     ch_vol-ch_ref,x ;A=abcd0000 or 0000abcd
+        anda    #$F0            ;A=abcd0000 or 00000000
+        adda    ch_vol-ch_ref,x ;A=bcd00000 or 0000abcd
+        rola                    ; A=cd00000a or 000abcd0
+        rola                    ; A=d00000ab or 00abcd00
+        rola                    ; A=00000abc or 0abcd000
+        rola                    ; A=0000abcd or abcd0000
+        sta     ch_vol-ch_ref,x
+
+r_inst2 ldd     2,y
+        addd    <begsong
+        std     ch_smp-ch_ref,x
+
+        ldd     4,y
+        addd    <begsong
+        std     ch_end-ch_ref,x
+
+        ldd     6,y
+        addd    <begsong
+        std     ch_rpt-ch_ref,x
+
+		jmp		<nextins
+				
+* volume tables
+* volume tables
+voltab1 set     *
+/
+perl -e 'for($i=-128;$i<128;++$i) {my($a,$b)=($i&15,($i>>4)&15); my $c=int($b*($a-8)/15)+8; print (($i&0xf)?",":"\n fcb ");print sprintf("\$%x",$c);}'
+/
+ fcb $4,$5,$5,$6,$6,$7,$7,$8,$8,$8,$9,$9,$a,$a,$b,$b
+ fcb $4,$4,$5,$5,$6,$7,$7,$8,$8,$8,$9,$9,$a,$b,$b,$c
+ fcb $3,$4,$4,$5,$6,$6,$7,$8,$8,$8,$9,$a,$a,$b,$c,$c
+ fcb $3,$3,$4,$5,$6,$6,$7,$8,$8,$8,$9,$a,$a,$b,$c,$d
+ fcb $2,$3,$4,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$c,$d
+ fcb $2,$2,$3,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$d,$e
+ fcb $1,$2,$3,$4,$5,$6,$7,$8,$8,$8,$9,$a,$b,$c,$d,$e
+ fcb $0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$a,$b,$c,$d,$e,$f
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8
+ fcb $7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9
+ fcb $7,$7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9,$9
+ fcb $7,$7,$7,$7,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9
+ fcb $6,$7,$7,$7,$7,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9,$9
+ fcb $6,$6,$6,$7,$7,$7,$8,$8,$8,$8,$8,$9,$9,$9,$a,$a
+ fcb $5,$6,$6,$6,$7,$7,$8,$8,$8,$8,$8,$9,$9,$a,$a,$a
+ fcb $5,$5,$6,$6,$7,$7,$8,$8,$8,$8,$8,$9,$9,$a,$a,$b
+/
+perl -e 'for($i=-128;$i<128;++$i) {my($b,$a)=($i&15,($i>>4)&15); my $c=int($b*($a-8)/15)+8; print (($i&0xf)?",":"\n fcb ");print sprintf("\$%x",$c);}'
+/
+voltab2
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$9
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$9,$9,$9,$9,$9,$9,$9,$a
+ fcb $8,$8,$8,$8,$8,$9,$9,$9,$9,$9,$a,$a,$a,$a,$a,$b
+ fcb $8,$8,$8,$8,$9,$9,$9,$9,$a,$a,$a,$a,$b,$b,$b,$c
+ fcb $8,$8,$8,$9,$9,$9,$a,$a,$a,$b,$b,$b,$c,$c,$c,$d
+ fcb $8,$8,$8,$9,$9,$a,$a,$a,$b,$b,$c,$c,$c,$d,$d,$e
+ fcb $8,$8,$8,$9,$9,$a,$a,$b,$b,$c,$c,$d,$d,$e,$e,$f
+ fcb $8,$8,$7,$7,$6,$6,$5,$5,$4,$4,$3,$3,$2,$2,$1,$0
+ fcb $8,$8,$8,$7,$7,$6,$6,$5,$5,$4,$4,$3,$3,$2,$2,$1
+ fcb $8,$8,$8,$7,$7,$6,$6,$6,$5,$5,$4,$4,$4,$3,$3,$2
+ fcb $8,$8,$8,$7,$7,$7,$6,$6,$6,$5,$5,$5,$4,$4,$4,$3
+ fcb $8,$8,$8,$8,$7,$7,$7,$7,$6,$6,$6,$6,$5,$5,$5,$4
+ fcb $8,$8,$8,$8,$8,$7,$7,$7,$7,$7,$6,$6,$6,$6,$6,$5
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$7,$7,$7,$7,$7,$7,$7,$6
+ fcb $8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$8,$7
+* end of volume tables
+fin		set	*
+		
+        end
