@@ -1,0 +1,358 @@
+(main)BOOTLDR.ASM
+***************************************
+* Boot loader:
+* - Efface l'écran
+* - se déplace en ram video
+* - charge le fichier AUTO.BIN
+* - lance son execution.
+*
+* Samuel Devulder Janvier 2013
+***************************************
+       org    $6300
+*      org    $9000
+
+***************************************
+* prologue d'une fonction:
+*      PROC   label
+*      ...
+***************************************
+PROC   macro
+\0     set    *
+EXITP  set    \0_
+       endm
+***************************************
+* epilogue d'une fonction
+*      ...
+*      ENDP   label
+***************************************
+ENDP   macro
+\0_    set    *
+       endm
+***************************************
+* boucle:
+*      REPEAT
+*      ....
+*      WHILE  condition
+***************************************
+REPEAT macro
+loop   set    *
+       endm
+WHILE  macro
+       b\0    loop
+       endm
+***************************************
+* variable dans code auto-modifiable
+*
+*      VAR    label,size,opcode
+***************************************
+VAR    macro
+       \2     #0
+\0     set    *-\1
+       endm
+        
+bootldr
+       orcc   #$50  ; pas d'inter.
+       lds    #$60CC ; reset pile
+*      lds    #$6200
+       clr    $60FE  ; force boot froid
+***************************************
+* tour noir, fond noir
+***************************************        
+       jsr    $E800 ; reset ecran
+       leau   <scrdat,pcr
+       REPEAT
+       ldb    ,u+
+       jsr    $E803
+       WHILE  ne
+       ldb    $E7C3
+       andb   #254
+       stb    $E7C3
+       ldu    #$5F40
+       ldb    #0*8+64+128
+       bsr    fillscr
+       inc    $E7C3
+*      bra    load ; pour eviter le reloc
+***************************************
+* reloge l'ensemble du programme en
+* $4000 et saute a cette adresse. 
+***************************************
+reloc  leax   <load,pcr
+       ldu    #$4000+80*40
+*      leau   ,x  ; pour eviter le reloc
+       stu    ,--s
+       ldy    #last-load
+       REPEAT
+       lda    ,x+
+       sta    ,u+
+       leay   -1,y
+       WHILE  ne
+       rts
+scrdat fcb    $14,$1B,$60,$1E,0
+***************************************
+* Remplissage de l'ecran avec la valeur
+* contendue dans le registre B.
+*
+* On bloque les interruptions un
+* minimum de temps pour assurer
+* un son continu
+***************************************
+fillscr
+       pshs   d,x,y,u,dp,cc
+       sts    fillSP
+       tfr    b,dp
+       tfr    b,a
+       tfr    d,x
+       leay   ,x
+       leau   ,x
+       lds    #$5F40
+       lda    #200
+       REPEAT
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       deca
+       WHILE  ne
+       VAR    fillSP,2,lds
+       puls   d,x,y,u,dp,cc,pc
+***************************************
+* charge le fichier 'AUTO.BIN"
+* en sortie X contient l'addresse 
+* de lancement. Les autres registres
+* sont trashes.
+***************************************
+load   leau   <AUTOBIN,pcr
+       bsr    d7open
+       bcs    error
+loadbk bsr    getb  ; typ bloc log
+       bsr    getw  ; long bloc log
+       coma
+       beq    exec  ; fin fichier
+       coma
+       bne    error ; bloc inconnu
+       tfr    x,y   ; charg. donnees
+       bsr    getw  ; addr charg.
+       nop
+       REPEAT
+       bsr    getb
+       sta    ,x+
+       leay   -1,y
+       WHILE  ne
+       bra    loadbk
+exec   bsr    getw
+       jmp    ,x
+AUTOBIN 
+       fcc    /0AUTO    BIN/
+***************************************
+* lit un mot en gerant les erreurs.
+* x=mot lu
+***************************************
+getw   pshs   d
+       bsr    getb
+       tfr    a,b
+       bsr    getb
+       exg    a,b
+       tfr    d,x
+       puls   d,pc
+***************************************
+* Fait clignoter le tour en attente
+* de ctrl-c.
+***************************************
+error  ldu    #$E803
+       ldb    #7
+       jsr    ,u
+       lda    #$61
+clign  ldb    #$1B
+       jsr    ,u
+       tfr    a,b
+       eora   #1
+       jsr    ,u
+       ldx    #2000
+       REPEAT
+       jsr    3,u
+       cmpb   #3
+       beq    reset
+       leax   -1,x
+       WHILE  ne
+       bra    clign 
+reset  jmp    [$FFFE]
+***************************************
+* lit un octet en gerant les erreurs
+* A=octet lu
+***************************************
+getb   bsr    d7read
+       bcs    error
+       rts
+**************************************
+* Ouverture d'un fichier D7
+* U = nom fichier (1+8+3)
+* Sortie: C=1 si erreur
+**************************************
+       PROC   d7open
+       pshs   b,x,y,u,dp
+       
+       setdp  $60
+       ldb    #$60
+       tfr    b,dp
+
+*DKOPC equ    $6048   ;operation d7
+DKDRV  equ    $6049   ;lecteur
+DKTRK  equ    $604A   ;piste (2 ocets)
+DKTRKL equ    DKTRK+1
+DKSEC  equ    $604C   ;secteur
+DKSTA  equ    $604E   ;status d7
+DKBUF  equ    $604F   ;buf i/o
+DKCAT  equ    $60E9   ;prt catalogue
+DKNAM  equ    $60E7   ;nom fichier
+DKTYP  equ    $60EB   ;type fichier (2octets)
+DKFAT  equ    $60ED   ;ptr fat
+DKMOD  equ    $60F0   ;mode d'acces
+DKFIN  equ    $60F3   ;dernier bloc
+DKBLK  equ    $60F6   ;1er bloc fichier
+DKTDS  equ    $60F7   ;nb octets dern sect (2octets)
+DKIFA  equ    $60F9   ;secteur fat fichier
+LECFA  equ    $E00D   ;lecture fat
+RECFI  equ    $E010   ;recherche fichier
+CONVB  equ    $E01F   ;converison bloc
+DKCOM  equ    $E82A   ;commande d7
+
+       leax   iofat,pcr
+       stx    <DKFAT
+       leax   iocat,pcr
+       stx    <DKCAT
+
+       ldb    ,u+     ; lecteur
+       subb   #'0
+       stb    <DKDRV
+
+       stu    <DKNAM  ; nom
+       ldd    #$0200
+       std    <DKTYP  ; binaire
+       stb    <DKSTA  ; clr err
+* recherche fat
+       jsr    LECFA
+       bcs    EXITP
+
+* recherche fichier
+       lda    #1
+       sta    <DKMOD  ; acces lecture
+       jsr    RECFI   ; rech. fichier
+       ldb    <DKIFA
+       subb   #1      ; C=1 si 60F9=0
+       bcs    EXITP
+        
+* chargement 1er bloc
+       bsr    yield
+* Convertit numéro de bloc
+load0  jsr    CONVB   ; convertit bloc
+       stb    <DKTRKL ;init piste
+       ldx    <DKFAT  ; ptr FAT
+       ldb    <DKBLK  ; bloc courant
+       incb           ;   bloc
+       ldb    b,x     ;   suivant
+       stb    <DKBLK  ; sauve bloc
+       cmpb   #$C0    ; si dernier bloc,
+       bhi    load1   ; recupere taille
+       ldb    #8      ; 8 sect a charger
+load1  andb   #15     ; isole taille bloc
+       sta    <DKSEC  ; sauv 1er bloc
+       addb   <DKSEC  ; ajoute depart bloc
+       decb           ; ajuste dern bloc
+       stb    <DKFIN  ; sauv dern bloc
+* charge les secteurs
+load2  jsr    DKCOM
+       bcs    EXITP
+       ldx    <DKBUF  ; ptr buf sect
+       lda    <DKSEC  ; si sect pas
+       cmpa   <DKFIN  ; secteur max,
+       bne    load3   ; passe
+       lda    <DKBLK  ; si dernier
+       cmpa   #$C0    ; secteur du 
+       bhi    load4   ; fichier,sort
+       bsr    transf
+       bra    load0
+
+**************************************
+* Lecture d'un octet. 
+* Retour: A = octet lu
+*         C = 1 si erreur
+* (positionne ici pour avoir des
+* sauts courts)
+**************************************
+d7read pshs   b,x,y,u,dp
+       bra    resume
+
+       
+load3  bsr    transf
+       inc    <DKSEC  ; secteur +1
+       bra    load2
+* chargement dernier secteur et sortie
+load4  ldd    <DKTDS  ; taille dern sect
+       beq    load5   ; si 0, sort
+       bsr    tfr0
+load5  clra           ; C=0
+       bra    EXITP
+* transfert des donnees
+transf ldb    $6058   ; densite
+       comb
+       orb    #$80
+tfr0   clra           ; C=0
+       lda    ,x+
+
+       puls   y
+       bsr    yield
+       pshs   y
+       
+       decb       
+       bne    tfr0
+       rts
+       
+* Ici il y a un truc pour permettre
+* d'avoir une api recuperant les 
+* octets un a un a partir d'un code
+* monobloc. L'idee est inspire de la
+* programmation par continuations:
+* On stocke l'etat de l'algo dans 
+* un contexte memoire puis on ressort.
+* Ensuite au d7read on recupere le 
+* contexte et on restore l'etat de
+* l'algo qui se poursuit comme si
+* on avait pas quitte l'algo monobloc
+* d'origine.
+CTX_U  equ    0  ; sauv. u dans ctx?
+yield  set    *
+       if     CTX_U
+       stu    <ioctx,pcr
+       leau   <ioctx+11,pcr
+       pshu   d,dp,x,y
+       puls   x
+       stx    -2,u
+       else
+       leau   <ioctx+9,pcr
+       pshu   d,dp,x,y
+       puls   x
+       stx    7,u
+       endc
+       ENDP   d7open
+       puls   b,x,y,u,dp,pc
+resume set    *
+       if     CTX_U
+       leau   <ioctx,pcr
+       pulu   x,y
+       pshs   x,y
+       pulu   d,dp,x,y
+       puls   u,pc
+       else
+       leau   <ioctx+2,pcr
+       pulu   d,dp,x,y,pc
+       endc
+last   set    *        
+**************************************
+* buffers
+**************************************
+ioctx  rmb    11      ; contexte
+iofat  rmb    256     ; fat
+*	org	$6600
+iocat  rmb    256     ; catalogue
+       end    bootldr

@@ -1,0 +1,138 @@
+Déjà il faut voir comment la musique est produite par le player.
+
+Ce dernier anime 4 compteurs 16 bits. Chaque compteur est comparé à une valeur de seuil. S'il est au dessus, le buzzer est à 1, sinon il est à 0. Le buzzer prend donc 4 valeurs différentes le long des 125µs que représentent un cycle de la boucle principale du player. Le buzzer garde sa valeur environ 125/4=31µs ce qui est très faible, tellement faible que le haut-parleur prend une position reflétant la moyenne des 4 valeurs que lui donnent chacun des compteurs. On retrouve ainsi les positions 0% (tout en bas), 25%, 50%, 100% (tout en haut) de la menbranne du haut-parleur. C'est cela qui permet d'avoir l'illusion d'avoir 4 voix indépendantes avec le buzzer, même sans utiliser le convertisseur numérique analogique de l'extension "musique et jeux". En principe plus la boucle principale tourne vite, meilleur est le moyennage. Au mieux j'ai obtenu 111µs, mais cette vitesse introduit un siflement désagréable à l'oreil sur émulateur lié à la fréquence d'échantillonage de ce dernier. Une valeur qui convient bien est 125µs, cette valeur est en outre un diviseur exacte de la seconde ce qui simplifie les expressions et les calculs manuels.
+
+Ok, donc le compteur compte, mais à quelle vitesse au juste? C'est une bonne question. Supposons que le seuil soit à $8000. Le compteur part de 0 et va jusqu'à $7FFF. Pendant ce temps le buzzer est à 0, puis il passe à $8000 et termine à $FFFF avec le buzzer à 1. Enfin il retombe à $0000 et le cycle reprend. Le buzzer fait donc une alternance régulère de 0 et de 1, à la même vitesse que le compteur en met pour aller de $0000 à $FFFF. Si l'incrément du compteur vallait $8000, il y aurait alternance de 0 et 1 à chaque nouveau tour de la boucle principale. On produit alors un son de période 2*125=250µs (4khz). Plus généralement si l'incrément du compteur est (delta), il faudra 2*$8000/delta tours de la boucle principale pour faire un cycle audio. C'est à dire que l'on fait un son de période ($10000/delta)*125µs=8192/delta ms. Sous forme de fréquence on a donc la relation f = (delta/8.192) hz ou delta = freq_note_hz * 8.192. Le plus petit delta vaut 1, ce qui correspond à un son de période 8.192s, ce qui est tellement bas que seuls les éléphants peuvent l'entendre (infrason). En pratique on ne joue pas des sons aussi bas. On utilise plutot les 5 octaves de la gamme tempérée (http://davbucci.chez-alice.fr/index.php?argument=musica/scala/scala.inc) allant de 65.404hz (delta=536) à 1975.53hz (delta=16184).  Le LA440 s'obtient pour delta = 8.192*440 = 3604.
+
+Et le seuillage, on peut le changer? Oui! On a vu qu'un seuillage à $8000 faisait faire des crénaux au buzzer de telle sorte que la durée à 0 soit la même que celle à 1. Descendont le seuillage à $4000. Le compteur part de 0, et atteint $3FFF et pendant ce temps le buzzer est à 0, puis le compteur passe à $4000 et va jusqu'à $FFFF avec le buzzer à 1 tout ce temps. Le rapport des durées à 1 et à 0 a maintenant changé. Il passe 3x plus de temps à 1 qu'à 0. Si on passe le seuil à $2000, le buzzer sera 7x plus de temps à 1 qu'à 0. On fait donc varier le rapport cyclique de la note jou&e rien qu'en altérant le seuillage. Il vaut 1 avec un seuil à $8000, il vaut 1/3 avec un seuil à $4000, puis 1/7avec un seuil à $2000. Plus généralement parlantn avec un seuil à (thr), le rapport cyclique vaut r=thr/($10000-thr). Donc pour avoir le rapport cyclique (r), il faut utiliser le seuil $10000*r/(r+1). En pratique on a pas besoin d'un seuillage sur 16bits. On peut se contenter de comparer l'octet de poids fort du compteur à une valeur 8 bits. C'est plus rapide et necessite moins de mémoire.
+
+Reste encore un dernier paramètre pour caractériser la boucle principale du player: sa durée. On sait que le player fait un tour en 125µs, donc s'il tourne (y) fois, il dure (y*125)µs. Un tempo standard est de 120bpm. Il y a donc 120 temps pour une noire dans chaque minute. Une noire dure donc 60/120s = 1/2 seconde, ce qui correspond à y = 500 000µs/125µs = 4000. Il faut donc itérer exactement 4000 fois la boucle principale pour faire une noire. Mais une blanche alors? Ben ca vaut 2 noirs, donc exactment 8000 tours de boucle. La croche vaut elle 1/2 noire, donc 2000 tour de boucle. Facile! On pourrait stocker ce nombre de tour sur 16bits, mais c'est un peu trop précis car la plus petite unité de temps etant disons la quintuple croche correspond à 125 tours de boucle. On pourrait compter les durées en multiples de la quintuple croche (1/32eme de batement). Elle aurait la durée 1. La quadruple croche aurait la durée 2, la triple croche la durée 4, la double croche la durée 8, la croche 16, la noire 32, la blanche 64, et la ronde 128. Pas mal: toutes les durées de notent tiennent dans un octet. On peut même dépasser la durée d'une ronde tout en restant dans un octet: la ronde pointée vaut 128+64=192. Impec!
+
+Donc, résumons. Notre player joue 4 note chacune ayant sa fréquence (2 octets) et son rapport cyclique (1 octet), pendant une certaine durée codée sur un octet. Il faut ajouter que le player est aussi capable de faire du bruit sur sa 4eme voix. Pour cela il faut un octet supplémentaire indiquant si l'on va jouer les 4 voix ou juste 3voix plus du bruit. Cela nous fait 3*4+1+1=14 octets pour configurer le player pour jouer de la musique pendant un certain temps. Ils sont organisés comme suit
+[code]
+	<flag:1> <durée:1> <seuil:1> <freq:2> <seuil:1> <freq:2> <seuil:1> <freq:2> <seuil:1> <freq:2> : total 14 octets
+[/code]On appelle une telle ligne un "pattern". Un morceau de musique est consitué par un ensemble de lignes indiquant les notes à jouter.
+
+Quelle place ca prend ? Le player est tout petit, il tient dans 256octets facilement, par contre les patterns sont volumineux. Un player de MOD typique met à jour les registres musicaux toutes les VBL (https://fr.wikipedia.org/wiki/MOD#Synchronisation). Ca veut dire qu'on consome 14 octets 50 fois par secondes, soit 700 octets/seconde. Une minute de musique consomme donc 42ko, et un morceau de 3minutes 168ko. C'est enorme! Alors on peut essayer de ne pas mettre à jour à chaque VBL, mais disons une sur 5, ce qui fait 33.6ko, ce qui tient en ram. Mais il faut utiliser la commutation de bank mémoire ce qui complexifie le player. Mais surtout la plus petite note possible dure 100ms, environ 1/4 de noire: une double croche (quarter note chez les anglos-saxon). Les effets plus rapides que 100ms ne seront pas reproduisible. C'est pas terrible.
+
+Les partitions
+
+Ce problème n'est pas spécifique à notre player mais existe depuis la conception es trackers et donc une solution a été trouvé. La première chose à remarquer est qu'un morceau de musique n'est pas une suite de notes aléatoires. Il y a de la structure. Les notes se répètent (penser aux refrains par exemple). Le format orginel MOD a donc eu l'idée de regrouper les notes en partitions (https://fr.wikipedia.org/wiki/Module_(musique)#La_partition). La partition représente une phrase rythmique formée de quelques mesures. Elle identifie la succession des notes de musique jouées par un instrument à un moment précis. Originairement, il est possible de placer 64 notes à la suite pour chaque canal dans une partition. Les partitions peuvent être répétées ou jouées dans un ordre défini dans une séquence de partition, et permettent au musicien de créer le morceau de musique final.
+
+On morceau de musique est ainsi souvent codée comme suit:
+[code]
+* table des partitions
+table
+  fdb part1,part1,part2,part3,part1,part1,part4,part5,..,$0000
+
+* partition 1
+part1
+  data pattern1 (14 octets)
+  data pattern2 (14 octets)
+  data pattern3 (14 octets)
+  ...
+  fdb $0000
+
+* partition 2
+part2
+  data patternX (14 octets)
+  data patternY (14 octets)
+  data patternZ (14 octets)
+  ...
+  fdb $0000
+
+* partition 3
+part3
+  ... (14 octets)
+  ... (14 octets)
+  fdb $0000
+
+* partition 4
+part4
+...
+...[/code]C'est vraiment un format très compact, permettant de faire tenir plusieurs minutes de musique dans moins dans quelques dizanes de Ko (une partition occupe 1ko, et il faut facilement 16 à 32 partitions distinctes). Même avec 20ko un morceau de musique est quand même très gros pour thomson. Il n'y aurait qu'au plus 12ko pour les effets, sans compter le temps de chargement. Il faut donc aller plus loin que ce principe de partitions.
+
+JSR/RTS
+
+Fondamentalement, le player lit les pointeurs vers les paritions un à un dans la table. A chaque nouveau pointeur il lit la partition pattern par pattern jusqu'au $0000 final. A ce moment là il revient à la table et lit l'addresse de la partition suivante, y saute, etc. Ca ressemble à un couple JSR/RTS ce truc: on saute "dans" un pattern que l'on execute, et le $0000 nous fait revenir au pointeur de partition suivant. D'une certaine façon le player execute des instructions. On peut donc intepréter la table des partitions précédente comme un programme qui appelle des sous-routine (les partitions):
+[code]
+* table des partitions
+table
+  jsr part1
+  jsr part1
+  jsr part2
+  jsr part3
+  jsr part1
+  jsr part1
+  jsr part4
+  jsr part5
+  ...
+  rts
+
+* partition 1
+part1
+  play pattern1 (14 octets)
+  play pattern2 (14 octets)
+  play pattern3 (14 octets)
+  ...
+  rts 
+* partition 2
+part2
+  play patternX (14 octets)
+  play patternY (14 octets)
+  play patternZ (14 octets)
+  ...
+  rts
+...[/code]
+L'avantage de voir ca comme des jsr/rts est qu'on a pas de raisons de se limiter à une profondeur de 1. Il se pourrait que patternX et patternY de la partition2 soient identique axx patterns 1 et 2 de la partition1. On pourrait alors avantageusement les factoriser:
+[code]
+* partition 1
+part1
+  JSR  part_common
+  PLAY pattern3 (14 octets)
+  ...
+  RTS
+* partition 2
+part2
+  JSR  part_common
+  PLAY patternZ (14 octets)
+  ...
+  RTS
+part_common
+  play pattern1 (14 octets)
+  play pattern2 (14 octets)
+  RTS
+[/code]
+Ce qui fait gagner quelques octet. Il y a du progès. Reste à coder les JSR, les PLAY et les RTS. 
+
+On pourrait ajouter un octet de plus mais ca annulerait le gain de la factorisation. Hum... si au lieu de coder le JSR avec un addresse absolue, on sotckait sont offset par rapport au début du morceau de musique on aurait que des valeurs positives (pour les morceaux de moins de 32ko), et le format serait translatable en mémoire. Interessant: disons donc qu'une donnée 16bits positive soit interprétée comme un JSR, ce dernier ne prendrait finalement pas plus de place que le pointeur vers la partition, c'est cool! A noter qu'on ne va jammais faire un JSR vers le début de morceau, donc l'offset $0000 ne sert pas. Disons qu'il encodera le RTS qui ne sera pas plus long que le $00000 du format initial. On est toujours dans les clous. Reste le cas du PLAY. On a vu qu'un pattern commence par un flag 0/1 suivant que la dernière voix doit produire du bruit ou pas. Son bit de poids fort est donc libre. Si on l'impose à être à 1, on arriverait à distinguer un PLAY d'un JSR/RTS. Ok a donc l'algo suivant issu de notre codage:
+[code]
+  lire 16bits
+  si <0, c'est un PLAY
+  si >0, c'est un JSR
+  si =0, c'est un RTS
+[/code]Pas mal: on garde le même format et la même occupation que celui par table de partition, mais on l'a généralisé en autorisant d'avoir un JSR (donnée 16bits>0) en plein milieu d'une partition.
+
+Avec ca on peut factoriser au max les répétitions en les recherchant systématiquement dans les données sans avoir besoin de la régularité stricte du format par table de partition. Ca nous convient bien. Quand on fait ca, la Toccata et Fuge de J-S Bach arrive à tenir dans 22ko environ (voir XX ici). C'est mieux que les 168ko d'origine, mais ca reste quand même imposant pour la mémoire d'un Thomson. Si on veut ajouter du code et d'autres données autour on sera vite limité. Il faut réduire encore plus l'occupation...
+
+PAS DE REDITES
+
+On a vu que le format du PLAY est de taille fixe à 14 octets. Quand on regarde un morceau, on voit que souvent 11 des 14 octets sont identiques. Typiquement une seule voix a changée. C'est un peu idiot ca: on répète des trucs qu'on a dit juste au dessus. Si on pouvait faire evoluer le PLAY pour que seules les voix changées soient indiquées, on gagnerait beaucoup de place. Or il se touve qu'on a 6 bits de dispo dans l'octet flag. Reservons alors 1 bit pour indiquer si l'on doit changer la voix correspondante:[code][1 chg1 chg2 chg3 chg4 0 0 bruit][/code]
+On a ainsi une commande PLAY variable.
+
+En supprimant les redites, le format a pas mal diminué. Il y a rarement plus de 2 voix qui changent à la fois. Le pattern passe alors d'une taille de 14 octets à 8 octets. On a gagné un facteur deux. La Toccata et Fugue ne fait plus que 12ko. Elle tient dans une banque ram. Super!
+
+IL N'Y A PAS TANT DE NOTES QUE CA...
+
+Oui super, mais ne pourrait t'on pas aller au delà ? Car quand on envoie le binaire de la toccata dans GZIP, il la compresse à 5ko.. soit encore un facteur 2. Hum.. où trouve t'il ce gain?
+
+En fait, si on regarde les notes jouées, il n'y en a pas tant que ca. Il y a en général moins de 50 triplets (<seuil:1> <freq:2>) différents. On pourrait avantageusement remplacer ces triplets par un octet envoyant vers un table stockant ces triplets. 
+
+Si l'on fait ca, on gagne effectivement un facteur deux et la Toccata et Fugue ne pèse plus que 6.5ko. Je crois qu'on a là la représentation à peu près ultime. Elle a un taux similaire à LHA/GZIP tout en ne coutant pratiquement rien au niveau du CPU. J'en suis très content
+
+
+LA SUITE...
+
+Pour finir, remarquons que les 3 bits du poids faible de la commande PLAY laissent place pour encoder 8 commandes dans le même format. On déjà deux commandes réservées pour jouer 4voix ou 3voix+bruit, il ne reste que 6 commandes de libre. On peut dores et déjà en réserver une autre pour définir le tempo qui sera la vitesse à laquelle on joue les noires (voir plus haut). Restent 5 commandes possibles.
+
+Je viens d'ajouter une commande TEXT pour envoyer des choses à la routine PUTC et ainsi faire du.. KARAOKE!! Sisi, du karaoke sur thomson c'est possible, voyez le fichier joint (pas complètement finalisé, mais bon).

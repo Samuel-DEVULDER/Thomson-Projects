@@ -1,0 +1,4362 @@
+(main)SOWEBUZZ
+***************************************
+* So We Just Buzz
+*
+* Participation to Forever Party 2016
+*
+* Author: S.Devulder
+* Group:  PULS
+* Web:    http://www.pulsdemos.com
+* Date:   March 2016
+***************************************
+       org    $7000-$100
+
+KTST   equ    $E809
+PUTC   equ    $E803
+SCRPT  equ    $605A
+PTGENE equ    $60CF
+PRC    equ    $E7C3
+
+ACCMAP equ    0   ; accel MAP decomp.
+
+*--------------------------------------
+*      REPEAT
+*      ....
+*      WHILE  condition
+*--------------------------------------
+REPEAT macro
+loop   set    *
+       endm
+WHILE  macro
+       b\0    loop
+       endm
+
+*--------------------------------------
+* Variable in auto-modifiable code
+*
+*      VAR    label,size
+*--------------------------------------
+VAR    macro
+\0     set    *-\1
+       endm
+*--------------------------------------
+main   leas   *,pcr
+       jsr    initvid
+       jsr    intro
+       jmp    player
+
+       includ INTRO.ASM
+       includ VIDEO.ASM
+       includ PLAYER.ASM
+*--------------------------------------
+puls
+       incbin puls.mpa
+presents
+       incbin presents.mpa
+screena
+       incbin screen.mpa
+screenb
+       incbin screen.mpb
+
+zik
+       includ SCORE.ASM
+*--------------------------------------
+stack  set    *
+buffer rmb    8000
+*--------------------------------------
+last   set    *
+       end    main
+(include)INTRO.ASM
+       setdp  $E7
+*--------------------------------------
+* Intro: makes N&B image appear
+* progressively (assume FORM selected)
+*--------------------------------------
+intro  pshs   d
+       lda    #$E7
+       tfr    a,dp
+       orcc   #$50
+* white on black color
+       dec    <PRC   ; color ram
+       ldb    #192^7*8 ; white on black
+       jsr    fillscr
+       inc    <PRC
+       ldu    #buffer
+       ldb    #4      ; pause
+* 1st image
+       ldx    #puls
+       jsr    decomp
+       bsr    display
+* 2nd image
+       ldx    #presents
+       jsr    decomp
+       bsr    display
+* black on black screen
+       dec    <PRC
+       ldb    #192^0*8
+       jsr    fillscr
+       inc    <PRC
+* main screen
+       ldu    #$4000
+       ldx    #screena
+       jsr    decomp
+       ldx    #screenb
+       ldu    #$4000
+       dec    <PRC
+       jsr    decomp
+       inc    <PRC
+*       exg    u,x
+*       jsr    fast8k
+       puls   d,pc
+*--------------------------------------
+* Pauses for a while (dependent on B)
+*--------------------------------------
+pause  pshs   x,b
+       ldx    #0
+paus1  leax   -1,x
+       bne    paus1
+       decb
+       bne    paus1
+       puls   x,b,pc
+*--------------------------------------
+* Uses dither to make image pointed
+* by the U reg fade-in and fade-out
+*--------------------------------------
+display lda   #63
+       REPEAT
+       bsr    dith
+       bsr    disp
+       deca
+       WHILE  ge
+       bsr    pause
+       lda    #63
+       REPEAT
+       bsr    dith
+       bsr    disp
+       deca
+       WHILE  ge
+       rts
+disp   pshs   d,x,y,u
+       ldb    #7
+       subb   dith3a+1
+       ldx    #mask
+       abx
+       lda    #40
+       mul
+       leau   d,u
+       adda   #$40
+       tfr    d,y
+       lda    ,x
+       sta    disp5+3
+       sta    disp5+5
+       leax   40,y
+       stx    disp6+1
+       leax   ,y
+disp5  pulu   d
+       anda   #0
+       andb   #0
+       std    ,x++
+disp6  cmpx   #0
+       bne    disp5
+       leau   40*7,u
+       leax   40*8,x
+       stx    disp6+1
+       leax   -40,x
+       cmpx   #$5F40
+       bls    disp5
+       puls   d,x,y,u,pc
+
+mask   fcb    0,0,0,0,0,0,0,0
+
+dith   pshs   d,x,u
+       ldx    #dith3a+1
+       ldu    #mask
+       clrb
+       lsla
+       anda   #$AA
+       eora   ,s
+       lsra
+       rolb
+       clr    ,x
+       lsra
+       rol    ,x
+       lsra
+       rolb
+       lsra
+       rol    ,x
+       lsra
+       rolb
+       lsra
+       rol    ,x
+       clr    4,x
+       coma
+dith2  rol    4,x
+       decb
+       bge    dith2
+       ldb    #7
+dith3  lda    ,u
+dith3a cmpb   #00
+       bne    dith4
+       eora   #1
+dith4  sta    ,u+
+       decb
+       bge    dith3
+       puls   d,x,u,pc
+(include)VIDEO.ASM
+       setdp  $E7
+*--------------------------------------
+* Screen initialisation. Black border,
+* screen: black on black. RAMA selected
+* on output.
+*--------------------------------------
+initvid
+       pshs   d,dp,u
+       lda    #$E7
+       tfr    a,dp
+       bsr    w8vbl
+       ldu    #scrdat
+       REPEAT
+       ldb    ,u+
+       jsr    PUTC
+       WHILE  ne
+       ldb    <PRC
+       andb   #254
+       stb    <PRC
+       ldu    #$5F40
+       ldb    #192^0
+       bsr    fillscr
+       inc    <PRC
+       clrb
+       jsr    fillscr
+       puls   d,dp,u,pc
+scrdat fcb    $14,$1B,$60,0
+*--------------------------------------
+* wait for VBL
+*--------------------------------------
+w8vbl  set    *       ; $FCD6 sur TO8
+       REPEAT
+       tst    <$E7E7
+       WHILE  pl
+       REPEAT
+       tst    <$E7E7
+       WHILE  mi
+       rts
+*--------------------------------------
+* FastCopy of 8000 bytes from U to X
+*--------------------------------------
+fast8k pshs   d,x,y,u,dp,cc
+       orcc   #$50
+       sts    fastsp
+       leas   8000,x
+       leau   8000,u
+       leax   6,x
+       stx    fastcp1
+       REPEAT
+       pulu   d,x,y,dp
+       leau   -2*7,u
+       pshs   d,x,y,dp
+       pulu   d,x,y,dp
+       leau   -2*7,u
+       pshs   d,x,y,dp
+       cmps   #0
+       VAR    fastcp1,2
+       WHILE  ne
+       pulu   d,x,y
+       pshs   d,x,y
+       lds    #0
+       VAR    fastsp,2
+       puls   d,x,y,u,dp,cc,pc
+*--------------------------------------
+* Fill video memory with content of
+* the B register
+*--------------------------------------
+fillscr pshs  d,x,y,u,dp,cc
+       orcc   #$50
+       sts    fillSP
+       tfr    b,dp
+       tfr    b,a
+       tfr    d,x
+       leay   ,x
+       leau   ,x
+       lds    #$5F40
+       lda    #200
+       REPEAT
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       pshs   b,dp,x,y,u
+       deca
+       WHILE  ne
+       lds    #0
+       VAR    fillSP,2
+       puls  d,x,y,u,dp,cc,pc
+*--------------------------------------
+* Uncompresses the MAP file pointed
+* by X into the 8k buffer pointed by U
+*--------------------------------------
+decomp pshs   d,x,y,u
+       ldd    ,x++
+       incb
+       pshs   d
+       ldb    ,x+
+       incb
+       lda    #8
+       mul
+       tfr    d,y
+       lda    1,s
+       pshs   a,y,u
+decm3  ldb    ,x+
+       bne    decm7
+       ldb    ,x+
+decm4  set    *
+       if     ACCMAP
+* unfold loop to handle 7 lines
+* in one go
+       cmpb   #6
+       bls    decm41
+       cmpy   #6
+       bls    decm41
+       leay   -6,y
+       subb   #6
+       lda    ,x
+       sta    ,u
+       lda    1,x
+       sta    40,u
+       lda    2,x
+       sta    80,u
+       lda    3,x
+       leau   120,u
+       sta    ,u
+       lda    4,x
+       sta    40,u
+       lda    5,x
+       sta    80,u
+       leax   6,x
+       leau   120,u
+decm41 set    *
+       endc
+       lda    ,x+
+       sta    ,u
+       leau   40,u
+       leay   -1,y
+       beq    decm6
+decm5  decb
+       bne    decm4
+       bra    decm3
+decm6  puls   a,y,u
+       leau   1,u
+       deca
+       pshs   a,y,u
+       bne    decm5
+       bra    decm10
+decm7  lda    ,x
+       if     ACCMAP
+* unfold loop to handle 7 lines
+* in one go
+       cmpb   #6
+       bls    decm71
+       cmpy   #6
+       bls    decm71
+       subb   #6
+       leay   -6,y
+       sta    ,u
+       sta    40,u
+       sta    80,u
+       leau   120,u
+       sta    ,u
+       sta    40,u
+       sta    80,u
+       leau   120,u
+decm71 set    *
+       endc
+       sta    ,u
+       leau   40,u
+       leay   -1,y
+       beq    decm9
+decm8  decb
+       bne    decm7
+       leax   1,x
+       jmp    decm3
+decm9  puls   a,y,u
+       leau   1,u
+       deca
+       pshs   a,y,u
+       bne    decm8
+       leax   1,x
+decm10 puls   a,y,u
+       leas   2,s
+       puls   d,x,y,u,pc
+*--------------------------------------
+(include)PLAYER.ASM
+       org   ((*+255)<-8)<+8
+       setdp  playlp<-8
+*--------------------------------------
+* Main loop of the music player
+* - duration 125 cycles
+* - repeated (y) times
+*--------------------------------------
+playlp set    *
+*--------------------------------------
+* oscillator #1
+       ldd    #0        ; 3
+       VAR    ch1val,2  ; value
+       addd   #0        ; 4
+       VAR    ch1frq,2  ; freq
+       std    <ch1val   ; 5
+       cmpa   #$80      ; 2
+       VAR    ch1rat,1  ; cyc. rat.
+       blo    ch1zer    ; 3
+       stu    ,s        ; 5
+       bra    ch1end    ; 3
+ch1zer stx    ,s        ; 5
+       bra    ch1end    ; 3
+ch1end set    *         ; =>25 + wait
+       cmpx   <playlp   ; 6 => ch1=31us
+*--------------------------------------
+* oscillator #2
+       ldd    #0        ; 3
+       VAR    ch2val,2  ; value
+       addd   #0        ; 4
+       VAR    ch2frq,2  ; freq
+       std    <ch2val   ; 5
+       cmpa   #$80      ; 2
+       VAR    ch2rat,1  ; cyc. rat.
+       blo    ch2zer    ; 3
+       stu    ,s        ; 5
+       bra    ch2end    ; 3
+ch2zer stx    ,s        ; 5
+       bra    ch2end    ; 3
+ch2end set    *         ; =>25 + wait
+       cmpx   <playlp   ; 6 => ch2=31us
+*--------------------------------------
+* oscillator #3
+       ldd    #0        ; 3
+       VAR    ch3val,2  ; value
+       addd   #0        ; 4
+       VAR    ch3frq,2  ; freq
+       std    <ch3val   ; 5
+       cmpa   #$80      ; 2
+       VAR    ch3rat,1  ; cyc. rat.
+       blo    ch3zer    ; 3
+       stu    ,s        ; 5
+       bra    ch3end    ; 3
+ch3zer stx    ,s        ; 5
+       bra    ch3end    ; 3
+ch3end set    *         ; =>25 + wait
+       nop              ; 2 => ch3=27us
+*--------------------------------------
+* oscillator #4 / noise
+       ldd    #0        ; 3
+       VAR    ch4val,2  ; value
+noise  lsla             ; 2
+       adca   #0        ; 2
+*      nop
+*      adda   #0
+       addd   #0        ; 4
+       VAR    ch4frq,2  ; freq
+       std    <ch4val   ; 5
+       cmpa   #$80      ; 2
+       VAR    ch4rat,1  ; cyc. rat.
+       blo    ch4zer    ; 3
+       stu    ,s        ; 5
+       bra    ch4end    ; 3
+ch4zer stx    ,s        ; 5
+       bra    ch4end    ; 3
+ch4end set    *         ; =>29
+*--------------------------------------
+* loop y times: 31*2+27+29 = 125us
+       leay   -1,y      ; 4
+       bne    playlp    ; 3
+*--------------------------------------
+* next pattern
+       lds    #0
+       VAR    savsp,2
+       puls   cc,y,u
+       jmp    <tstKBD
+*--------------------------------------
+player ldd    #(playlp&-256)+13
+       tfr    a,dp
+       jsr    putchar
+
+       lda    $E7CD
+       ora    #$3F
+       sta    $E7CD
+
+wait   jsr    KTST      ; anti-bounce
+       bcs    wait
+
+again  ldy    #stack
+       ldu    zik
+
+tstKBD jsr   KTST       ; new pattern
+       bcs   exit       ; keypress => exit
+nxtCMD ldd   ,u++
+       beq   cRTS       ; $0000 => rts
+       bgt   cJSR       ; call $label
+       anda  #$7
+       beq   cTEMPO     ; $80
+       suba  #2
+       ble   cPLAY      ; $81/$82
+       deca
+       beq   cTEXT      ; $83
+
+exit   jmp   [$FFFE]    ; reset
+
+*--------------------------------------
+cTEMPO stb   <tempo     ; set tempo
+       bra   nxtCMD
+*--------------------------------------
+cJSR   stu   ,y++       ; push patt.
+       addd  #zik
+       tfr   d,u
+       bra   nxtCMD
+*--------------------------------------
+cRTS   ldu   ,--y       ; pop patt.
+       cmpy  #stack
+       bge   nxtCMD
+*      bra   exit       ; retour basic
+       bra   again      ; rebouc. zik
+*--------------------------------------
+* affiche texte
+cTEXT  bsr   putchar
+       ldb   ,u+
+       bne   cTEXT
+       bra   nxtCMD
+*--------------------------------------
+* init params pattern
+cPLAY  pshs  cc,y,u     ; save regs
+       beq   cNOTE      ; $82=>normal
+
+cBRUI  ldx   #$4889     ; $81=>noise
+       bra   cNOTE2
+cNOTE  ldx   #$128b
+cNOTE2 stx   <noise
+
+       stb   <length    ; duration
+
+       lda   -2,u       ; voix changees
+       ldy   #chldat    ; maj voix
+       bsr   setch2
+       bsr   setch2
+       stu   3,s        ; maj ptr patt.
+
+       ldd   #0
+       VAR   tempo,2
+       VAR   length,1
+       mul
+       tfr   d,y        ; nb tour bouc.
+
+       sts   <savsp     ; save stack
+       orcc  #$50       ; no interr.
+       lds   #$E7C0     ; s=PIA systeme
+       ldd   ,s
+       orb   #8
+       tfr   d,x        ; x=buzzer 1
+       eorb  #8
+       tfr   d,u        ; u=buzzer 0
+       jmp   <playlp    ; main loop
+*--------------------------------------
+setch2 bsr   setch1     ; init 2 chls
+setch1 lsla             ; init 1 chl
+       bmi   setch3
+       ldb   ,u+        ; lit code note
+       ldx   #zik+2
+       abx
+       abx
+       abx
+       ldb   ,x         ; decodage
+       ldx   1,x
+       stb   [,y]       ; ecrirure
+       stx   [2,y]
+       bne   setch3
+       stx   [4,y]      ;<-meilleur son
+setch3 leay  6,y
+       rts
+chldat fdb   ch1rat,ch1frq,ch1val
+       fdb   ch2rat,ch2frq,ch2val
+       fdb   ch3rat,ch3frq,ch3val
+       fdb   ch4rat,ch4frq,ch4val
+*--------------------------------------
+* print a char twice bigger in the
+* bottom of the screen.
+putchar
+       pshs  d,u,x,y
+       subb  #32
+       bge   putch1
+       cmpb  #13-32
+       beq   putch3
+       cmpb  #10-32
+       beq   putch4
+       cmpb  #$18-32
+       beq   putch5
+putch0 puls  d,u,x,y,pc
+putch1 clra            ; CHAR
+       lslb
+       lslb
+       rola
+       lslb
+       rola
+       addd  PTGENE
+       tfr   d,u
+       ldx   SCRPT
+       lda   #8
+putch2 ldb   ,u
+       lslb
+       orb   ,u+
+       stb   ,x
+       stb   -40,x
+       leax  -80,x
+       deca
+       bne   putch2
+       leax  16*40+1,x
+       stx   SCRPT
+       bra   putch0
+putch3 ldd   #$4000+25*40*8 ; CR
+       std   SCRPT
+       bra   putch0
+putch4 ldd   SCRPT  ; LF
+       addd  #40*16
+       bra   putch3+3
+putch5 ldu   SCRPT  ; eff. ligne
+       leau  40,u
+       ldd   #32
+       ldx   #0
+       leay  ,x
+putch6 pshu  a,x,y
+       pshu  a,x,y
+       pshu  a,x,y
+       pshu  a,x,y
+       decb
+       bne   putch6
+       bra   putch0
+(include)SCORE.ASM
+ fdb ptn
+ fcb $00,$00,$00 ; note #0
+ fcb $10,$12,$c8 ; note #1
+ fcb $10,$16,$56 ; note #2
+ fcb $20,$10,$bc ; note #3
+ fcb $20,$12,$c8 ; note #4
+ fcb $20,$16,$56 ; note #5
+ fcb $40,$0e,$14 ; note #6
+ fcb $40,$10,$bc ; note #7
+ fcb $40,$12,$c8 ; note #8
+ fcb $40,$16,$56 ; note #9
+ fcb $80,$01,$c2 ; note #10
+ fcb $80,$02,$14 ; note #11
+ fcb $80,$02,$56 ; note #12
+ fcb $80,$02,$9f ; note #13
+ fcb $80,$02,$c8 ; note #14
+ fcb $80,$03,$1a ; note #15
+ fcb $80,$03,$85 ; note #16
+ fcb $80,$03,$b6 ; note #17
+ fcb $80,$07,$0a ; note #18
+ fcb $80,$08,$5a ; note #19
+ fcb $80,$09,$60 ; note #20
+ fcb $80,$0a,$87 ; note #21
+ fcb $80,$0b,$2b ; note #22
+ fcb $80,$0c,$83 ; note #23
+ fcb $80,$0e,$14 ; note #24
+ fcb $80,$0e,$e9 ; note #25
+ fcb $80,$10,$bc ; note #26
+ fcb $80,$12,$c8 ; note #27
+ fcb $80,$15,$16 ; note #28
+ fcb $80,$16,$56 ; note #29
+ fcb $80,$19,$0e ; note #30
+ fcb $80,$1c,$28 ; note #31
+ fcb $80,$1d,$d2 ; note #32
+ fcb $80,$25,$91 ; note #33
+ fcb $80,$35,$26 ; note #34
+ptn
+ fcb $80,$7d
+ fcb $82,$04,18,10,0,0
+ fcb $80,$80
+ fcb $82,$04,10,0,0,0
+ fcb $ba,$10,0
+ fdb TUN6-zik
+ fcb $ba,$1a,0
+ fdb TUN55-zik
+ fdb TUN55-zik
+ fdb TUN165-zik
+ fdb TUN6-zik
+ fcb $ba,$17,0
+ fcb $83
+ fcc /SO /
+ fcb $0
+ fdb TUN24-zik
+ fdb TUN63-zik
+ fdb TUN161-zik
+ fcb $ba,$09,0
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fcb $82,$09,28,0,0,0
+ fdb TUN257-zik
+ fcb $8a,$02,13,0,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fcb $82,$0c,27,0,0,0
+ fcb $ba,$05,0
+ fcb $83
+ fcc /DANCE /
+ fcb $0
+ fcb $82,$04,30,29,22,18
+ fcb $f2,$04,10
+ fcb $82,$03,29,22,15,0
+ fcb $8a,$0d,22,0,0
+ fdb TUN190-zik
+ fcb $83
+ fcc /DANCE /
+ fcb $0
+ fcb $82,$01,30,29,22,0
+ fcb $ea,$07,0
+ fdb TUN169-zik
+ fdb TUN250-zik
+ fcb $83
+ fcc /DANCE /
+ fcb $d
+ fcb $0
+ fdb TUN16-zik
+ fdb TUN7-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$03,28,21,0,0
+ fcb $ea,$02,13
+ fcb $8a,$04,21,13,0
+ fcb $da,$09,0
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN75-zik
+ fcb $8a,$04,30,28,21
+ fcb $ea,$04,0
+ fdb TUN80-zik
+ fcb $82,$02,15,13,0,0
+ fcb $da,$01,0
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN225-zik
+ fcb $9a,$05,21,0
+ fcb $83
+ fcc /DANCE /
+ fcb $0
+ fcb $82,$04,30,29,22,18
+ fcb $f2,$04,10
+ fcb $82,$03,29,22,15,0
+ fcb $8a,$0d,22,0,0
+ fdb TUN190-zik
+ fcb $83
+ fcc /DANCE /
+ fcb $0
+ fcb $82,$02,30,29,22,0
+ fcb $ea,$06,0
+ fdb TUN169-zik
+ fdb TUN292-zik
+ fcb $83
+ fcc /DANCE /
+ fcb $d
+ fcb $0
+ fdb TUN16-zik
+ fdb TUN8-zik
+ fcb $9a,$08,30,20
+ fcb $9a,$05,20,15
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$03,28,20,0,0
+ fcb $c2,$02,21,20,13
+ fcb $82,$02,21,20,13,0
+ fcb $8a,$01,20,13,0
+ fdb TUN319-zik
+ fcb $ba,$07,21
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN75-zik
+ fcb $8a,$03,30,28,21
+ fcb $ea,$05,0
+ fdb TUN80-zik
+ fdb TUN74-zik
+ fdb TUN299-zik
+ fcb $da,$01,0
+ fcb $83
+ fcc /JUST /
+ fcb $d
+ fcb $0
+ fdb TUN225-zik
+ fcb $9a,$03,21,0
+ fcb $ba,$02,0
+ fdb TUN165-zik
+ fdb TUN177-zik
+ fcb $ba,$02,0
+ fcb $83,$18
+ fcc /WHO /
+ fcb $0
+ fdb TUN59-zik
+ fcb $ba,$03,0
+ fcb $83
+ fcc /SAYS /
+ fcb $0
+ fdb TUN52-zik
+ fdb TUN226-zik
+ fcb $83
+ fcc /SPECCY, /
+ fcb $0
+ fdb TUN208-zik
+ fcb $83
+ fcc /MEANS /
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN70-zik
+ fdb TUN111-zik
+ fcb $83
+ fcc /FOR-/
+ fcb $0
+ fdb TUN148-zik
+ fcb $ba,$08,0
+ fcb $8a,$04,29,24,16
+ fdb TUN131-zik
+ fdb TUN90-zik
+ fcb $ba,$03,0
+ fcb $83
+ fcc /TUNE/
+ fcb $d
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN29-zik
+ fcb $da,$0a,0
+ fcb $ba,$08,0
+ fdb TUN162-zik
+ fcb $83,$18
+ fcc /IT /
+ fcb $0
+ fdb TUN210-zik
+ fcb $83
+ fcc /HAS /
+ fcb $0
+ fdb TUN82-zik
+ fdb TUN242-zik
+ fcb $da,$06,0
+ fcb $ba,$07,0
+ fcb $83
+ fcc /A CHIP /
+ fcb $0
+ fdb TUN34-zik
+ fdb TUN114-zik
+ fcb $8a,$03,21,13,0
+ fdb TUN161-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fdb TUN25-zik
+ fcb $ba,$08,0
+ fcb $83
+ fcc /PLAY /
+ fcb $0
+ fdb TUN39-zik
+ fdb TUN257-zik
+ fdb TUN238-zik
+ fcb $83
+ fcc /GREAT /
+ fcb $0
+ fdb TUN88-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /TUNES./
+ fcb $d
+ fcb $0
+ fdb TUN13-zik
+ fdb TUN27-zik
+ fcb $da,$10,0
+ fdb TUN264-zik
+ fdb TUN64-zik
+ fcb $83,$18
+ fcc /WHO /
+ fcb $0
+ fdb TUN59-zik
+ fcb $ba,$04,0
+ fcb $9a,$02,24,16
+ fcb $83
+ fcc /SAYS /
+ fcb $0
+ fdb TUN77-zik
+ fdb TUN115-zik
+ fdb TUN94-zik
+ fcb $83
+ fcc /THOM/
+ fcb $0
+ fdb TUN210-zik
+ fcb $83
+ fcc /SON, /
+ fcb $0
+ fdb TUN57-zik
+ fdb TUN70-zik
+ fcb $da,$08,0
+ fcb $ba,$03,0
+ fcb $83
+ fcc /MEANS /
+ fcb $0
+ fdb TUN219-zik
+ fcb $83
+ fcc /QUITE /
+ fcb $0
+ fdb TUN13-zik
+ fcb $ca,$03,24,16
+ fdb TUN106-zik
+ fdb TUN255-zik
+ fcb $ba,$04,0
+ fcb $83
+ fcc /CUTE/
+ fcb $d
+ fcb $0
+ fdb TUN13-zik
+ fdb TUN29-zik
+ fcb $da,$0f,0
+ fcb $ba,$03,0
+ fcb $9a,$01,25,17
+ fcb $83,$18
+ fcc /BUT /
+ fcb $0
+ fdb TUN45-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /HAS /
+ fcb $0
+ fdb TUN14-zik
+ fcb $ba,$08,0
+ fdb TUN124-zik
+ fcb $83
+ fcc /NO /
+ fcb $0
+ fdb TUN79-zik
+ fdb TUN104-zik
+ fcb $ba,$06,0
+ fcb $83
+ fcc /CHIP, /
+ fcb $0
+ fcb $82,$0b,28,0,0,0
+ fcb $ba,$04,0
+ fdb TUN124-zik
+ fcb $83
+ fcc /COMP/
+ fcb $0
+ fdb TUN295-zik
+ fdb TUN242-zik
+ fdb TUN120-zik
+ fcb $83
+ fcc /LET/
+ fcb $0
+ fdb TUN83-zik
+ fcb $ba,$01,0
+ fdb TUN128-zik
+ fcb $83
+ fcc /ELY /
+ fcb $0
+ fdb TUN166-zik
+ fdb TUN242-zik
+ fdb TUN207-zik
+ fcb $83
+ fcc /MUTE./
+ fcb $d
+ fcb $0
+ fdb TUN12-zik
+ fdb TUN27-zik
+ fcb $da,$0c,0
+ fcb $ba,$04,0
+ fdb TUN264-zik
+ fdb TUN64-zik
+ fcb $83,$18
+ fcc /WHO /
+ fcb $0
+ fdb TUN224-zik
+ fcb $83
+ fcc /SAYS /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN175-zik
+ fdb TUN115-zik
+ fdb TUN95-zik
+ fcb $83
+ fcc /DEMO, /
+ fcb $0
+ fcb $82,$0e,29,0,0,0
+ fcb $ba,$01,0
+ fdb TUN279-zik
+ fcb $83
+ fcc /ME/
+ fcb $0
+ fdb TUN218-zik
+ fcb $83
+ fcc /ANS /
+ fcb $0
+ fdb TUN12-zik
+ fcb $ca,$01,24,16
+ fcb $8a,$03,24,16,0
+ fdb TUN255-zik
+ fcb $ba,$03,0
+ fcb $83
+ fcc /MU/
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN29-zik
+ fdb TUN204-zik
+ fcb $83
+ fcc /SIC/
+ fcb $d
+ fcb $0
+ fdb TUN89-zik
+ fcb $ca,$04,25,17
+ fcb $8a,$04,17,0,0
+ fcb $ba,$02,0
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN59-zik
+ fcb $ba,$02,0
+ fcb $9a,$02,21,13
+ fcb $83
+ fcc /WE'RE /
+ fcb $0
+ fcb $82,$02,29,21,13,0
+ fdb TUN242-zik
+ fdb TUN122-zik
+ fcb $83
+ fcc /STUCK /
+ fcb $0
+ fcb $82,$0c,28,0,0,0
+ fcb $ba,$02,0
+ fdb TUN128-zik
+ fcb $83
+ fcc /IN /
+ fcb $0
+ fdb TUN166-zik
+ fdb TUN104-zik
+ fcb $ba,$08,0
+ fcb $83
+ fcc /THE /
+ fcb $0
+ fdb TUN58-zik
+ fdb TUN63-zik
+ fdb TUN288-zik
+ fcb $83
+ fcc /BIG /
+ fcb $0
+ fcb $82,$01,28,13,0,0
+ fcb $da,$0c,0
+ fcb $ba,$02,0
+ fcb $83
+ fcc /SH*T!/
+ fcb $d
+ fcb $0
+ fdb TUN57-zik
+ fdb TUN27-zik
+ fcb $da,$0b,0
+ fcb $ba,$05,0
+ fcb $9a,$01,20,12
+ fcb $83,$18
+ fcc /WHEN /
+ fcb $0
+ fcb $82,$03,29,20,12,0
+ fcb $8a,$03,12,0,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN210-zik
+ fcb $83
+ fcc /THINK /
+ fcb $0
+ fdb TUN183-zik
+ fdb TUN115-zik
+ fcb $9a,$09,0,0
+ fcb $83
+ fcc /PARTY, /
+ fcb $0
+ fdb TUN148-zik
+ fcb $ba,$06,0
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN52-zik
+ fdb TUN185-zik
+ fcb $83
+ fcc /THINK /
+ fcb $0
+ fdb TUN208-zik
+ fcb $83
+ fcc /FOR/
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN51-zik
+ fcb $83
+ fcc /EVER/
+ fcb $d
+ fcb $0
+ fdb TUN14-zik
+ fdb TUN29-zik
+ fcb $da,$07,0
+ fcb $ba,$0b,0
+ fdb TUN162-zik
+ fcb $83,$18
+ fcc /THESE /
+ fcb $0
+ fdb TUN12-zik
+ fcb $ba,$08,0
+ fcb $8a,$04,29,19,11
+ fdb TUN103-zik
+ fcb $ba,$06,0
+ fcb $83
+ fcc /MACH/
+ fcb $0
+ fdb TUN88-zik
+ fcb $ba,$05,0
+ fcb $9a,$02,19,11
+ fcb $83
+ fcc /INES /
+ fcb $0
+ fcb $82,$02,28,19,11,0
+ fdb TUN103-zik
+ fcb $ba,$0a,0
+ fcb $83
+ fcc /HARDLY /
+ fcb $0
+ fdb TUN24-zik
+ fcb $ca,$02,19,11
+ fcb $8a,$02,19,11,0
+ fdb TUN270-zik
+ fcb $83
+ fcc /GOT A /
+ fcb $0
+ fdb TUN34-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /BUZZER./
+ fcb $d
+ fcb $0
+ fcb $82,$04,27,0,0,0
+ fdb TUN43-zik
+ fcb $ba,$04,3
+ fcb $ba,$04,0
+ fdb TUN221-zik
+ fcb $83,$18
+ fcc /EF/
+ fcb $0
+ fdb TUN12-zik
+ fcb $da,$01,26
+ fdb TUN109-zik
+ fcb $ba,$04,0
+ fcb $83
+ fcc /FECTS /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN33-zik
+ fcb $da,$01,0
+ fcb $ba,$07,0
+ fcb $ba,$01,24
+ fcb $83
+ fcc /CAN /
+ fcb $0
+ fdb TUN46-zik
+ fdb TUN155-zik
+ fdb TUN201-zik
+ fcb $83
+ fcc /USE /
+ fcb $0
+ fdb TUN13-zik
+ fcb $ba,$05,0
+ fcb $83
+ fcc /NO /
+ fcb $0
+ fdb TUN182-zik
+ fcb $da,$05,0
+ fcb $9a,$07,24,16
+ fdb TUN123-zik
+ fcb $83
+ fcc /TONES, /
+ fcb $0
+ fdb TUN12-zik
+ fdb TUN29-zik
+ fcb $da,$05,0
+ fcb $ba,$01,5
+ fcb $ba,$03,0
+ fcb $83
+ fcc /BE/
+ fcb $0
+ fdb TUN56-zik
+ fcb $9a,$04,2,27
+ fcb $9a,$04,27,0
+ fcb $82,$01,29,27,25,17
+ fcb $c2,$03,25,17,0
+ fdb TUN69-zik
+ fcb $83
+ fcc /CAUSE /
+ fcb $0
+ fdb TUN76-zik
+ fcb $da,$0b,0
+ fcb $ba,$04,0
+ fcb $83
+ fcc /CPU /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN257-zik
+ fdb TUN23-zik
+ fcb $ba,$08,0
+ fcb $ba,$01,27
+ fcb $83,$d,$18
+ fcc /DOES /
+ fcb $0
+ fcb $82,$03,29,27,0,0
+ fdb TUN205-zik
+ fdb TUN94-zik
+ fcb $83
+ fcc /THEM /
+ fcb $0
+ fcb $82,$04,27,21,13,0
+ fdb TUN238-zik
+ fcb $83
+ fcc /ALL /
+ fcb $0
+ fcb $82,$06,28,27,0,0
+ fdb TUN185-zik
+ fcb $83
+ fcc /A/
+ fcb $0
+ fdb TUN159-zik
+ fcb $9a,$05,29,28
+ fdb TUN244-zik
+ fcb $83
+ fcc /LONE./
+ fcb $d
+ fcb $0
+ fdb TUN12-zik
+ fdb TUN43-zik
+ fcb $da,$04,3
+ fdb TUN42-zik
+ fdb TUN221-zik
+ fcb $83,$18
+ fcc /MOST /
+ fcb $0
+ fdb TUN12-zik
+ fdb TUN49-zik
+ fcb $83
+ fcc /OUR /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN33-zik
+ fdb TUN111-zik
+ fcb $ba,$01,24
+ fcb $83
+ fcc /STUFF /
+ fcb $0
+ fdb TUN46-zik
+ fdb TUN44-zik
+ fcb $ba,$06,24
+ fcb $ba,$02,0
+ fcb $83
+ fcc /IS /
+ fcb $0
+ fdb TUN11-zik
+ fcb $ba,$02,0
+ fcb $ba,$02,24
+ fcb $83
+ fcc /WRI/
+ fcb $0
+ fcb $82,$01,29,24,0,0
+ fcb $da,$05,0
+ fdb TUN213-zik
+ fcb $8a,$05,24,16,0
+ fdb TUN126-zik
+ fcb $83
+ fcc /TING /
+ fcb $0
+ fdb TUN14-zik
+ fdb TUN72-zik
+ fcb $c2,$02,14,0,0
+ fcb $da,$02,0
+ fcb $da,$04,4
+ fcb $da,$04,0
+ fcb $da,$04,1
+ fcb $da,$04,0
+ fdb TUN62-zik
+ fcb $83
+ fcc /THEN /
+ fcb $0
+ fcb $82,$02,29,17,0,0
+ fdb TUN292-zik
+ fdb TUN118-zik
+ fcb $83
+ fcc /DE/
+ fcb $0
+ fcb $82,$04,29,27,21,13
+ fdb TUN283-zik
+ fdb TUN95-zik
+ fcb $83
+ fcc /BUG /
+ fcb $0
+ fdb TUN81-zik
+ fcb $da,$04,0
+ fcb $da,$04,3
+ fcb $da,$04,0
+ fcb $c2,$04,3,21,13
+ fcb $c2,$01,13,0,0
+ fdb TUN319-zik
+ fcb $ba,$05,26
+ fcb $83,$d,$18
+ fcc /AND /
+ fcb $0
+ fcb $82,$01,28,26,0,0
+ fcb $da,$04,0
+ fcb $ba,$05,0
+ fcb $83
+ fcc /RE/
+ fcb $0
+ fdb TUN39-zik
+ fdb TUN304-zik
+ fdb TUN247-zik
+ fdb TUN23-zik
+ fcb $da,$01,24
+ fcb $9a,$06,24,0
+ fcb $83
+ fcc /WRITING./
+ fcb $d
+ fcb $0
+ fdb TUN148-zik
+ fdb TUN27-zik
+ fcb $da,$0d,0
+ fcb $ba,$01,0
+ fcb $83,$18
+ fcc /WHEN /
+ fcb $0
+ fcb $82,$02,27,0,0,0
+ fcb $ca,$02,20,12
+ fcb $8a,$02,20,12,0
+ fdb TUN64-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN224-zik
+ fcb $83
+ fcc /SAY /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN175-zik
+ fdb TUN131-zik
+ fdb TUN99-zik
+ fcb $83
+ fcc /MARCH, /
+ fcb $0
+ fdb TUN168-zik
+ fcb $ba,$06,0
+ fcb $9a,$01,24,16
+ fcb $83
+ fcc /IT /
+ fcb $0
+ fcb $82,$03,29,24,16,0
+ fdb TUN184-zik
+ fdb TUN120-zik
+ fcb $83
+ fcc /MEANS /
+ fcb $0
+ fdb TUN218-zik
+ fcb $83
+ fcc /DE/
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN51-zik
+ fcb $83
+ fcc /ADLINE /
+ fcb $0
+ fdb TUN14-zik
+ fcb $c2,$01,22,14,11
+ fcb $82,$03,34,29,22,14
+ fcb $e2,$02,14,11
+ fdb TUN133-zik
+ fcb $ea,$10,0
+ fcb $e2,$04,25,17
+ fcb $e2,$04,17,0
+ fcb $ea,$05,11
+ fdb TUN132-zik
+ fcb $da,$04,0
+ fcb $83,$d,$18
+ fcc /TO /
+ fcb $0
+ fcb $82,$04,34,30,0,0
+ fcb $e2,$04,21,13
+ fdb TUN283-zik
+ fcb $da,$08,0
+ fcb $83
+ fcc /BE /
+ fcb $0
+ fcb $82,$01,34,28,0,0
+ fcb $ea,$08,11
+ fcb $ca,$08,0,0
+ fcb $83
+ fcc /READY /
+ fcb $0
+ fcb $82,$04,34,28,21,13
+ fdb TUN283-zik
+ fcb $da,$09,0
+ fcb $83
+ fcc /RIGHT /
+ fcb $0
+ fcb $82,$05,34,29,11,0
+ fdb TUN132-zik
+ fdb TUN114-zik
+ fcb $83
+ fcc /ON /
+ fcb $0
+ fcb $82,$03,34,28,21,13
+ fdb TUN318-zik
+ fcb $ea,$06,0
+ fcb $da,$03,0
+ fcb $83
+ fcc /TIME./
+ fcb $d
+ fcb $0
+ fcb $82,$02,34,29,0,0
+ fcb $9a,$07,29,0
+ fdb TUN27-zik
+ fcb $da,$09,0
+ fcb $ba,$07,0
+ fcb $9a,$02,20,12
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$02,29,20,12,0
+ fdb TUN214-zik
+ fdb TUN203-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN14-zik
+ fcb $ba,$05,0
+ fcb $83
+ fcc /HEAD /
+ fcb $0
+ fcb $82,$04,28,24,16,0
+ fdb TUN184-zik
+ fdb TUN226-zik
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fcb $82,$0f,29,0,0,0
+ fdb TUN44-zik
+ fcb $83
+ fcc /HOR/
+ fcb $0
+ fdb TUN57-zik
+ fcb $ba,$06,0
+ fcb $83
+ fcc /NA/
+ fcb $0
+ fdb TUN216-zik
+ fcb $83
+ fcc /-/
+ fcb $0
+ fdb TUN78-zik
+ fdb TUN175-zik
+ fdb TUN266-zik
+ fdb TUN99-zik
+ fcb $83
+ fcc /SUCA /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN29-zik
+ fcb $da,$0b,0
+ fcb $ba,$07,0
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fcb $82,$04,29,25,17,0
+ fcb $ca,$01,17,0
+ fcb $9a,$03,17,0
+ fcb $ba,$02,0
+ fcb $83
+ fcc /FOR/
+ fcb $0
+ fdb TUN14-zik
+ fcb $ba,$02,0
+ fcb $83
+ fcc /GET/
+ fcb $0
+ fcb $82,$0d,30,0,0,0
+ fcb $ba,$02,0
+ fcb $83
+ fcc /.../
+ fcb $d
+ fcb $0
+ fcb $82,$12,28,0,0,0
+ fcb $ba,$07,0
+ fcb $83,$18
+ fcc /ALL /
+ fcb $0
+ fdb TUN58-zik
+ fcb $ba,$0a,0
+ fcb $83
+ fcc /THIS /
+ fcb $0
+ fcb $82,$0e,28,0,0,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /DRA/
+ fcb $0
+ fdb TUN89-zik
+ fcb $ba,$02,0
+ fcb $83
+ fcc /MA/
+ fcb $d
+ fcb $0
+ fdb TUN138-zik
+ fdb TUN1-zik
+ fcb $83,$18
+ fcc /ALL /
+ fcb $0
+ fdb TUN151-zik
+ fdb TUN140-zik
+ fcb $83
+ fcc /THIS /
+ fcb $0
+ fdb TUN144-zik
+ fcb $83
+ fcc /DRA/
+ fcb $0
+ fdb TUN147-zik
+ fcb $83
+ fcc /MA /
+ fcb $d
+ fcb $0
+ fdb TUN4-zik
+ fcb $83,$18
+ fcc /ALL /
+ fcb $0
+ fdb TUN17-zik
+ fcb $83
+ fcc /THIS /
+ fcb $0
+ fdb TUN230-zik
+ fcb $83
+ fcc /DRA/
+ fcb $0
+ fdb TUN234-zik
+ fcb $83
+ fcc /MA/
+ fcb $d
+ fcb $0
+ fdb TUN3-zik
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN241-zik
+ fcb $83
+ fcc /PLAY /
+ fcb $0
+ fdb TUN141-zik
+ fcb $83
+ fcc /BEEP /
+ fcb $0
+ fdb TUN149-zik
+ fcb $83
+ fcc /BEEP/
+ fcb $d
+ fcb $0
+ fdb TUN5-zik
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN18-zik
+ fcb $83
+ fcc /PLAY /
+ fcb $0
+ fdb TUN10-zik
+ fcb $83
+ fcc /BEEP /
+ fcb $0
+ fdb TUN21-zik
+ fcb $83
+ fcc /BEEP/
+ fcb $d
+ fcb $0
+ fdb TUN138-zik
+ fdb TUN1-zik
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN151-zik
+ fdb TUN140-zik
+ fcb $83
+ fcc /PLAY /
+ fcb $0
+ fdb TUN144-zik
+ fcb $83
+ fcc /BEEP /
+ fcb $0
+ fdb TUN147-zik
+ fcb $83
+ fcc /BEEP/
+ fcb $d
+ fcb $0
+ fdb TUN4-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN17-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN143-zik
+ fcb $83
+ fcc /BUZZ /
+ fcb $d
+ fcb $0
+ fdb TUN3-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN241-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN141-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN149-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fdb TUN5-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN18-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN10-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN21-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fcb $82,$08,27,11,0,0
+ fcb $da,$11,0
+ fcb $83,$18
+ fcc /NOW /
+ fcb $0
+ fdb TUN13-zik
+ fcb $ba,$02,0
+ fcb $ba,$02,11
+ fcb $83
+ fcc /YOU /
+ fcb $0
+ fcb $82,$06,29,11,0,0
+ fdb TUN95-zik
+ fcb $83
+ fcc /WISH /
+ fcb $0
+ fdb TUN11-zik
+ fcb $ba,$09,0
+ fcb $ba,$03,11
+ fcb $83
+ fcc /THAT /
+ fcb $0
+ fcb $82,$05,29,11,0,0
+ fcb $da,$08,0
+ fcb $ba,$07,0
+ fcb $83
+ fcc /IT/
+ fcb $0
+ fdb TUN219-zik
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fcb $82,$07,29,11,0,0
+ fdb TUN194-zik
+ fcb $ba,$04,0
+ fcb $83
+ fcc /OV/
+ fcb $0
+ fdb TUN217-zik
+ fcb $83
+ fcc /ER /
+ fcb $0
+ fdb TUN11-zik
+ fcb $da,$08,11
+ fdb TUN121-zik
+ fcb $83
+ fcc /BE/
+ fcb $0
+ fdb TUN11-zik
+ fcb $ba,$0a,0
+ fcb $83
+ fcc /CAUSE /
+ fcb $0
+ fcb $82,$08,29,11,0,0
+ fcb $da,$02,0
+ fcb $ba,$05,0
+ fcb $83,$d,$18
+ fcc /THE /
+ fcb $0
+ fcb $82,$0a,30,0,0,0
+ fcb $ba,$07,0
+ fcb $ba,$03,11
+ fcb $83
+ fcc /WRONG /
+ fcb $0
+ fcb $82,$05,28,11,0,0
+ fcb $da,$09,0
+ fcb $ba,$04,0
+ fcb $83
+ fcc /THING /
+ fcb $0
+ fdb TUN83-zik
+ fcb $ba,$04,0
+ fcb $83
+ fcc /IS /
+ fcb $0
+ fdb TUN39-zik
+ fdb TUN189-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /THE /
+ fcb $0
+ fcb $82,$0f,28,0,0,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /BEAT./
+ fcb $d
+ fcb $0
+ fcb $82,$18,29,0,0,0
+ fcb $ba,$05,0
+ fcb $83,$18
+ fcc /WHEN /
+ fcb $0
+ fdb TUN208-zik
+ fcb $83
+ fcc /YOU /
+ fcb $0
+ fdb TUN220-zik
+ fcb $83
+ fcc /FIN/
+ fcb $0
+ fdb TUN148-zik
+ fcb $ba,$09,0
+ fcb $83
+ fcc /ALLY /
+ fcb $0
+ fcb $82,$11,29,0,0,0
+ fcb $ba,$05,0
+ fcb $83
+ fcc /THINK /
+ fcb $0
+ fdb TUN87-zik
+ fcb $ba,$07,0
+ fcb $83
+ fcc /YOU/
+ fcb $0
+ fdb TUN220-zik
+ fcb $83
+ fcc /'VE /
+ fcb $0
+ fdb TUN217-zik
+ fcb $83
+ fcc /MADE /
+ fcb $0
+ fcb $82,$19,29,0,0,0
+ fcb $ba,$05,0
+ fcb $83
+ fcc /IT, /
+ fcb $0
+ fdb TUN14-zik
+ fcb $ba,$03,0
+ fcb $83,$d,$18
+ fcc /YOU /
+ fcb $0
+ fdb TUN12-zik
+ fcb $ba,$02,0
+ fcb $83
+ fcc /REAL/
+ fcb $0
+ fcb $82,$11,30,0,0,0
+ fcb $83
+ fcc /IZE /
+ fcb $0
+ fdb TUN25-zik
+ fcb $ba,$04,0
+ fcb $83
+ fcc /THAT /
+ fcb $0
+ fdb TUN223-zik
+ fcb $83
+ fcc /THERE'S /
+ fcb $0
+ fdb TUN222-zik
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fdb TUN25-zik
+ fcb $83
+ fcc /MORE /
+ fcb $0
+ fdb TUN148-zik
+ fcb $83,$d,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN209-zik
+ fcb $83
+ fcc /MORE!/
+ fcb $d
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN26-zik
+ fcb $da,$04,0
+ fdb TUN200-zik
+ fdb TUN20-zik
+ fcb $83,$18
+ fcc /IS /
+ fcb $0
+ fdb TUN15-zik
+ fcb $da,$08,13
+ fcb $da,$03,26
+ fcb $9a,$05,0,0
+ fcb $83
+ fcc /THE /
+ fcb $0
+ fcb $82,$04,29,26,24,16
+ fdb TUN179-zik
+ fdb TUN154-zik
+ fcb $9a,$03,24,11
+ fcb $83
+ fcc /TI/
+ fcb $0
+ fcb $82,$01,29,24,11,0
+ fdb TUN48-zik
+ fcb $da,$04,24
+ fcb $da,$04,0
+ fcb $c2,$01,24,16,15
+ fdb TUN181-zik
+ fdb TUN192-zik
+ fcb $ba,$01,0
+ fcb $ba,$02,24
+ fcb $83
+ fcc /MING /
+ fcb $0
+ fcb $82,$04,29,24,0,0
+ fcb $da,$01,0
+ fdb TUN116-zik
+ fcb $83
+ fcc /THE /
+ fcb $0
+ fcb $82,$06,29,13,0,0
+ fdb TUN288-zik
+ fcb $ba,$03,24
+ fcb $83
+ fcc /PRO/
+ fcb $0
+ fdb TUN13-zik
+ fcb $c2,$05,24,16,15
+ fcb $f2,$01,0
+ fdb TUN106-zik
+ fdb TUN42-zik
+ fcb $83
+ fcc /BLEM /
+ fcb $0
+ fdb TUN13-zik
+ fdb TUN187-zik
+ fcb $da,$08,0
+ fcb $da,$01,15
+ fcb $ba,$03,5
+ fdb TUN42-zik
+ fcb $8a,$04,29,25,17
+ fdb TUN178-zik
+ fcb $83
+ fcc /OR /
+ fcb $0
+ fcb $82,$08,29,13,0,0
+ fdb TUN119-zik
+ fcb $83
+ fcc /CYCLE /
+ fcb $0
+ fcb $82,$03,30,29,21,15
+ fcb $f2,$01,13
+ fdb TUN318-zik
+ fdb TUN245-zik
+ fdb TUN105-zik
+ fcb $ba,$03,0
+ fdb TUN125-zik
+ fcb $83,$d,$18
+ fcc /COUNT /
+ fcb $0
+ fcb $82,$03,28,27,11,0
+ fdb TUN48-zik
+ fcb $da,$01,27
+ fcb $9a,$03,27,0
+ fcb $ba,$04,0
+ fcb $83
+ fcc /TO/
+ fcb $0
+ fdb TUN151-zik
+ fcb $82,$02,13,0,0,0
+ fcb $ba,$02,0
+ fcb $ba,$01,27
+ fcb $83
+ fcc /TA/
+ fcb $0
+ fcb $82,$04,28,27,0,0
+ fdb TUN97-zik
+ fcb $83
+ fcc /LLY /
+ fcb $0
+ fcb $82,$03,28,13,0,0
+ fcb $9a,$05,13,0
+ fcb $83
+ fcc /WR/
+ fcb $0
+ fdb TUN159-zik
+ fcb $8a,$05,29,28,15
+ fdb TUN102-zik
+ fcb $83
+ fcc /ONG?/
+ fcb $d
+ fcb $0
+ fdb TUN14-zik
+ fdb TUN164-zik
+ fcb $ca,$02,26,0
+ fdb TUN109-zik
+ fcb $ba,$02,0
+ fcb $83,$18
+ fcc /PITCH /
+ fcb $0
+ fcb $82,$02,29,0,0,0
+ fcb $ca,$04,7,15
+ fcb $ca,$01,0,0
+ fcb $ba,$03,0
+ fdb TUN193-zik
+ fdb TUN130-zik
+ fcb $83
+ fcc /IS /
+ fcb $0
+ fcb $82,$01,29,26,12,0
+ fdb TUN130-zik
+ fcb $da,$01,0
+ fdb TUN248-zik
+ fcb $83
+ fcc /TOO /
+ fcb $0
+ fcb $82,$03,29,26,0,0
+ fcb $da,$05,0
+ fcb $c2,$01,26,24,16
+ fcb $82,$03,26,24,16,15
+ fdb TUN199-zik
+ fcb $83
+ fcc /HIGH. /
+ fcb $0
+ fcb $82,$01,31,16,0,0
+ fdb TUN172-zik
+ fcb $da,$02,24
+ fdb TUN127-zik
+ fcb $ba,$04,0
+ fdb TUN107-zik
+ fcb $83
+ fcc /YOU'LL /
+ fcb $0
+ fdb TUN30-zik
+ fdb TUN117-zik
+ fcb $83
+ fcc /HAVE /
+ fcb $0
+ fdb TUN53-zik
+ fcb $ba,$03,24
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fdb TUN13-zik
+ fdb TUN50-zik
+ fcb $ea,$02,0
+ fdb TUN91-zik
+ fcb $83
+ fcc /BEND./
+ fcb $0
+ fdb TUN11-zik
+ fdb TUN211-zik
+ fdb TUN42-zik
+ fcb $9a,$02,4,15
+ fcb $83,$d,$18
+ fcc /AND /
+ fcb $0
+ fcb $82,$02,30,4,15,0
+ fcb $ca,$04,0,0
+ fdb TUN62-zik
+ fdb TUN271-zik
+ fcb $ba,$02,13
+ fcb $83
+ fcc /THEN /
+ fcb $0
+ fcb $82,$06,30,13,0,0
+ fcb $da,$02,27
+ fdb TUN97-zik
+ fcb $83
+ fcc /YOU /
+ fcb $0
+ fdb TUN78-zik
+ fcb $c2,$03,27,21,19
+ fcb $82,$01,27,21,19,11
+ fdb TUN71-zik
+ fdb TUN249-zik
+ fcb $ba,$02,15
+ fcb $83
+ fcc /PRAY /
+ fcb $0
+ fcb $82,$03,30,15,0,0
+ fcb $da,$03,0
+ fcb $ca,$04,26,11
+ fdb TUN48-zik
+ fdb TUN73-zik
+ fcb $82,$02,21,19,15,11
+ fcb $83
+ fcc /FOR /
+ fcb $0
+ fcb $82,$01,28,21,19,15
+ fcb $f2,$01,11
+ fdb TUN71-zik
+ fcb $da,$02,0
+ fcb $ba,$06,26
+ fdb TUN117-zik
+ fcb $83
+ fcc /IT /
+ fcb $0
+ fdb TUN53-zik
+ fcb $82,$03,26,21,19,11
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fcb $82,$01,28,21,19,11
+ fdb TUN71-zik
+ fdb TUN67-zik
+ fdb TUN126-zik
+ fcb $83
+ fcc /END./
+ fcb $d
+ fcb $0
+ fdb TUN14-zik
+ fdb TUN26-zik
+ fdb TUN66-zik
+ fcb $83,$18
+ fcc /BUT /
+ fcb $0
+ fcb $82,$04,29,7,15,0
+ fdb TUN102-zik
+ fdb TUN20-zik
+ fcb $83
+ fcc /YOUR /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN65-zik
+ fcb $ba,$01,26
+ fcb $83
+ fcc /BO/
+ fcb $0
+ fcb $82,$02,28,26,0,0
+ fcb $da,$05,0
+ fcb $c2,$02,26,24,16
+ fcb $82,$02,26,24,16,15
+ fdb TUN112-zik
+ fcb $83
+ fcc /DY /
+ fcb $0
+ fcb $82,$01,29,26,16,0
+ fdb TUN266-zik
+ fdb TUN172-zik
+ fcb $da,$04,24
+ fdb TUN94-zik
+ fdb TUN107-zik
+ fcb $83
+ fcc /IS /
+ fcb $0
+ fdb TUN30-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /NO /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN65-zik
+ fcb $83
+ fcc /HEAV/
+ fcb $0
+ fcb $82,$03,28,24,0,0
+ fcb $da,$05,0
+ fdb TUN50-zik
+ fcb $83
+ fcc /EN /
+ fcb $0
+ fdb TUN77-zik
+ fcb $ca,$09,0,0
+ fdb TUN187-zik
+ fcb $da,$03,0
+ fcb $ba,$01,9
+ fcb $ba,$04,0
+ fcb $9a,$04,5,15
+ fdb TUN42-zik
+ fcb $8a,$01,29,25,17
+ fcb $83
+ fcc /SO /
+ fcb $0
+ fdb TUN45-zik
+ fcb $ba,$01,13
+ fcb $83
+ fcc /YOU /
+ fcb $0
+ fcb $82,$07,29,13,0,0
+ fdb TUN119-zik
+ fcb $83,$d,$18
+ fcc /BLOCK /
+ fcb $0
+ fcb $82,$03,29,21,15,13
+ fdb TUN96-zik
+ fdb TUN23-zik
+ fdb TUN93-zik
+ fdb TUN125-zik
+ fcb $83
+ fcc /YOUR /
+ fcb $0
+ fcb $82,$03,30,27,11,0
+ fdb TUN48-zik
+ fcb $da,$04,27
+ fdb TUN42-zik
+ fcb $82,$01,8,21,15,13
+ fcb $83
+ fcc /EARS /
+ fcb $0
+ fcb $82,$02,28,21,15,13
+ fdb TUN276-zik
+ fcb $c2,$02,13,0,0
+ fcb $da,$02,0
+ fcb $da,$01,27
+ fcb $9a,$05,27,0
+ fdb TUN92-zik
+ fcb $83
+ fcc /EVEN /
+ fcb $0
+ fcb $82,$05,28,13,0,0
+ fdb TUN161-zik
+ fdb TUN108-zik
+ fcb $83
+ fcc /STRONG/
+ fcb $0
+ fdb TUN166-zik
+ fdb TUN23-zik
+ fcb $8a,$03,29,28,15
+ fcb $ca,$02,15,0
+ fcb $da,$01,0
+ fcb $83
+ fcc /ER/
+ fcb $d
+ fcb $0
+ fdb TUN168-zik
+ fdb TUN26-zik
+ fdb TUN42-zik
+ fdb TUN200-zik
+ fcb $8a,$01,26,20,12
+ fcb $83,$18
+ fcc /IN /
+ fcb $0
+ fcb $82,$03,29,26,20,12
+ fdb TUN307-zik
+ fcb $8a,$01,12,0,0
+ fdb TUN116-zik
+ fcb $83
+ fcc /OR/
+ fcb $0
+ fcb $82,$04,29,13,0,0
+ fdb TUN254-zik
+ fcb $ba,$03,26
+ fcb $ba,$04,0
+ fcb $83
+ fcc /DER /
+ fcb $0
+ fdb TUN15-zik
+ fdb TUN33-zik
+ fdb TUN105-zik
+ fcb $ba,$02,0
+ fcb $83
+ fcc /TO /
+ fcb $0
+ fdb TUN167-zik
+ fdb TUN269-zik
+ fcb $da,$03,24
+ fcb $9a,$01,24,0
+ fcb $ba,$03,0
+ fcb $83
+ fcc /YEEL /
+ fcb $0
+ fdb TUN167-zik
+ fdb TUN113-zik
+ fdb TUN112-zik
+ fdb TUN90-zik
+ fdb TUN201-zik
+ fdb TUN92-zik
+ fcb $83
+ fcc /EVEN /
+ fcb $0
+ fcb $82,$07,32,13,0,0
+ fcb $da,$01,24
+ fdb TUN127-zik
+ fcb $83
+ fcc /LOUD/
+ fcb $0
+ fcb $82,$05,31,0,0,0
+ fdb TUN113-zik
+ fcb $82,$01,24,16,15,0
+ fcb $ea,$02,0
+ fdb TUN123-zik
+ fcb $83
+ fcc /ER /
+ fcb $0
+ fcb $82,$08,31,0,0,0
+ fdb TUN211-zik
+ fdb TUN66-zik
+ fcb $9a,$04,4,15
+ fdb TUN91-zik
+ fcb $83
+ fcc /AND /
+ fcb $0
+ fdb TUN15-zik
+ fcb $c2,$03,27,25,17
+ fcb $82,$01,27,25,17,0
+ fdb TUN69-zik
+ fcb $83
+ fcc /L/
+ fcb $0
+ fdb TUN76-zik
+ fdb TUN65-zik
+ fdb TUN118-zik
+ fcb $83
+ fcc /OUD/
+ fcb $0
+ fcb $82,$03,29,27,19,15
+ fcb $f2,$01,11
+ fdb TUN133-zik
+ fdb TUN245-zik
+ fdb TUN154-zik
+ fcb $9a,$01,26,11
+ fcb $83,$d,$18
+ fcc /ER./
+ fcb $d
+ fcb $0
+ fcb $82,$03,28,26,11,0
+ fdb TUN48-zik
+ fcb $da,$04,7
+ fdb TUN42-zik
+ fcb $82,$03,7,19,15,11
+ fcb $e2,$01,11,0
+ fcb $8a,$02,11,0,0
+ fcb $ba,$02,0
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN81-zik
+ fdb TUN109-zik
+ fdb TUN92-zik
+ fcb $83
+ fcc /YOU /
+ fcb $0
+ fcb $82,$04,28,13,0,0
+ fdb TUN254-zik
+ fcb $8a,$02,26,19,11
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fcb $82,$01,28,26,19,11
+ fcb $c2,$01,19,11,0
+ fdb TUN256-zik
+ fdb TUN67-zik
+ fcb $da,$02,0
+ fcb $83
+ fcc /SING /
+ fcb $d
+ fcb $0
+ fdb TUN14-zik
+ fdb TUN186-zik
+ fdb TUN186-zik
+ fdb TUN73-zik
+ fdb TUN174-zik
+ fcb $83,$18
+ fcc /LA /
+ fcb $0
+ fdb TUN2-zik
+ fcb $83
+ fcc /LA, /
+ fcb $d
+ fcb $0
+ fcb $82,$07,28,27,0,0
+ fcb $da,$09,0
+ fdb TUN47-zik
+ fcb $ba,$01,7
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$03,28,7,0,0
+ fdb TUN66-zik
+ fdb TUN174-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN25-zik
+ fdb TUN49-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN39-zik
+ fcb $da,$07,24
+ fcb $da,$08,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /SING /
+ fcb $d
+ fcb $0
+ fcb $82,$04,29,26,0,0
+ fcb $da,$04,0
+ fdb TUN47-zik
+ fcb $da,$06,26
+ fcb $da,$02,0
+ fcb $83,$18
+ fcc /LA /
+ fcb $0
+ fdb TUN2-zik
+ fcb $83
+ fcc /LA, /
+ fcb $d,$18,$d,$18,$d
+ fcb $0
+ fcb $82,$07,28,27,0,0
+ fcb $da,$09,0
+ fdb TUN47-zik
+ fcb $ba,$01,7
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$03,28,7,0,0
+ fdb TUN66-zik
+ fdb TUN174-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN25-zik
+ fdb TUN49-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN39-zik
+ fcb $da,$07,24
+ fcb $da,$08,0
+ fcb $ba,$01,0
+ fcb $83
+ fcc /SING /
+ fcb $d
+ fcb $0
+ fdb TUN85-zik
+ fcb $ea,$18,0
+ fcb $9a,$01,22,11
+ fdb TUN9-zik
+ fcb $da,$18,0
+ fcb $da,$02,11
+ fcb $9a,$06,11,0
+ fcb $ba,$08,0
+ fcb $ba,$0f,22
+ fcb $ba,$01,0
+ fdb TUN197-zik
+ fdb TUN163-zik
+ fcb $ba,$10,22
+ fcb $da,$08,11
+ fdb TUN111-zik
+ fcb $ba,$10,22
+ fdb TUN188-zik
+ fcb $ba,$17,23
+ fcb $ba,$01,0
+ fcb $9a,$08,20,11
+ fcb $da,$08,0
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$05,28,20,0,0
+ fdb TUN91-zik
+ fcb $ba,$08,21
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fcb $82,$03,28,21,11,0
+ fcb $ca,$05,11,0
+ fcb $da,$05,21
+ fdb TUN91-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fcb $82,$0a,28,21,0,0
+ fdb TUN317-zik
+ fcb $83
+ fcc /SING/
+ fcb $d
+ fcb $0
+ fdb TUN85-zik
+ fcb $ea,$13,0
+ fdb TUN110-zik
+ fcb $da,$01,11
+ fdb TUN9-zik
+ fcb $da,$0f,0
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN84-zik
+ fdb TUN286-zik
+ fcb $ba,$03,0
+ fcb $83
+ fcc /THEN /
+ fcb $0
+ fdb TUN216-zik
+ fcb $ba,$01,22
+ fcb $83
+ fcc /ONLY /
+ fcb $0
+ fdb TUN86-zik
+ fdb TUN110-zik
+ fcb $ba,$01,0
+ fcb $83
+ fcc /WHEN /
+ fcb $0
+ fcb $82,$0d,29,22,0,0
+ fdb TUN110-zik
+ fcb $83
+ fcc /IT /
+ fcb $0
+ fdb TUN84-zik
+ fcb $9a,$0a,22,0
+ fcb $83
+ fcc /IS /
+ fcb $0
+ fcb $82,$01,29,22,0,0
+ fdb TUN122-zik
+ fcb $83
+ fcc /OV/
+ fcb $0
+ fcb $82,$0b,29,22,0,0
+ fdb TUN286-zik
+ fcb $83
+ fcc /ER,/
+ fcb $d
+ fcb $0
+ fdb TUN86-zik
+ fcb $da,$15,0
+ fcb $ba,$33,0
+ fcb $83,$18
+ fcc /THEN /
+ fcb $0
+ fdb TUN58-zik
+ fcb $ba,$0b,0
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN34-zik
+ fcb $ba,$03,0
+ fcb $83
+ fcc /DAN/
+ fcb $0
+ fdb TUN87-zik
+ fcb $ba,$06,0
+ fcb $83
+ fcc /CE/
+ fcb $d
+ fcb $0
+ fdb TUN139-zik
+ fdb TUN1-zik
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN0-zik
+ fdb TUN227-zik
+ fcb $aa,$04,26,15
+ fdb TUN176-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$04,28,26,21,20
+ fdb TUN146-zik
+ fdb TUN156-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN10-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN21-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fdb TUN139-zik
+ fdb TUN1-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN0-zik
+ fcb $8a,$11,22,0,0
+ fcb $ba,$08,0
+ fcb $ba,$15,22
+ fcb $ba,$03,0
+ fcb $ba,$17,23
+ fcb $ba,$0c,0
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN223-zik
+ fcb $83
+ fcc /WELL /
+ fcb $0
+ fdb TUN222-zik
+ fcb $83
+ fcc /THERE/
+ fcb $0
+ fdb TUN25-zik
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fdb TUN148-zik
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fdb TUN209-zik
+ fcb $83
+ fcc /MORE/
+ fcb $d
+ fcb $0
+ fdb TUN11-zik
+ fcb $c2,$04,22,18,10
+ fdb TUN134-zik
+ fcb $ea,$08,0
+ fdb TUN173-zik
+ fdb TUN28-zik
+ fcb $da,$02,0
+ fcb $ba,$0f,0
+ fdb TUN37-zik
+ fdb TUN258-zik
+ fdb TUN38-zik
+ fcb $da,$0e,0
+ fcb $ba,$0b,0
+ fdb TUN31-zik
+ fcb $da,$01,0
+ fcb $ba,$09,0
+ fdb TUN36-zik
+ fdb TUN250-zik
+ fdb TUN170-zik
+ fdb TUN154-zik
+ fcb $ba,$10,21
+ fcb $ca,$03,15,13
+ fcb $ca,$03,13,0
+ fcb $da,$0e,0
+ fcb $ba,$04,0
+ fdb TUN196-zik
+ fdb TUN98-zik
+ fdb TUN212-zik
+ fcb $da,$0b,0
+ fcb $8a,$04,22,18,10
+ fdb TUN215-zik
+ fcb $da,$08,0
+ fcb $da,$04,15
+ fcb $da,$04,0
+ fdb TUN28-zik
+ fcb $da,$03,0
+ fcb $ba,$0e,0
+ fdb TUN37-zik
+ fdb TUN244-zik
+ fdb TUN38-zik
+ fcb $da,$0d,0
+ fcb $ba,$0c,0
+ fdb TUN31-zik
+ fdb TUN185-zik
+ fdb TUN36-zik
+ fdb TUN121-zik
+ fdb TUN170-zik
+ fdb TUN309-zik
+ fcb $ba,$09,20
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fcb $82,$03,30,20,0,0
+ fdb TUN195-zik
+ fcb $82,$01,21,20,15,13
+ fcb $83
+ fcc /WELL /
+ fcb $0
+ fcb $82,$02,30,21,20,15
+ fdb TUN278-zik
+ fcb $83
+ fcc /THERE/
+ fcb $0
+ fcb $82,$08,30,21,0,0
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fcb $82,$03,30,21,0,0
+ fcb $da,$05,0
+ fdb TUN114-zik
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fdb TUN82-zik
+ fdb TUN101-zik
+ fcb $ca,$05,21,15
+ fcb $ea,$01,0
+ fdb TUN300-zik
+ fcb $83
+ fcc /MORE/
+ fcb $d
+ fcb $0
+ fdb TUN60-zik
+ fcb $c2,$04,30,22,18
+ fcb $f2,$04,10
+ fcb $c2,$03,22,15,0
+ fcb $ea,$02,0
+ fcb $9a,$0b,22,0
+ fdb TUN190-zik
+ fdb TUN259-zik
+ fdb TUN93-zik
+ fdb TUN32-zik
+ fdb TUN250-zik
+ fdb TUN22-zik
+ fdb TUN7-zik
+ fcb $da,$03,0
+ fcb $da,$06,13
+ fcb $da,$0a,0
+ fdb TUN100-zik
+ fcb $8a,$04,21,15,13
+ fdb TUN54-zik
+ fcb $ba,$10,21
+ fcb $82,$04,30,22,18,10
+ fdb TUN134-zik
+ fcb $8a,$03,22,15,0
+ fcb $da,$0d,0
+ fdb TUN190-zik
+ fdb TUN296-zik
+ fdb TUN93-zik
+ fdb TUN32-zik
+ fdb TUN292-zik
+ fdb TUN22-zik
+ fdb TUN8-zik
+ fcb $ba,$08,20
+ fcb $ba,$01,0
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fdb TUN24-zik
+ fcb $ba,$05,0
+ fcb $83
+ fcc /WELL /
+ fcb $0
+ fcb $82,$04,28,0,0,0
+ fcb $ba,$03,0
+ fcb $83
+ fcc /THERE/
+ fcb $0
+ fdb TUN25-zik
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fdb TUN148-zik
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fdb TUN209-zik
+ fcb $83
+ fcc /MORE/
+ fcb $d
+ fcb $0
+ fdb TUN12-zik
+ fcb $c2,$04,26,22,18
+ fdb TUN289-zik
+ fdb TUN68-zik
+ fdb TUN152-zik
+ fdb TUN1-zik
+ fcb $82,$03,8,21,15,13
+ fdb TUN96-zik
+ fdb TUN41-zik
+ fdb TUN248-zik
+ fdb TUN108-zik
+ fdb TUN263-zik
+ fdb TUN98-zik
+ fcb $8a,$05,29,21,15
+ fcb $ea,$02,0
+ fdb TUN129-zik
+ fcb $82,$04,26,22,18,11
+ fcb $82,$04,22,11,10,0
+ fcb $8a,$04,26,22,0
+ fdb TUN286-zik
+ fdb TUN152-zik
+ fdb TUN136-zik
+ fcb $9a,$01,26,20
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fcb $82,$03,30,26,20,0
+ fcb $8a,$04,20,0,0
+ fcb $82,$01,26,21,20,15
+ fcb $83
+ fcc /WELL /
+ fcb $0
+ fcb $82,$03,30,26,21,20
+ fdb TUN146-zik
+ fcb $83
+ fcc /THERE/
+ fcb $0
+ fcb $82,$06,30,26,21,0
+ fcb $ca,$02,21,0
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fdb TUN79-zik
+ fdb TUN306-zik
+ fcb $c2,$01,26,21,13
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fcb $82,$02,30,26,21,13
+ fdb TUN302-zik
+ fdb TUN101-zik
+ fcb $c2,$05,24,21,15
+ fcb $f2,$01,0
+ fdb TUN61-zik
+ fcb $83
+ fcc /MORE/
+ fcb $d
+ fcb $0
+ fdb TUN60-zik
+ fcb $c2,$04,30,26,22
+ fdb TUN277-zik
+ fcb $d2,$03,26,15
+ fcb $f2,$01,0
+ fdb TUN68-zik
+ fdb TUN19-zik
+ fdb TUN135-zik
+ fcb $8a,$04,8,21,13
+ fdb TUN41-zik
+ fdb TUN100-zik
+ fcb $82,$03,27,21,15,13
+ fdb TUN74-zik
+ fdb TUN54-zik
+ fcb $9a,$07,29,21
+ fdb TUN129-zik
+ fcb $82,$04,30,26,22,18
+ fcb $c2,$04,22,10,0
+ fcb $aa,$03,26,15
+ fcb $ea,$01,0
+ fdb TUN286-zik
+ fdb TUN19-zik
+ fdb TUN137-zik
+ fcb $aa,$01,26,15
+ fcb $83,$18
+ fcc /AND /
+ fcb $0
+ fcb $82,$03,28,26,20,15
+ fcb $82,$01,20,15,0,0
+ fcb $da,$03,0
+ fcb $82,$01,26,21,20,13
+ fcb $83
+ fcc /WELL /
+ fcb $0
+ fcb $82,$03,28,26,21,20
+ fdb TUN146-zik
+ fcb $83
+ fcc /THERE/
+ fcb $0
+ fcb $82,$06,28,26,21,0
+ fcb $ca,$02,21,0
+ fcb $83
+ fcc /'S /
+ fcb $0
+ fcb $82,$03,30,29,21,0
+ fcb $ea,$05,0
+ fcb $82,$01,29,26,21,15
+ fcb $83
+ fcc /STILL /
+ fcb $0
+ fcb $82,$02,28,26,21,15
+ fdb TUN198-zik
+ fdb TUN265-zik
+ fdb TUN245-zik
+ fcb $ca,$06,24,21
+ fdb TUN61-zik
+ fcb $83
+ fcc /MORE/
+ fcb $d,$18,$d
+ fcb $0
+ fcb $82,$06,29,21,0,0
+ fcb $da,$02,0
+ fdb TUN27-zik
+ fcb $da,$05,0
+ fcb $ba,$0b,0
+ fdb TUN6-zik
+ fdb 0
+TUN0
+ fdb TUN151-zik
+ fdb TUN140-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN144-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN147-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fdb TUN139-zik
+ fdb TUN136-zik
+ fcb $9a,$04,26,20
+ fdb TUN195-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fcb $82,$04,28,26,21,20
+ fdb TUN146-zik
+ fdb TUN156-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN143-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fdb TUN262-zik
+ fdb TUN135-zik
+ fcb $83,$18
+ fcc /SO /
+ fcb $0
+ fdb TUN241-zik
+ fcb $83
+ fcc /WE /
+ fcb $0
+ fdb TUN141-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN149-zik
+ fcb $83
+ fcc /BUZZ/
+ fcb $d
+ fcb $0
+ fdb TUN262-zik
+ fdb TUN228-zik
+ fdb 0
+TUN1
+ fdb TUN232-zik
+ fcb $da,$01,13
+ fcb $9a,$07,13,0
+ fdb TUN231-zik
+ fdb TUN258-zik
+ fdb TUN229-zik
+ fdb TUN308-zik
+ fdb TUN235-zik
+ fcb $82,$04,29,22,14,11
+ fdb TUN252-zik
+ fcb $ca,$01,11,0
+ fdb TUN194-zik
+ fcb $ba,$04,9
+ fcb $ba,$04,0
+ fcb $8a,$04,5,22,15
+ fdb TUN315-zik
+ fdb TUN237-zik
+ fcb $da,$06,13
+ fdb TUN161-zik
+ fcb $9a,$03,29,23
+ fdb TUN274-zik
+ fcb $82,$03,29,23,21,15
+ fdb TUN240-zik
+ fdb TUN154-zik
+ fcb $8a,$04,27,21,11
+ fcb $8a,$04,21,11,0
+ fcb $9a,$04,27,21
+ fdb TUN324-zik
+ fdb 0
+TUN2
+ fdb TUN160-zik
+ fcb $da,$02,26
+ fcb $9a,$05,26,0
+ fcb $ba,$09,0
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fcb $82,$04,31,24,0,0
+ fdb TUN157-zik
+ fcb $da,$01,0
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fdb TUN148-zik
+ fcb $da,$03,24
+ fcb $da,$05,0
+ fcb $ba,$01,24
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fcb $82,$06,32,24,0,0
+ fcb $da,$09,0
+ fcb $da,$04,29
+ fcb $da,$04,0
+ fcb $da,$01,9
+ fcb $9a,$03,9,0
+ fcb $ba,$04,0
+ fcb $ba,$03,5
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fcb $82,$01,32,5,0,0
+ fcb $da,$04,0
+ fcb $da,$06,29
+ fcb $da,$0a,0
+ fcb $da,$03,29
+ fdb TUN204-zik
+ fcb $83
+ fcc /LA, /
+ fcb $0
+ fcb $82,$07,30,29,0,0
+ fdb TUN180-zik
+ fcb $da,$04,27
+ fdb TUN205-zik
+ fdb TUN171-zik
+ fcb $da,$04,0
+ fcb $ba,$01,0
+ fcb $ba,$07,29
+ fcb $ba,$09,0
+ fdb TUN202-zik
+ fdb TUN202-zik
+ fcb $ba,$04,7
+ fcb $ba,$04,0
+ fdb TUN174-zik
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fdb TUN160-zik
+ fcb $da,$01,26
+ fcb $9a,$06,26,0
+ fcb $ba,$08,0
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fdb TUN167-zik
+ fcb $da,$04,24
+ fdb TUN157-zik
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fdb TUN168-zik
+ fcb $da,$03,24
+ fcb $da,$05,0
+ fcb $ba,$01,24
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fcb $82,$06,30,24,0,0
+ fdb TUN180-zik
+ fcb $da,$01,8
+ fcb $9a,$03,8,0
+ fcb $ba,$04,0
+ fcb $ba,$02,4
+ fcb $83
+ fcc /LA /
+ fcb $0
+ fcb $82,$02,30,4,0,0
+ fdb TUN171-zik
+ fdb TUN203-zik
+ fdb 0
+TUN3
+ fdb TUN261-zik
+ fdb TUN135-zik
+ fdb 0
+TUN4
+ fdb TUN138-zik
+ fdb TUN136-zik
+ fcb $9a,$04,7,20
+ fdb TUN195-zik
+ fdb 0
+TUN5
+ fdb TUN261-zik
+ fdb TUN137-zik
+ fcb $aa,$04,7,15
+ fdb TUN176-zik
+ fdb 0
+TUN6
+ fdb TUN177-zik
+ fcb $ba,$11,0
+ fdb TUN273-zik
+ fcb $9a,$04,16,0
+ fcb $ba,$18,0
+ fdb TUN155-zik
+ fcb $ba,$19,0
+ fdb TUN279-zik
+ fcb $9a,$04,22,14
+ fcb $9a,$02,14,0
+ fcb $ba,$12,0
+ fdb TUN162-zik
+ fcb $ba,$10,0
+ fdb TUN196-zik
+ fdb TUN161-zik
+ fdb 0
+TUN7
+ fdb TUN287-zik
+ fdb TUN150-zik
+ fdb TUN245-zik
+ fcb $ba,$08,15
+ fdb TUN153-zik
+ fdb TUN260-zik
+ fdb TUN158-zik
+ fcb $da,$04,0
+ fcb $ba,$06,0
+ fcb $9a,$08,30,21
+ fdb TUN212-zik
+ fdb 0
+TUN8
+ fdb TUN297-zik
+ fdb TUN150-zik
+ fcb $ea,$02,0
+ fcb $9a,$08,15,0
+ fdb TUN153-zik
+ fdb TUN287-zik
+ fdb TUN158-zik
+ fdb TUN207-zik
+ fdb 0
+TUN9
+ fcb $9a,$07,11,0
+ fcb $ba,$08,0
+ fcb $ba,$0e,22
+ fcb $ba,$02,0
+ fdb TUN197-zik
+ fcb $da,$18,0
+ fdb TUN188-zik
+ fdb TUN268-zik
+ fcb $da,$07,11
+ fdb TUN194-zik
+ fdb TUN268-zik
+ fdb TUN189-zik
+ fcb $ba,$12,23
+ fcb $ba,$06,0
+ fcb $9a,$08,21,11
+ fdb TUN163-zik
+ fcb $ba,$10,21
+ fdb TUN197-zik
+ fdb 0
+TUN10
+ fcb $82,$03,30,28,21,0
+ fcb $ea,$05,0
+ fcb $82,$03,28,26,21,15
+ fdb TUN198-zik
+ fcb $82,$01,15,13,0,0
+ fdb TUN249-zik
+ fdb 0
+TUN11
+ fcb $82,$06,29,0,0,0
+ fdb 0
+TUN12
+ fcb $82,$08,29,0,0,0
+ fdb 0
+TUN13
+ fcb $82,$05,29,0,0,0
+ fdb 0
+TUN14
+ fcb $82,$07,29,0,0,0
+ fdb 0
+TUN15
+ fcb $82,$01,29,0,0,0
+ fdb 0
+TUN16
+ fcb $82,$08,30,29,22,0
+ fcb $8a,$04,29,22,15
+ fcb $ea,$04,0
+ fcb $c2,$04,24,22,16
+ fdb TUN323-zik
+ fdb TUN291-zik
+ fdb 0
+TUN17
+ fcb $82,$03,28,21,20,15
+ fdb TUN278-zik
+ fdb TUN156-zik
+ fdb 0
+TUN18
+ fcb $82,$04,28,21,20,13
+ fdb TUN146-zik
+ fdb TUN156-zik
+ fdb 0
+TUN19
+ fcb $9a,$04,26,22
+ fdb TUN286-zik
+ fdb TUN253-zik
+ fdb TUN232-zik
+ fdb 0
+TUN20
+ fdb TUN193-zik
+ fcb $ca,$02,12,0
+ fcb $9a,$01,12,0
+ fdb 0
+TUN21
+ fcb $82,$07,27,24,21,0
+ fdb TUN290-zik
+ fdb 0
+TUN22
+ fcb $9a,$08,30,22
+ fdb TUN173-zik
+ fdb TUN239-zik
+ fdb 0
+TUN23
+ fdb TUN242-zik
+ fcb $da,$02,0
+ fdb 0
+TUN24
+ fcb $82,$03,28,0,0,0
+ fdb 0
+TUN25
+ fcb $82,$08,28,0,0,0
+ fdb 0
+TUN26
+ fdb TUN164-zik
+ fcb $ca,$04,26,0
+ fdb 0
+TUN27
+ fcb $ca,$04,18,10
+ fdb TUN215-zik
+ fdb 0
+TUN28
+ fcb $ca,$04,20,12
+ fdb TUN214-zik
+ fdb 0
+TUN29
+ fcb $ca,$04,22,14
+ fcb $ca,$02,14,0
+ fdb 0
+TUN30
+ fcb $82,$02,29,24,16,15
+ fdb TUN199-zik
+ fcb $da,$01,0
+ fcb $da,$01,24
+ fcb $9a,$05,24,0
+ fdb 0
+TUN31
+ fdb TUN314-zik
+ fcb $82,$01,22,16,15,0
+ fcb $ea,$02,0
+ fcb $da,$09,0
+ fcb $da,$06,14
+ fdb 0
+TUN32
+ fdb TUN322-zik
+ fcb $8a,$04,22,16,0
+ fdb 0
+TUN33
+ fcb $c2,$04,26,24,16
+ fdb TUN179-zik
+ fdb 0
+TUN34
+ fcb $82,$0d,28,0,0,0
+ fdb 0
+TUN35
+ fcb $c2,$02,14,11,0
+ fdb TUN256-zik
+ fdb 0
+TUN36
+ fdb TUN173-zik
+ fdb TUN243-zik
+ fdb 0
+TUN37
+ fdb TUN314-zik
+ fcb $82,$04,22,16,0,0
+ fcb $da,$05,15
+ fdb 0
+TUN38
+ fcb $ba,$10,22
+ fdb TUN285-zik
+ fdb 0
+TUN39
+ fcb $82,$01,28,0,0,0
+ fdb 0
+TUN40
+ fcb $82,$0b,29,0,0,0
+ fdb 0
+TUN41
+ fdb TUN191-zik
+ fdb TUN246-zik
+ fdb 0
+TUN42
+ fcb $9a,$04,0,0
+ fdb 0
+TUN43
+ fcb $c2,$04,26,18,10
+ fcb $c2,$04,10,0,0
+ fdb TUN206-zik
+ fdb 0
+TUN44
+ fdb TUN213-zik
+ fcb $8a,$02,24,16,0
+ fdb TUN255-zik
+ fcb $ba,$01,0
+ fdb 0
+TUN45
+ fcb $82,$03,29,25,17,0
+ fdb TUN178-zik
+ fdb 0
+TUN46
+ fdb TUN182-zik
+ fdb TUN251-zik
+ fdb 0
+TUN47
+ fdb TUN186-zik
+ fdb TUN206-zik
+ fdb 0
+TUN48
+ fcb $ca,$04,11,0
+ fdb 0
+TUN49
+ fcb $da,$02,26
+ fcb $9a,$01,26,0
+ fcb $ba,$04,0
+ fdb 0
+TUN50
+ fcb $c2,$02,24,16,15
+ fdb TUN181-zik
+ fdb 0
+TUN51
+ fdb TUN175-zik
+ fdb TUN192-zik
+ fcb $ba,$02,0
+ fdb 0
+TUN52
+ fdb TUN183-zik
+ fdb TUN184-zik
+ fdb 0
+TUN53
+ fcb $82,$05,29,13,0,0
+ fdb TUN288-zik
+ fdb 0
+TUN54
+ fcb $8a,$02,15,13,0
+ fdb TUN249-zik
+ fdb 0
+TUN55
+ fdb TUN196-zik
+ fdb TUN161-zik
+ fcb $ba,$12,0
+ fdb 0
+TUN56
+ fcb $82,$01,27,0,0,0
+ fdb 0
+TUN57
+ fcb $82,$04,29,0,0,0
+ fdb 0
+TUN58
+ fcb $82,$05,28,0,0,0
+ fdb 0
+TUN59
+ fcb $82,$0c,29,0,0,0
+ fdb 0
+TUN60
+ fcb $82,$06,31,21,0,0
+ fcb $da,$02,0
+ fdb 0
+TUN61
+ fcb $8a,$01,24,21,0
+ fcb $9a,$01,21,0
+ fdb 0
+TUN62
+ fcb $8a,$04,27,25,17
+ fdb TUN267-zik
+ fdb 0
+TUN63
+ fcb $ca,$02,21,13
+ fdb TUN191-zik
+ fdb 0
+TUN64
+ fdb TUN272-zik
+ fcb $ba,$01,0
+ fdb 0
+TUN65
+ fcb $da,$07,13
+ fdb TUN288-zik
+ fdb 0
+TUN66
+ fcb $da,$02,0
+ fcb $ba,$02,0
+ fdb 0
+TUN67
+ fcb $da,$02,0
+ fcb $ca,$05,24,15
+ fcb $ea,$02,0
+ fdb 0
+TUN68
+ fcb $ca,$01,22,0
+ fcb $9a,$03,22,0
+ fdb 0
+TUN69
+ fdb TUN267-zik
+ fcb $9a,$01,17,0
+ fdb 0
+TUN70
+ fdb TUN175-zik
+ fdb TUN184-zik
+ fdb 0
+TUN71
+ fcb $c2,$02,11,0,0
+ fdb 0
+TUN72
+ fcb $c2,$04,27,22,14
+ fdb 0
+TUN73
+ fcb $da,$04,7
+ fcb $da,$03,0
+ fcb $ba,$01,0
+ fdb 0
+TUN74
+ fcb $82,$01,21,15,13,0
+ fdb 0
+TUN75
+ fcb $82,$01,28,21,0,0
+ fdb 0
+TUN76
+ fcb $82,$01,29,17,0,0
+ fdb 0
+TUN77
+ fcb $82,$02,29,24,16,0
+ fdb 0
+TUN78
+ fcb $82,$03,29,0,0,0
+ fdb 0
+TUN79
+ fcb $82,$03,30,21,13,0
+ fdb 0
+TUN80
+ fcb $82,$04,28,21,15,13
+ fdb 0
+TUN81
+ fcb $82,$04,28,26,0,0
+ fdb 0
+TUN82
+ fcb $82,$04,30,21,13,0
+ fdb 0
+TUN83
+ fcb $82,$06,28,0,0,0
+ fdb 0
+TUN84
+ fcb $82,$07,29,22,0,0
+ fdb 0
+TUN85
+ fcb $82,$08,29,22,11,0
+ fdb 0
+TUN86
+ fcb $82,$09,29,22,0,0
+ fdb 0
+TUN87
+ fcb $82,$0a,27,0,0,0
+ fdb 0
+TUN88
+ fcb $82,$0a,28,0,0,0
+ fdb 0
+TUN89
+ fcb $82,$0d,27,0,0,0
+ fdb 0
+TUN90
+ fcb $9a,$01,16,0
+ fdb 0
+TUN91
+ fcb $9a,$03,0,0
+ fdb 0
+TUN92
+ fcb $ba,$02,0
+ fcb $ba,$01,13
+ fdb 0
+TUN93
+ fcb $ba,$05,15
+ fcb $ba,$03,0
+ fdb 0
+TUN94
+ fcb $da,$01,0
+ fcb $ba,$03,0
+ fdb 0
+TUN95
+ fcb $da,$03,0
+ fcb $ba,$06,0
+ fdb 0
+TUN96
+ fcb $e2,$01,13,0
+ fdb 0
+TUN97
+ fcb $9a,$01,27,0
+ fcb $ba,$02,0
+ fdb 0
+TUN98
+ fdb TUN161-zik
+ fcb $ba,$02,0
+ fdb 0
+TUN99
+ fcb $9a,$02,16,0
+ fcb $ba,$08,0
+ fdb 0
+TUN100
+ fcb $9a,$04,30,21
+ fcb $da,$04,0
+ fdb 0
+TUN101
+ fdb TUN305-zik
+ fcb $da,$02,0
+ fdb 0
+TUN102
+ fcb $ca,$02,0,0
+ fcb $ba,$02,0
+ fdb 0
+TUN103
+ fdb TUN256-zik
+ fcb $da,$05,0
+ fdb 0
+TUN104
+ fdb TUN242-zik
+ fcb $da,$05,0
+ fdb 0
+TUN105
+ fcb $da,$01,15
+ fdb TUN301-zik
+ fdb 0
+TUN106
+ fcb $8a,$01,24,16,0
+ fdb 0
+TUN107
+ fcb $8a,$02,24,16,15
+ fdb 0
+TUN108
+ fcb $8a,$03,27,21,13
+ fdb 0
+TUN109
+ fcb $9a,$02,26,0
+ fdb 0
+TUN110
+ fcb $9a,$05,22,0
+ fdb 0
+TUN111
+ fcb $9a,$08,0,0
+ fdb 0
+TUN112
+ fcb $c2,$02,16,0,0
+ fdb 0
+TUN113
+ fcb $c2,$04,24,16,15
+ fdb 0
+TUN114
+ fcb $ca,$01,21,13
+ fdb 0
+TUN115
+ fcb $ca,$04,16,0
+ fdb 0
+TUN116
+ fcb $ba,$01,0
+ fcb $ba,$01,13
+ fdb 0
+TUN117
+ fcb $ba,$02,0
+ fcb $ba,$02,13
+ fdb 0
+TUN118
+ fcb $ba,$03,27
+ fcb $ba,$05,0
+ fdb 0
+TUN119
+ fcb $da,$03,0
+ fcb $ba,$05,0
+ fdb 0
+TUN120
+ fcb $da,$03,0
+ fcb $ba,$08,0
+ fdb 0
+TUN121
+ fcb $da,$05,0
+ fcb $ba,$03,0
+ fdb 0
+TUN122
+ fcb $da,$07,0
+ fcb $ba,$05,0
+ fdb 0
+TUN123
+ fcb $9a,$01,0,0
+ fdb 0
+TUN124
+ fcb $9a,$01,21,13
+ fdb 0
+TUN125
+ fcb $9a,$01,27,11
+ fdb 0
+TUN126
+ fcb $9a,$02,0,0
+ fdb 0
+TUN127
+ fcb $9a,$02,24,0
+ fdb 0
+TUN128
+ fcb $9a,$03,21,13
+ fdb 0
+TUN129
+ fcb $9a,$09,21,0
+ fdb 0
+TUN130
+ fcb $ca,$01,12,0
+ fdb 0
+TUN131
+ fcb $ca,$02,16,0
+ fdb 0
+TUN132
+ fcb $ca,$03,11,0
+ fdb 0
+TUN133
+ fcb $e2,$02,11,0
+ fdb 0
+TUN134
+ fcb $e2,$04,10,0
+ fdb 0
+TUN135
+ fdb TUN259-zik
+ fdb TUN281-zik
+ fdb TUN250-zik
+ fdb TUN280-zik
+ fdb TUN287-zik
+ fdb TUN284-zik
+ fdb TUN291-zik
+ fcb $82,$04,30,29,22,14
+ fdb TUN303-zik
+ fdb TUN245-zik
+ fcb $9a,$04,9,15
+ fdb TUN301-zik
+ fcb $8a,$01,5,22,15
+ fdb TUN321-zik
+ fdb TUN237-zik
+ fdb TUN260-zik
+ fcb $8a,$03,29,23,15
+ fdb TUN294-zik
+ fcb $82,$04,29,23,21,13
+ fdb TUN283-zik
+ fcb $9a,$03,23,0
+ fcb $ba,$06,0
+ fcb $8a,$04,30,27,21
+ fcb $ca,$04,21,0
+ fcb $aa,$04,27,15
+ fcb $8a,$01,21,15,0
+ fcb $da,$03,0
+ fdb 0
+TUN136
+ fdb TUN232-zik
+ fcb $da,$02,13
+ fcb $9a,$06,13,0
+ fdb TUN231-zik
+ fdb TUN244-zik
+ fdb TUN229-zik
+ fdb TUN248-zik
+ fdb TUN235-zik
+ fcb $82,$04,27,22,14,11
+ fdb TUN252-zik
+ fdb TUN256-zik
+ fcb $9a,$04,8,0
+ fcb $ba,$04,0
+ fcb $8a,$04,4,22,15
+ fdb TUN315-zik
+ fdb TUN282-zik
+ fdb TUN308-zik
+ fcb $9a,$03,27,23
+ fdb TUN274-zik
+ fcb $82,$03,27,23,21,15
+ fdb TUN240-zik
+ fdb TUN309-zik
+ fcb $8a,$04,26,20,11
+ fcb $8a,$04,20,11,0
+ fdb 0
+TUN137
+ fdb TUN228-zik
+ fdb TUN227-zik
+ fdb 0
+TUN138
+ fdb TUN233-zik
+ fcb $c2,$04,7,22,15
+ fdb TUN298-zik
+ fdb 0
+TUN139
+ fdb TUN233-zik
+ fcb $c2,$04,26,22,15
+ fdb TUN298-zik
+ fdb 0
+TUN140
+ fdb TUN247-zik
+ fdb TUN263-zik
+ fdb TUN246-zik
+ fdb 0
+TUN141
+ fcb $82,$04,30,28,21,0
+ fcb $ea,$04,0
+ fcb $82,$03,28,27,21,15
+ fcb $c2,$01,21,15,13
+ fdb TUN265-zik
+ fdb TUN299-zik
+ fdb TUN249-zik
+ fdb 0
+TUN142
+ fdb TUN316-zik
+ fdb TUN236-zik
+ fdb TUN232-zik
+ fdb 0
+TUN143
+ fdb TUN230-zik
+ fcb $83
+ fcc /JUST /
+ fcb $0
+ fdb TUN234-zik
+ fdb 0
+TUN144
+ fcb $82,$04,28,21,13,0
+ fcb $ca,$04,13,0
+ fcb $c2,$03,27,21,13
+ fdb TUN247-zik
+ fdb TUN238-zik
+ fdb 0
+TUN145
+ fcb $82,$04,30,29,26,22
+ fdb TUN277-zik
+ fcb $92,$03,29,26,15
+ fcb $f2,$01,0
+ fdb TUN316-zik
+ fdb 0
+TUN146
+ fcb $c2,$01,20,13,0
+ fdb TUN293-zik
+ fdb 0
+TUN147
+ fcb $82,$05,29,27,21,15
+ fcb $f2,$02,0
+ fcb $8a,$03,27,21,0
+ fdb TUN275-zik
+ fdb 0
+TUN148
+ fcb $82,$09,29,0,0,0
+ fdb 0
+TUN149
+ fcb $82,$07,29,28,21,0
+ fcb $8a,$03,28,21,0
+ fdb TUN275-zik
+ fdb 0
+TUN150
+ fcb $ba,$06,15
+ fcb $ba,$02,0
+ fdb TUN239-zik
+ fcb $8a,$06,30,22,14
+ fdb 0
+TUN151
+ fcb $82,$03,28,21,15,13
+ fdb TUN276-zik
+ fdb 0
+TUN152
+ fcb $8a,$04,26,22,15
+ fdb TUN315-zik
+ fdb TUN253-zik
+ fdb 0
+TUN153
+ fcb $9a,$01,22,15
+ fcb $da,$07,0
+ fdb TUN243-zik
+ fdb 0
+TUN154
+ fcb $da,$02,15
+ fdb TUN320-zik
+ fcb $ba,$03,0
+ fdb 0
+TUN155
+ fdb TUN273-zik
+ fdb TUN255-zik
+ fdb 0
+TUN156
+ fcb $9a,$06,26,21
+ fdb TUN300-zik
+ fdb 0
+TUN157
+ fcb $da,$04,0
+ fcb $da,$04,24
+ fdb TUN251-zik
+ fcb $da,$06,24
+ fdb 0
+TUN158
+ fcb $9a,$06,23,15
+ fcb $da,$02,0
+ fdb TUN257-zik
+ fdb TUN242-zik
+ fdb 0
+TUN159
+ fcb $82,$03,28,27,21,13
+ fdb TUN247-zik
+ fdb TUN23-zik
+ fdb 0
+TUN160
+ fcb $82,$08,33,0,0,0
+ fcb $da,$03,26
+ fcb $da,$05,0
+ fdb 0
+TUN161
+ fcb $9a,$02,13,0
+ fdb 0
+TUN162
+ fcb $9a,$04,25,17
+ fcb $9a,$04,17,0
+ fdb 0
+TUN163
+ fcb $da,$18,0
+ fcb $da,$04,11
+ fcb $9a,$04,11,0
+ fcb $ba,$08,0
+ fdb 0
+TUN164
+ fcb $c2,$04,26,18,11
+ fcb $c2,$04,11,10,0
+ fdb 0
+TUN165
+ fcb $9a,$04,18,10
+ fcb $9a,$04,10,0
+ fcb $ba,$10,0
+ fdb 0
+TUN166
+ fcb $82,$01,28,21,13,0
+ fdb 0
+TUN167
+ fcb $82,$01,31,0,0,0
+ fdb 0
+TUN168
+ fcb $82,$0a,29,0,0,0
+ fdb 0
+TUN169
+ fcb $9a,$05,29,15
+ fdb TUN258-zik
+ fdb TUN32-zik
+ fdb 0
+TUN170
+ fcb $ba,$08,23
+ fcb $c2,$03,21,15,13
+ fdb TUN96-zik
+ fdb TUN23-zik
+ fdb 0
+TUN171
+ fcb $da,$04,0
+ fcb $da,$06,27
+ fcb $da,$0a,0
+ fcb $da,$03,27
+ fdb 0
+TUN172
+ fcb $da,$05,15
+ fcb $da,$03,0
+ fdb TUN269-zik
+ fdb 0
+TUN173
+ fcb $9a,$04,22,15
+ fcb $da,$04,0
+ fdb 0
+TUN174
+ fcb $ba,$06,26
+ fcb $ba,$02,0
+ fdb 0
+TUN175
+ fcb $ca,$04,24,16
+ fdb 0
+TUN176
+ fcb $8a,$01,20,15,0
+ fcb $da,$03,0
+ fdb 0
+TUN177
+ fdb TUN264-zik
+ fdb TUN272-zik
+ fdb 0
+TUN178
+ fdb TUN267-zik
+ fdb TUN271-zik
+ fdb 0
+TUN179
+ fcb $e2,$03,16,0
+ fdb TUN266-zik
+ fdb 0
+TUN180
+ fcb $da,$09,0
+ fcb $da,$04,27
+ fcb $da,$04,0
+ fdb 0
+TUN181
+ fcb $82,$03,24,16,15,0
+ fdb 0
+TUN182
+ fcb $82,$03,29,24,0,0
+ fdb 0
+TUN183
+ fcb $82,$04,29,24,16,0
+ fdb 0
+TUN184
+ fcb $ca,$03,16,0
+ fdb 0
+TUN185
+ fcb $da,$02,0
+ fcb $ba,$08,0
+ fdb 0
+TUN186
+ fcb $da,$04,26
+ fcb $da,$04,0
+ fdb 0
+TUN187
+ fcb $c2,$04,22,14,11
+ fdb TUN35-zik
+ fdb 0
+TUN188
+ fcb $da,$05,11
+ fcb $9a,$03,11,0
+ fdb 0
+TUN189
+ fcb $da,$06,11
+ fdb TUN270-zik
+ fdb 0
+TUN190
+ fdb TUN28-zik
+ fcb $da,$01,0
+ fdb 0
+TUN191
+ fcb $8a,$02,21,13,0
+ fdb 0
+TUN192
+ fcb $8a,$03,16,0,0
+ fdb 0
+TUN193
+ fcb $8a,$04,26,20,12
+ fdb 0
+TUN194
+ fcb $9a,$01,11,0
+ fdb 0
+TUN195
+ fcb $9a,$04,20,0
+ fdb 0
+TUN196
+ fcb $9a,$04,21,13
+ fdb 0
+TUN197
+ fcb $9a,$08,22,11
+ fdb 0
+TUN198
+ fcb $c2,$02,21,15,13
+ fdb 0
+TUN199
+ fcb $c2,$03,16,0,0
+ fdb 0
+TUN200
+ fcb $9a,$04,7,15
+ fdb TUN42-zik
+ fdb 0
+TUN201
+ fcb $ba,$01,0
+ fcb $ba,$06,24
+ fdb 0
+TUN202
+ fcb $ba,$04,26
+ fcb $ba,$04,0
+ fdb 0
+TUN203
+ fcb $da,$01,0
+ fcb $ba,$04,0
+ fdb 0
+TUN204
+ fcb $da,$02,0
+ fcb $ba,$03,0
+ fdb 0
+TUN205
+ fcb $da,$04,0
+ fcb $da,$04,8
+ fdb 0
+TUN206
+ fcb $da,$04,7
+ fcb $da,$04,0
+ fdb 0
+TUN207
+ fcb $da,$09,0
+ fcb $ba,$01,0
+ fdb 0
+TUN208
+ fdb TUN11-zik
+ fcb $ba,$03,0
+ fdb 0
+TUN209
+ fdb TUN34-zik
+ fcb $ba,$02,0
+ fdb 0
+TUN210
+ fdb TUN40-zik
+ fcb $ba,$05,0
+ fdb 0
+TUN211
+ fdb TUN72-zik
+ fdb TUN35-zik
+ fcb $da,$04,8
+ fdb 0
+TUN212
+ fcb $9a,$05,21,15
+ fdb 0
+TUN213
+ fcb $ca,$02,24,16
+ fdb 0
+TUN214
+ fcb $ca,$03,12,0
+ fdb 0
+TUN215
+ fcb $ca,$04,10,0
+ fdb 0
+TUN216
+ fdb TUN12-zik
+ fcb $ba,$03,0
+ fdb 0
+TUN217
+ fdb TUN12-zik
+ fcb $ba,$06,0
+ fdb 0
+TUN218
+ fdb TUN13-zik
+ fcb $ba,$03,0
+ fdb 0
+TUN219
+ fdb TUN13-zik
+ fcb $ba,$04,0
+ fdb 0
+TUN220
+ fdb TUN14-zik
+ fcb $ba,$04,0
+ fdb 0
+TUN221
+ fdb TUN20-zik
+ fcb $ba,$01,0
+ fdb 0
+TUN222
+ fdb TUN24-zik
+ fcb $ba,$03,0
+ fdb 0
+TUN223
+ fdb TUN24-zik
+ fcb $ba,$06,0
+ fdb 0
+TUN224
+ fdb TUN40-zik
+ fcb $ba,$04,0
+ fdb 0
+TUN225
+ fdb TUN56-zik
+ fcb $da,$0b,21
+ fdb 0
+TUN226
+ fdb TUN90-zik
+ fcb $ba,$09,0
+ fdb 0
+TUN227
+ fdb TUN291-zik
+ fcb $82,$04,30,27,22,14
+ fdb TUN303-zik
+ fcb $ea,$02,0
+ fcb $9a,$04,8,15
+ fdb TUN301-zik
+ fcb $8a,$01,4,22,15
+ fdb TUN321-zik
+ fdb TUN282-zik
+ fdb TUN287-zik
+ fcb $8a,$03,27,23,15
+ fdb TUN294-zik
+ fcb $82,$04,27,23,21,13
+ fdb TUN283-zik
+ fcb $9a,$08,23,0
+ fcb $ba,$01,0
+ fcb $8a,$04,30,26,20
+ fcb $ca,$04,20,0
+ fdb 0
+TUN228
+ fdb TUN296-zik
+ fdb TUN281-zik
+ fdb TUN292-zik
+ fdb TUN280-zik
+ fdb TUN297-zik
+ fdb TUN284-zik
+ fdb 0
+TUN229
+ fcb $8a,$04,24,22,11
+ fcb $8a,$04,22,11,0
+ fcb $9a,$04,24,22
+ fdb TUN286-zik
+ fdb TUN285-zik
+ fdb TUN313-zik
+ fdb 0
+TUN230
+ fdb TUN295-zik
+ fdb TUN306-zik
+ fdb TUN304-zik
+ fdb TUN302-zik
+ fdb TUN293-zik
+ fdb 0
+TUN231
+ fcb $ba,$03,26
+ fcb $ba,$05,0
+ fdb TUN310-zik
+ fcb $da,$05,15
+ fdb 0
+TUN232
+ fdb TUN307-zik
+ fcb $8a,$01,22,12,0
+ fcb $da,$01,0
+ fdb 0
+TUN233
+ fcb $82,$04,27,26,22,18
+ fdb TUN289-zik
+ fdb TUN316-zik
+ fdb 0
+TUN234
+ fcb $82,$05,28,24,21,15
+ fcb $f2,$02,0
+ fdb TUN290-zik
+ fdb 0
+TUN235
+ fcb $ba,$03,24
+ fcb $ba,$05,0
+ fcb $82,$05,24,22,16,15
+ fcb $f2,$02,0
+ fdb TUN291-zik
+ fdb 0
+TUN236
+ fcb $c2,$03,26,22,20
+ fcb $82,$01,26,22,20,12
+ fdb 0
+TUN237
+ fcb $82,$04,29,25,22,17
+ fdb TUN312-zik
+ fdb 0
+TUN238
+ fdb TUN305-zik
+ fdb TUN319-zik
+ fdb 0
+TUN239
+ fdb TUN311-zik
+ fcb $da,$09,0
+ fdb 0
+TUN240
+ fcb $f2,$01,13
+ fdb TUN283-zik
+ fcb $9a,$01,23,0
+ fdb 0
+TUN241
+ fcb $82,$04,28,8,21,13
+ fdb TUN140-zik
+ fdb 0
+TUN242
+ fcb $ca,$02,13,0
+ fdb 0
+TUN243
+ fcb $8a,$04,25,22,17
+ fcb $8a,$04,22,17,0
+ fdb 0
+TUN244
+ fcb $da,$02,0
+ fcb $ba,$01,0
+ fdb 0
+TUN245
+ fcb $ea,$01,0
+ fcb $da,$01,0
+ fdb 0
+TUN246
+ fcb $da,$02,0
+ fcb $9a,$06,27,21
+ fdb TUN300-zik
+ fdb 0
+TUN247
+ fcb $c2,$01,21,13,0
+ fdb 0
+TUN248
+ fcb $da,$04,13
+ fcb $9a,$04,13,0
+ fdb 0
+TUN249
+ fcb $da,$01,0
+ fcb $ba,$01,0
+ fdb 0
+TUN250
+ fcb $da,$06,0
+ fcb $ba,$02,0
+ fdb 0
+TUN251
+ fcb $da,$04,0
+ fcb $da,$04,6
+ fcb $da,$04,0
+ fdb 0
+TUN252
+ fcb $82,$02,22,14,11,0
+ fdb 0
+TUN253
+ fcb $82,$04,26,22,20,12
+ fdb 0
+TUN254
+ fcb $9a,$03,13,0
+ fdb 0
+TUN255
+ fcb $9a,$03,16,0
+ fdb 0
+TUN256
+ fcb $ca,$02,11,0
+ fdb 0
+TUN257
+ fcb $ca,$04,21,13
+ fdb 0
+TUN258
+ fcb $da,$01,0
+ fcb $ba,$02,0
+ fdb 0
+TUN259
+ fcb $9a,$01,30,22
+ fcb $da,$07,0
+ fdb 0
+TUN260
+ fcb $9a,$06,30,22
+ fcb $da,$02,0
+ fdb 0
+TUN261
+ fdb TUN145-zik
+ fcb $ca,$04,7,22
+ fdb TUN142-zik
+ fdb 0
+TUN262
+ fdb TUN145-zik
+ fcb $ca,$04,26,22
+ fdb TUN142-zik
+ fdb 0
+TUN263
+ fcb $8a,$01,21,13,0
+ fdb 0
+TUN264
+ fcb $9a,$04,20,12
+ fdb 0
+TUN265
+ fcb $c2,$01,15,13,0
+ fdb 0
+TUN266
+ fcb $ca,$01,16,0
+ fdb 0
+TUN267
+ fcb $ca,$02,17,0
+ fdb 0
+TUN268
+ fcb $ba,$08,0
+ fcb $ba,$10,22
+ fdb 0
+TUN269
+ fcb $ca,$04,24,11
+ fdb TUN48-zik
+ fdb 0
+TUN270
+ fcb $9a,$02,11,0
+ fdb 0
+TUN271
+ fcb $9a,$02,17,0
+ fdb 0
+TUN272
+ fcb $9a,$03,12,0
+ fdb 0
+TUN273
+ fcb $9a,$04,24,16
+ fdb 0
+TUN274
+ fcb $9a,$05,23,0
+ fdb 0
+TUN275
+ fcb $9a,$06,21,0
+ fdb 0
+TUN276
+ fcb $ca,$01,8,21
+ fdb 0
+TUN277
+ fcb $e2,$04,22,10
+ fdb 0
+TUN278
+ fcb $f2,$01,13
+ fdb TUN146-zik
+ fdb 0
+TUN279
+ fdb TUN155-zik
+ fcb $ba,$09,0
+ fdb 0
+TUN280
+ fcb $8a,$04,30,24,22
+ fdb TUN316-zik
+ fcb $aa,$04,24,15
+ fdb TUN315-zik
+ fdb TUN311-zik
+ fdb TUN313-zik
+ fdb 0
+TUN281
+ fcb $9a,$03,26,15
+ fcb $9a,$02,15,0
+ fcb $ba,$03,0
+ fdb TUN310-zik
+ fdb 0
+TUN282
+ fcb $82,$04,27,25,22,17
+ fdb TUN312-zik
+ fdb 0
+TUN283
+ fdb TUN318-zik
+ fcb $ea,$01,0
+ fdb 0
+TUN284
+ fcb $9a,$03,24,15
+ fdb TUN320-zik
+ fcb $ba,$02,0
+ fcb $8a,$07,24,22,16
+ fdb 0
+TUN285
+ fdb TUN314-zik
+ fcb $82,$03,22,16,0,0
+ fdb 0
+TUN286
+ fcb $9a,$04,22,0
+ fdb 0
+TUN287
+ fcb $9a,$05,30,22
+ fcb $da,$03,0
+ fdb 0
+TUN288
+ fcb $9a,$01,13,0
+ fdb 0
+TUN289
+ fcb $c2,$04,22,11,10
+ fcb $c2,$04,26,22,0
+ fdb 0
+TUN290
+ fcb $ca,$03,21,0
+ fdb TUN317-zik
+ fdb 0
+TUN291
+ fcb $8a,$09,22,0,0
+ fdb 0
+TUN292
+ fcb $da,$07,0
+ fcb $ba,$01,0
+ fdb 0
+TUN293
+ fcb $8a,$01,13,0,0
+ fcb $ba,$02,0
+ fdb 0
+TUN294
+ fcb $8a,$03,23,15,0
+ fcb $da,$02,0
+ fdb 0
+TUN295
+ fcb $82,$03,28,21,13,0
+ fdb 0
+TUN296
+ fcb $9a,$02,30,22
+ fcb $da,$06,0
+ fdb 0
+TUN297
+ fcb $9a,$04,30,22
+ fcb $da,$04,0
+ fdb 0
+TUN298
+ fcb $c2,$04,22,0,0
+ fdb TUN236-zik
+ fdb 0
+TUN299
+ fcb $8a,$01,15,13,0
+ fdb 0
+TUN300
+ fcb $9a,$02,21,0
+ fdb 0
+TUN301
+ fcb $9a,$04,15,0
+ fdb 0
+TUN302
+ fcb $c2,$02,21,13,0
+ fdb 0
+TUN303
+ fcb $c2,$02,22,14,0
+ fdb 0
+TUN304
+ fcb $c2,$03,26,21,13
+ fdb 0
+TUN305
+ fcb $ca,$01,13,0
+ fdb 0
+TUN306
+ fcb $ca,$05,13,0
+ fdb 0
+TUN307
+ fcb $e2,$02,12,0
+ fdb 0
+TUN308
+ fcb $da,$05,13
+ fdb TUN254-zik
+ fdb 0
+TUN309
+ fcb $da,$05,15
+ fdb TUN244-zik
+ fdb 0
+TUN310
+ fcb $82,$04,26,24,22,16
+ fdb TUN323-zik
+ fcb $8a,$01,22,16,0
+ fdb 0
+TUN311
+ fdb TUN322-zik
+ fcb $8a,$03,22,16,0
+ fdb 0
+TUN312
+ fcb $c2,$02,22,17,0
+ fcb $8a,$02,22,17,0
+ fdb 0
+TUN313
+ fcb $da,$01,0
+ fcb $9a,$06,24,22
+ fcb $9a,$02,22,0
+ fdb 0
+TUN314
+ fcb $82,$04,24,22,16,15
+ fdb 0
+TUN315
+ fcb $8a,$04,22,0,0
+ fdb 0
+TUN316
+ fcb $ca,$04,22,0
+ fdb 0
+TUN317
+ fdb TUN324-zik
+ fcb $ba,$02,0
+ fdb 0
+TUN318
+ fcb $e2,$02,13,0
+ fdb 0
+TUN319
+ fdb TUN288-zik
+ fcb $ba,$02,0
+ fdb 0
+TUN320
+ fcb $9a,$03,15,0
+ fdb 0
+TUN321
+ fcb $ea,$03,0
+ fdb TUN286-zik
+ fdb 0
+TUN322
+ fcb $8a,$04,24,22,16
+ fdb 0
+TUN323
+ fcb $c2,$03,22,16,0
+ fdb 0
+TUN324
+ fcb $9a,$04,21,0
+ fdb 0
+* 7389 octets (Stromae - Alors On Danse.kar)

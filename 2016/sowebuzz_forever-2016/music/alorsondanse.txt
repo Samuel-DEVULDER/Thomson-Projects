@@ -1,0 +1,158 @@
+File       : ../multivoix/Stromae - Alors On Danse.kar
+FormatType : 1
+#Tracks    : 11
+Noire      : 480 ticks
+
+Mars->deadline
+Far away->Horna Suca
+8bit->Demo
+Demo->Music
+Chip->Zx
+Oric->AY-3-8912.
+Oric says 6502
+Party->Forever
+Thomson->buzzer
+coincé dans la merde
+coding->fatigue
+chip->6809
+
+
+
+ALORS ON DANSE DANSE DANSE 
+So we just dance dance dance
+ALORS ON DANSE DANSE DANSE 
+So we just dance dance dance
+ALORS ON 
+So we just 
+
+
+
+
+QUI DIT ETUDES DIT TRAVAIL, 
+When we say speccy, it means for--tune
+QUI DIT TAF TE DIT LES THUNES, 
+IT has a chip, and plays nice tunes
+
+QUI DIT ARGENT DIT DEPENSES, 
+When we say THOMSON, it means cute
+ET QUI DIT CREDIT DIT CREANCES, 
+but has no chip, completely mute
+
+QUI DIT DETTE TE DIT HUI--SSIER, 
+Whe we say demo, it means music
+OUI DIT ASSIS DANS LA MERDE. 
+BUT we're stuck in the big shit
+
+ET QUI DIT AMOUR DIT LES GOSSES, 
+When we say Party, it means Forever
+DIT TOUJOURS ET DIT DIVORCE. 
+but the Thomson's only got the buzzer
+
+QUI DIT PROCHES TE DIS DEUILS 
+When we say Thom, it means no tone                   small beeps
+CAR LES PROBLEMES NE VIENNENT PAS SEULS. 
+'cause troubles don't come alone
+
+QUI DIT CRISE TE DIS MONDE DIT FAMINE DIT TIERSMONDE. 
+When we say crisis, it means compile, debug and recompile
+
+ET QUI DIT FATIGUE DIT REVEIL 
+When we say March, it means deadline
+ENCORE SOURD DE LA VEILLE, 
+be ready right on time
+
+ALORS ON SORT POUR OUBLIER TOUS LES PROBLEMES. 
+So we DRIVE TO Horna Suca? TO FORGET ALL THE PROBLEMS
+ALORS ON DANSE 
+Where we just buzz
+ALORS ON DANSE 
+Where we just buzz
+ALORS ON DANSE 
+Where we just buzz
+ALORS ON DANSE 
+So we just buzz
+ALORS ON DANSE 
+So we just buzz
+ALORS ON DANSE 
+So we just buzz
+ALORS ON DANSE 
+So we just buzz
+ALORS ON DANSE 
+So we just buzz
+ALORS ON DANSE 
+So we just buzz
+
+ET LA TU T'DIS QUE C'EST FINI CAR PIRE 
+So you say that it’s over because 
+QUE CA CE S'RAIT LA MORT. 
+the only thing worse is the beat
+QU'EN TU CROIS ENFIN QU'TU T'EN SORS 
+When you finally think you’ll make it,QUAND Y'EN A PLUS ET BEN Y'EN A ENCORE!
+there’s more and more! 
+EST_CE LA ZIQUE OU LES PROBLEMES LES 
+Cycles means problem,PROBLEMES OU BIEN LA MUSIQUE. 
+problems or just music
+CA T'PRENDS LES TRIPES CA T'PRENDS LA TETE
+Pitch is too high, you'll have to bendET PUIS TU PRIE POUR QU'CA S'ARRETE. 
+and then you pray for it to end.
+MAIS C'EST TON CORPS C'EST PAS LE CIEL 
+But your body is no heaven ALORS TU T'BOUCHE PLUS LES OREILLES. 
+so you block your ears even more.
+ET LA TU CRIES ENCORE PLUS FORT ET CA PERSISTE
+And then you yell even louder more and moreALORS ON CHANTE 
+So we just sing
+LA LA LA LA LA LA, LA LA LA LA LA LA, 
+Lalalalalala, Lalalalalala,
+ALORS ON CHANTE 
+So we just sing
+LA LA LA LA LA LA, LA LA LA LA LA LA, 
+Lalalalalala, Lalalalalala,
+
+
+ALORS ON CHANTE 
+So we just sing
+ALORS ON CHANTE 
+So we just sing
+ET PUIS SEULEMENT QUAND C'EST FINI, 
+And then only when it’s over, then we dance.
+ALORS ON DANSE. 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+ALORS ON DANSE 
+So we just dance 
+
+ET BEN Y'EN A ENCORE 
+And well, there’s still more
+ET BEN Y'EN A ENCORE 
+And well, there’s still more
+ET BEN Y'EN A ENCORE 
+And well, there’s still more
+ET BEN Y'EN A ENCORE 
+And well, there’s still more
+ET BEN Y'EN A ENCORE. 
+And well, there’s still more
+
+
+
+BPM=117...120unchanged
+ 6 = 57 -> 67 : ok
+ 4 = 33 -> 70 : ok
+ 1 = 33 -> 46 : ok
+ 3 = 74 -> 86 : ok
+ 0 = 33 -> 70 : ok
+ 7 = 38 -> 77 : ok
+ 9 = 36 -> 79 : ok
+ 2 = 38 -> 92 : ok
+Conversion...done
+Compression(46284)...UNCHG...SAM(33501)....sort.patt.sort.alloc.score(21348)....sort.patt.sort.alloc.score(16638)....sort.patt.sort.alloc.score(15032)....sort.patt.sort.alloc.score(14806)....sort.patt.sort.alloc.score(14791)....sort.patt...NOTES(9012)...done
