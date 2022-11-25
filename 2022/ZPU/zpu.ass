@@ -1,5 +1,6 @@
 (main)zpu
    ORG   $8000
+
 FIRST_PAGE  SET 4
 SAFE        SET 0
 
