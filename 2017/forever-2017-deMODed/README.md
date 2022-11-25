@@ -15,7 +15,6 @@
 
 # Screenshots
 
-![Screenshot](img/pulko3.png)
 ![Screenshot](img/pulko9.png)
 
 ![Screenshot](img/puls.gif)
