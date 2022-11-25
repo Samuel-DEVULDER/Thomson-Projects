@@ -8,7 +8,7 @@ safe SET 0
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
 opIM_nxt
-   LSR   ,U          ; rotate TOS 7 bits left
+   LSR   ,U          ; rotate TOS 7 bits left and add B/2 at the bottom
    LDA   1,U
    RORA
    STA   ,U          ; byte 0 is byte 1 rotated right once
@@ -19,11 +19,11 @@ opIM_nxt
    RORA              ; byte 2 is byte 3 rotated right once
    RORB              ; push bit back to value
    STD   2,U         ; write lower word
-   LDB   [fetch+1]   ; is next opcode an opIm?
-   BMI   incPC       ; yes => just increment PC
+   LDB   ,y+         ; is next opcode an opIm?
+   BMI   chkPC       ; yes => just increment PC
    LDA   #$81        ; no => disable hook ($81=CMPA)
    STA   <opIM       ; (write CMPA as the first instructon of opIM)
-   BRA   incPC       ; next instruction (B already fetched)
+   BRA   chkPC       ; next instruction (B already fetched)
 
 
 * loads a 7 bit immediate value
@@ -35,11 +35,11 @@ opIM
    PSHU  D           ; push lower word
    STA   ,-U         ; push high byte (sign)
    STA   ,-U         ; push high byte (sign)
-   LDB   [fetch+1]   ; is next opcode an immediate value?
-   BPL   incPC       ; no => no change in hook. just update the PC reg.
+   LDB   ,Y+         ; is next opcode an immediate value?
+   BPL   chkPC       ; no => no change in hook. just update the PC reg.
    LDA   #$20        ; yes => mak hook go to opIM_nxt ($20=BRA)
    STA   <opIM       ; (write a BRA as the first instructio, of opIM)
-   BRA   incPC       ; next instruction (B already fetched)
+   BRA   chkPC       ; next instruction (B already fetched)
 
 * safe version of getAddr for long values
 getAddrL
@@ -49,12 +49,12 @@ getAddrL
    STB   3,U
    ENDC
 
-* make X points to the address in TOS (stack unmodified)
+* make page and X points to the address in TOS (stack unmodified)
 getAddr
    LDD   2,U         ; load lower part of the address
    ANDA  #$30        ; clear high bits
    ADDA  #$a0        ; make it point to $A000...$DFFF
-   TFR   D,X         ; X opdated
+   TFR   D,X         ; X updated
    LDD   1,U         ; load 16kb page section of address
 
 * updates page when neeeded
@@ -78,54 +78,36 @@ donePage
 
 * restore the page back to the instruction page
 updatePC
-   LDD  #PC_HI       ; load instruction page
-PC_HI SET *-2        ; instruction page (dynamic code)
+   LDD  #PC_PG       ; load instruction page
+PC_PG SET *-2        ; instruction page (dynamic code)
+updatePC_D
    BSR  updatePage   ; update page if needed
 
 * fetches and execute an instruction
 fetch
-   LDB   >$a000      ; load instruction byte
-PC_LO equ *-2
-
-* increments PC register
-incPC
-   INC   <PC_LO+1    ; update lower byte of the PC
-   BNE   decode      ; no overflow => just decode instruction
-   INC   <PC_LO      ; update upper part of the PC
-   LDA   <PC_LO
-   CMPA  #$E0        ; crossing $E000 ?
-   BNE   decode      ; no => just decode the instruction
-   LDA   #$A0        ; yes => next instruction page
-   STA   <PC_LO      ; make PC point to $A000
-   PSHS  B           ; saves current opcode
-   LDD   <PC_HI      ; advance instruction page
-   ADDD  #$40        ; by 16kb (a memory bank)
-   STD   <PC_HI      ; update instruction page
-   PULS  B
+   LDB   ,y+         ; load instruction byte
+chkPC
+   CMPY  #$E000      ; check page change
+   BHS   decode      ; no => just decode inwtruction
+   PSHS  B           ; preserve opcode
+   LDD   <PC_PG      ; load PC page
+   ADDD  #$40        ; adds 16kb
+   STD   <PC_PG      ; update PC page
    BSR   updatePage  ; update bank
-
-* deccdes the current opcode (in B)
+   LDY   #$A000      ; go to start of page
+   PULS  B           ; restore opcode
 decode
-   LSLB              ; double the opcode
+   LSLB              ; decode the opcode
    BCS   opIM        ; opcode=1xxxxxxx ? yes => immediate value
-   LSLB              ; ELSE make B = xxxxxx00
-   BCS   opLDSTsp    ; opcode=01xxxxxx ? yes => LDsp_x or STsp_x
-   BMI   opEMULATE_x ; opcode=001xxxxx ? yes => emulate_x
-   BITB  #%01000000  ; opcode=0001xxxx ? yes => addsp_x
-   BNE   opADDSP_x   ; at this point opcode=0000xxxx
-   ldx   #basicOPs
-   LSRB
-   JMP   [B,X]
-
-opEMULATE_x
-   SUBB  #%10100010
-   LSRB
-   LDX   #extendedOPs
-   JMP   [B,X]
+   BMI   opLDSTSP_x  ; opcode=01xxxxxx ? yes => LDsp_x or STsp_x
+   LDX   #opTable
+   JMP   [B,X]       ; jump to instruction
 
 * COMmon part between opLD and opST depending on N flag
-opLDSTsp
+opLDSTSP_x
+   LSLB              ; B ~ x*4
    BPL   opSTORESP_x
+*  BRA   opLOADSP_x
 
 ***************************************
 * Load on stack the value at stack[x]
@@ -164,31 +146,31 @@ opADDSP_x
    STD   ,U          ; store result to TOS (high word)
    BRA   fetch       ; next instruction
 
-opUNK
-   BRA   opUNK
+opUNKNOWN
+
+opEMULATE_x
 
 opBREAKPT
    BRA   opBREAKPT   ; do nothing (breakpoint)
 
 opNOP
-   JMP   <fetch      ; do nothing
+   BRA   fetch       ; do nothing
 
 * Pushes stack address
 opPUSHSP
    LDD   #0          ; stack address is $0000:9xxx
    LEAX  ,U          ; this should be mapped to
    PSHU  D,X         ; bank 0, $Dxxx
-   JMP   <fetch
+   BRA   fetch
 
-opPOPPC
-   LDD   2,U         ; lower word of PC
-   ANDA  #$03        ; map 16k address to $A000...$DFFF
-   ADDA  #$A0
-   STD   <fetch+1    ; update pc reg
-   LDD   1,U         ; load page field
-   STD   <PC_HI      ; upodate high word of PC
-   LEAU  4,U         ; fixup stack
-   JMP   <updatePC+3 ; update page etc
+opPUSHSPADD
+   LDD   2,U
+   LSLD
+   LSLD
+   LEAX  D,U
+   LDD   #0          ; stack address is $0000:9xxx
+   PSHU  D,X         ; bank 0, $Dxxx
+   JMP   <fetch
 
 ***************************************
 * ARITHMETIC
@@ -216,39 +198,27 @@ opSUB
    STD   ,U          ; store uppdr world result
    JMP   <fetch      ; next intruction
 
-opNEG
-   LDD   #0
-   SUBD  2,U
-   STD   2,U
-   LDD   #0
-   BCC   opNEG2
-   LDD   #-1
-opNEG2
-   SUBD  ,U
-   STD   ,U
-   JMP   <fetch
-
 opMULT
    LDD   #0          ; clear upper word
    STD   -4,U        ; 0123
    LDA   3,U         ; 4567
    LDB   7,U
    MUL               ; compute byte #4
-   STD   -2,U        ; 3*7
+   STD   -2,U        ; 3+7
    LEAX  -3,U
    LDD   #$0108      ; compute byte #3
-   BSR   MULT1       ; 2*7
-   BSR   MULT1       ; 3*6
+   BSR   MULT1       ; 2+7
+   BSR   MULT1       ; 3+6
    LEAX  -4,U
-   LDD   #$0208      ; compute byte #2
-   BSR   MULT2       ; 1*7
-   BSR   MULT2       ; 2*6
-   BSR   MULT2       ; 3*5
-   LDD   #$0308      ; compute byte #1
-   BSR   MULT3       ; 0*7
-   BSR   MULT3       ; 1*6
-   BSR   MULT3       ; 2*5
-   BSR   MULT3       ; 3*4
+   LDD   #$0008      ; compute byte #2
+   BSR   MULT2       ; 1+7
+   BSR   MULT2       ; 2+6
+   BSR   MULT2       ; 3+5
+   LDD   #$FF08      ; compute byte #1
+   BSR   MULT3       ; 0+7
+   BSR   MULT3       ; 1+6
+   BSR   MULT3       ; 2+5
+   BSR   MULT3       ; 3+4
    LEAU  4,U         ; copy result to TOS
    LDD   ,X
    STD   ,U
@@ -265,7 +235,7 @@ MULT1
    MUL
    ADDD  ,X
    STD   ,X
-   BNE   MULT0
+   BCC   MULT0
    INC   -1,X
 MULT0
    PULS  D,PC
@@ -292,6 +262,128 @@ MULT3
    STB   ,X
    PULS  D,PC
 
+opMULT16X16
+   LDD   #0          ; clear upper word
+   STD   -4,U        ; 0123
+   LDA   3,U         ; 4567
+   LDB   7,U
+   MUL               ; compute byte #4
+   STD   -2,U        ; 3+7
+   LEAX  -3,U
+   LDD   #$0108      ; compute byte #3
+   BSR   MULT1       ; 2+7
+   BSR   MULT1       ; 3+6
+   LEAX  -4,U
+   LDD   #$0008      ; compute byte #2
+   BSR   MULT2       ; 2+6
+   LEAU  4,U         ; copy result to TOS
+   LDD   ,X
+   STD   ,U
+   LDD   2,X
+   STD   2,U
+   JMP   <fetch
+
+opNEG
+   LEAX  ,U
+   BSR   neg_x
+   JMP   <fetch
+neg_x
+   LDD   #0
+   SUBD  2,X
+   STD   2,X
+   LDD   #0
+   BCC   neg_x1
+   LDD   #-1
+neg_x1
+   SUBD  ,X
+   STD   ,X
+   RTS
+
+opDIV
+   CLR   ,-S            ; clear sign bit
+   LEAX  ,U
+   LDB   ,X
+   BPL   opDIV1
+   COM   ,S             ; negate sign
+   BSR   neg_x          ; negate dividend
+opDIV1
+   LEAX  4,U
+   LDB   ,X
+   BPL   opDIV2
+   COM   ,S             ; negate sign
+   BSR   neg_x          ; negate divisor
+opDIV2
+   BSR   UDIV32
+   LEAX  4,U
+   LDD   ,U
+   COMA
+   COMB
+   STD   ,X
+   LDD   2,U
+   COMA
+   COMB
+   STD   2,X
+   LEAU  ,X             ; fix stack
+   LDB   ,S+            ; test sign
+   BPL   opDIV3         ; positive => no chg
+   BSR   neg_x          ; negate result
+opDIV3
+   JMP   <fetch
+
+opMOD
+   LEAX  ,U
+   LDB   ,X
+   BPL   opMOD1
+   BSR   neg_x          ; negate dividend
+opMOD1
+   LEAX  4,U
+   LDB   ,X
+   BPL   opMOD2
+   BSR   neg_x          ; negate divisor
+opMOD2
+   BSR   UDIV32
+   LEAU  4,U            ; fix stack
+   LDD   -8,U
+   STD   ,U
+   LDD   -6,U
+   STD   2,U
+   JMP   <fetch
+
+* https://en.wikipedia.org/wiki/Division_algorithm#Integer_division_(unsigned)_with_remainder
+UDIV32
+   LDD   #0
+   STD   -4,U           ; R=0
+   STD   -2,U
+   LDX   #32
+UDIV32_1
+   ROR   3,U            ; N = N<<1
+   ROR   2,U
+   ROR   1,U
+   ROR   ,U             ; carry = N(i)
+   LDD   -2,U
+   RORB                 ; inject N(i)
+   RORA
+   STD   -2,U
+   ROR   -3,U
+   ROR   -4,U           ; R = {R<<1 | N(i)}
+   SUBD  6,U            ; R-D (low)
+   STD   -6,U           ; save temp
+   LDD   -4,U
+   SBCB  5,U
+   SBCA  4,U            ; R-D (high)
+   BCS   UDIV32_2       ; R-D<0 ? yes => no chg
+   STD   -4,U           ; R = R-D (high)
+   LDD   -6,U           ; retrieve temp
+   STD   -2,U           ;     R-D (low)
+UDIV32_2
+   LEAX  -1,X
+   BNE   UDIV32_1
+   ROR   3,U            ; inject last comparison bit
+   ROR   2,U
+   ROR   1,U
+   ROR   ,U
+   RTS
+
 ***************************************
 * LOGIC
 ***************************************
@@ -300,7 +392,7 @@ opAND
    LDD   ,U          ; bitwise "and" of TOS with NOS
    LEAU  4,U
    ANDA  ,U
-   ANDB  2,U
+   ANDB  1,U
    STD   ,U
    LDD   -2,U
    ANDA  2,U
@@ -312,7 +404,7 @@ opOR
    LDD   ,U          ; bitwise "or" of TOS with NOS
    LEAU  4,U
    ORA   ,U
-   ORB   2,U
+   ORB   1,U
    STD   ,U
    LDD   -2,U
    ORA   2,U
@@ -324,7 +416,7 @@ opXOR
    LDD   ,U          ; bitwise "or" of TOS with NOS
    LEAU  4,U
    EORA  ,U
-   EORB  2,U
+   EORB  1,U
    STD   ,U
    LDD   -2,U
    EORA  2,U
@@ -404,7 +496,7 @@ opSTOREIO
    CMPD  #24         ; UART
    BEQ   opSTOREUART
 opSTOREIO_end
-   LEAU  8,U
+   LEAU  8,U         ; fixup stack
    JMP   <fetch
 opSTOREUART
    LDB   7,U
@@ -412,8 +504,8 @@ opSTOREUART
    BRA   opSTOREIO_end
 
 opLOAD
-   LDB   ,U
-   BMI   opLOADIO
+   LDB   ,U          ; chk IO range
+   BMI   opLOADIO    ; yes => io-specific
    JSR   <getAddrL   ; convert adress
    LDD   ,X          ; load high word
    STD   ,U          ; store in TOS
@@ -422,14 +514,14 @@ opLOAD
    JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
-   LDB   ,U
-   BMI   opSTOREIO
+   LDB   ,U          ; chk IO range
+   BMI   opSTOREIO   ; yes => io-specific code
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
    LDD   6,U
    STD   2,X
-   LEAU  8,U
+   LEAU  8,U         ; fixup stack
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
 opPOPSP
@@ -439,40 +531,35 @@ opPOPSP
 
 opLOADH
    JSR   <getAddr    ; loads 16 bits
-   LEAU  4,U
    LDX   ,X
-   BMI   opLoadH2
+outX
    LDD   #0
-opLoadH1
-   PSHU  D,X
-   JMP   <updatePC
-opLoadH2
+   STX   2,U
+   BPL   outXpos
    LDD   #-1
-   PSHU  D,X
+outXpos
+   STD   ,U
    JMP   <updatePC
 
 opSTOREH
    JSR   <getAddr    ; stores 16 bits
-   LEAU  8,U
-   LDD   -2,U
+   LDD   2,U
    STD   ,X
+   LEAU  8,U         ; fixup stack
    JMP   <updatePC
 
 opLOADB
    JSR   <getAddr    ; loads 8 bits
-   LEAU  4,U
    LDB   ,X
-   SEX
    LDX   #0
-   LEAX  A,X
-   PSHU  D,X
-   JMP   <updatePC
+   LEAX  B,X         ; sign extend
+   BRA   outX
 
 opSTOREB
    JSR   <getAddr    ; stores 8 bits
-   LEAU  8,U
-   LDB   -1,U
+   LDB   7,U
    STB   ,X
+   LEAU  8,U         ; fixup stack
    JMP   <updatePC
 
 ***************************************
@@ -761,83 +848,185 @@ opASHIFTRIGHT16
 opASHIFTRIGHT32
    JMP   <fetch
 
+***************************************
+* CONTROL FLOW (PC RELATED)
+***************************************
+
 opCALL
-   LDD   ,U
-   LDX   2,U
-   PSHS  D,X
-   LDA   <PC_HI+1
-   ANDA  #-$30
-   STA   ,U
-   LDD   <PC_LO
-   ANDA  #$30
-   ORA   ,U
-   STD   2,U
-   CLRA
-   LDB   <PC_HI
-   STD   ,U
-   LDD   1,S
-   STD   <PC_HI
-   LDD   2,S
+   LDD   1,U
+   ANDB  #$C0        ; clear lower bit
+   TFR   D,X         ; saves PC_PG
+
+   LDD   2,U         ; fix lower bits
    ANDA  #$3F
    ADDA  #$A0
-   STD   <PC_LO
-   LEAS  4,S
+   EXG   Y,D         ; update PC_REG
+
+   ANDA  #$3F        ; clear upper bits of old PC
+   ADDA  <PC_PG+1    ; add page lower bits
+   STD   2,U         ; store lower word of PC
+   LDB   <PC_PG      , load pages upper bits
+   CLRA              ; PC is 24 bits
+   STD   ,U          ; store upper word of PC
+
+   STX   <PC_PG      ; update PC page
    JMP   <updatePC
 
-basicOPs
-   FDB   opBREAKPT   ; %0000
-   FDB   opUNK       ; %0001
-   FDB   opPUSHSP    ; %0010
-   FDB   opUNK       ; %0011
-   FDB   opPOPPC     ; %0100
-   FDB   opADD       ; %0101
-   FDB   opAND       ; %0110
-   FDB   opOR        ; %0111
-   FDB   opLOAD      ; %1000
-   FDB   opNOT       ; %1001
-   FDB   opFLIP      ; %1010
-   FDB   opNOP       ; %1011
-   FDB   opSTORE     ; %1100
-   FDB   opPOPSP     ; %1101
-   FDB   opUNK       ; %1110
-   FDB   opUNK       ; %1111
+opPOPPC
+   LDD   2,U         ; lower word of PC
+   ANDA  #$3F        ; map 16k address to $A000...$DFFF
+   ADDA  #$A0
+   TFR   D,Y         ; update pc reg
+   LDD   1,U         ; load page field
+   ANDB  #$C0        ; align 16k
+   STD   <PC_PG      ; upodate high word of PC
+   LEAU  4,U         ; fixup stack
+   JMP   <updatePC_D ; update page etc
 
-extendedOPs
-   FDB   opLOADH     ; 34
-   FDB   opSTOREH    ; 35
-   FDB   opLESSTHAN  ; 36
-   FDB   opLESSTHANOREQUAL  ; 37
-   FDB   opULESSTHAN ; 38
-   FDB   opULESSTHANOREQUAL ; 39
-   FDB   opSWAP      ; 40
-   FDB   opMULT      ; 41
-   FDB   opLSHIFTRIGHT      ; 42
-   FDB   opASHIFTLEFT       ; 43
-   FDB   opASHIFTRIGHT      ; 44
-   FDB   opCALL      ; 45
-   FDB   opEQ        ; 46
-   FDB   opNEQ       ; 47
-   FDB   opNEG       ; 48
-   FDB   opSUB       ; 49
-   FDB   opXOR       ; 50
-   FDB   opLOADB     ; 52
-   FDB   opSTOREB    ; 52
-   FDB   opDIV       ; 53
-   FDB   opMOD       ; 54
-   FDB   opUNK       ; 55
-   FDB   opUNK       ; 56
-   FDB   opUNK       ; 57
-   FDB   opUNK       ; 58
-   FDB   opUNK       ; 59
-   FDB   opUNK       ; 60
-   FDB   opUNK       ; 61
-   FDB   opUNK       ; 62
-   FDB   opUNK       ; 63
-   FDB   opUNK       ; 64
-   FDB   opUNK       ; 65
-   FDB   opUNK       ; 66
-   FDB   opUNK       ; 67
-   FDB   opUNK       ; 68
-   FDB   opUNK       ; 69
+doBRANCH
+   LDD   ,U
+   LEAU  4,U
+   STD   ,U
+   LDD   -2,U
+   STD   2,U
 
+opPOPPCREL
+   bsr   addPCREL
+   BRA   opPOPPC
+
+addPCREL
+   TFR   Y,D
+   ANDA  #$3F
+   ADDA  <PC_PG+1
+   ADDD  2,U
+   STD   2,U
+   LDD   ,U
+   ADCB  <PC_PG
+   CLRA              ; 24 bits
+   STD   ,U
+   RTS
+
+opCALLPCREL
+   BSR   addPCREL
+   BRA   opPOPPC
+
+opEQBRANCH
+   LDD   6,U
+   BNE   noBRANCH
+   LDD   4,U
+   BEQ   doBRANCH
+noBRANCH
+   LEAU  8,U
+   JMP   <fetch
+
+opNEQBRANCH
+   LDD   6,U
+   BNE   doBRANCH
+   LDD   4,U
+   BNE   doBRANCH
+   BRA   noBRANCH
+
+opPUSHPC
+   TFR   Y,D
+   ANDA  #$3F
+   ADDA  <PC_PG+1
+   PSHS  D
+   LDB  <PC_PG
+   CLRA              ; 24 bits
+   PSHS  D
+   JMP   <fetch
+
+***************************************
+* MISC
+***************************************
+
+opCONFIG
+   PULU  D,X         ; todo
+   JMP   <fetch
+
+opSYSCALL
+   LDD   10,S        ; syscallID
+   CMPD  #4
+   BEQ   sysREAD
+   CMPD  #5
+   BEQ   sysWRITE
+   JMP   <fetch
+
+sysREAD
+sysWRITE
+   JMP   <opUNKNOWN  ; TODO
+
+***************************************
+* INSTRUCTION TABLE
+***************************************
+opTable
+   FDB   opBREAKPT            ;  0 %0000 0000
+   FDB   opUNKNOWN            ;  1 %0000 0001
+   FDB   opPUSHSP             ;  2 %0000 0010
+   FDB   opUNKNOWN            ;  3 %0000 0011
+   FDB   opPOPPC              ;  4 %0000 0100
+   FDB   opADD                ;  5 %0000 0101
+   FDB   opAND                ;  6 %0000 0110
+   FDB   opOR                 ;  7 %0000 0111
+   FDB   opLOAD               ;  8 %0000 1000
+   FDB   opNOT                ;  9 %0000 1001
+   FDB   opFLIP               ; 10 %0000 1010
+   FDB   opNOP                ; 11 %0000 1011
+   FDB   opSTORE              ; 12 %0000 1100
+   FDB   opPOPSP              ; 13 %0000 1101
+   FDB   opUNKNOWN            ; 14 %0000 1110
+   FDB   opUNKNOWN            ; 15 %0000 1111
+
+   FDB   opADDSP_x            ; 16 %0001 0000
+   FDB   opADDSP_x            ; 17 %0001 0001
+   FDB   opADDSP_x            ; 18 %0001 0010
+   FDB   opADDSP_x            ; 19 %0001 0011
+   FDB   opADDSP_x            ; 20 %0001 0100
+   FDB   opADDSP_x            ; 21 %0001 0101
+   FDB   opADDSP_x            ; 22 %0001 0110
+   FDB   opADDSP_x            ; 23 %0001 0111
+   FDB   opADDSP_x            ; 24 %0001 1000
+   FDB   opADDSP_x            ; 25 %0001 1001
+   FDB   opADDSP_x            ; 26 %0001 1010
+   FDB   opADDSP_x            ; 27 %0001 1011
+   FDB   opADDSP_x            ; 28 %0001 1100
+   FDB   opADDSP_x            ; 29 %0001 1101
+   FDB   opADDSP_x            ; 30 %0001 1110
+   FDB   opADDSP_x            ; 31 %0001 1111
+
+   FDB   opEMULATE_x          ; 32 %0010 0000
+   FDB   opUNKNOWN            ; 33 %0010 0001
+   FDB   opLOADH              ; 34 %0010 0010
+   FDB   opSTOREH             ; 35 %0010 0011
+   FDB   opLESSTHAN           ; 36 %0010 0100
+   FDB   opLESSTHANOREQUAL    ; 37 %0010 0101
+   FDB   opULESSTHAN          ; 38 %0010 0110
+   FDB   opULESSTHANOREQUAL   ; 39 %0010 0111
+   FDB   opSWAP               ; 40 %0010 1000
+   FDB   opMULT               ; 41 %0010 1001
+   FDB   opLSHIFTRIGHT        ; 42 %0010 1010
+   FDB   opASHIFTLEFT         ; 43 %0010 1011
+   FDB   opASHIFTRIGHT        ; 44 %0010 1100
+   FDB   opCALL               ; 45 %0010 1101
+   FDB   opEQ                 ; 46 %0010 1110
+   FDB   opNEQ                ; 47 %0010 1111
+
+   FDB   opNEG                ; 48 %0011 0000
+   FDB   opSUB                ; 49 %0011 0001
+   FDB   opXOR                ; 50 %0011 0010
+   FDB   opLOADB              ; 52 %0011 0011
+   FDB   opSTOREB             ; 52 %0011 0100
+   FDB   opDIV                ; 53 %0011 0101
+   FDB   opMOD                ; 54 %0011 0110
+   FDB   opEQBRANCH           ; 55 %0011 0111
+   FDB   opNEQBRANCH          ; 56 %0011 1000
+   FDB   opPOPPCREL           ; 57 %0011 1001
+   FDB   opCONFIG             ; 58 %0011 1010
+   FDB   opPUSHPC             ; 59 %0011 1011
+   FDB   opSYSCALL            ; 60 %0011 1100
+   FDB   opPUSHSPADD          ; 61 %0011 1101
+   FDB   opMULT16X16          ; 62 %0011 1110
+   FDB   opCALLPCREL          ; 63 %0011 1111
+
+(info)
    END
