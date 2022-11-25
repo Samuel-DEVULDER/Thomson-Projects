@@ -15,7 +15,7 @@
 
 # Screenshot
 
-!(Screenshot)[/assets/img/menu.gif]
+!(Screenshot)[img/menu.gif]
 
 # HISTORY
 
