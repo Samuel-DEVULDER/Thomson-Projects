@@ -1,9 +1,9 @@
 (image)[img/menu.gif]
 # Description
 |------------|---------------------------------------|
-| Title      | TO8 deMODed?                          |
-|------------|---------------------------------------|
-| _Category_  | Demo (other 8 bits)                   |
+|------**------|---------------------------------------|
+| **Title**      | TO8 deMODed?                          |
+| **Category**  | Demo (other 8 bits)                   |
 |_Rank_      | 1st                                   |
 |*Party*     | Forever-Party 2017 - Horna Suca       |
 |*Features*  | Over one hour of a technical demonstration of a new sound routine.|
