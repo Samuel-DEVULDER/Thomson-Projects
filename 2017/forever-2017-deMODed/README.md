@@ -1,7 +1,7 @@
 
-# What?
+# Overview
 
-| KEY          | DESCRIPTION                           |
+| FEATURE      | DESCRIPTION                           |
 |--------------|---------------------------------------|
 |**Title**     | TO8 deMODed?                          |
 |**Category**  | Demo (other 8 bits)                   |
@@ -15,7 +15,7 @@
 
 # Screenshot
 
-(Screenshot)[/assets/img/menu.gif]
+!(Screenshot)[/assets/img/menu.gif]
 
 # HISTORY
 
