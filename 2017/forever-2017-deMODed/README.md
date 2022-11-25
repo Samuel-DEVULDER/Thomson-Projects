@@ -15,9 +15,11 @@
 
 # Screenshots
 
+![Screenshot](img/pulko3.png)
 ![Screenshot](img/pulko9.png)
-![Screenshot](img/menu.gif)
+
 ![Screenshot](img/puls.gif)
+![Screenshot](img/menu.gif)
 
 # HISTORY
 
