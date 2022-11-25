@@ -1,0 +1,199 @@
+(main)QUAT
+        org     $8000
+        setdp   *<-8
+
+KTST    equ     $E809
+PUTC    equ     $E803
+
+*--------------------------------------
+* boucle principale du player: 
+* - duree 125 cycles
+* - jouee (y) fois
+*--------------------------------------
+playlp  set     *
+*--------------------------------------
+* oscillo 1
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch1frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyc.)
+ch1rat  set     *-1
+        blo     ch1zer  ; 3
+        stu     ,s      ; 5
+        bra     ch1end  ; 3
+ch1zer  stx     ,s      : 5
+        bra     ch1end  ; 3
+ch1end  set     *       ; =>25 + wait
+        cmpx    <playlp ; 6 => ch1=31us
+*--------------------------------------
+* oscillo 2
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch2frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyc.)
+ch2rat  set     *-1
+        blo     ch2zer  ; 3
+        stu     ,s      ; 5
+        bra     ch2end  ; 3
+ch2zer  stx     ,s      ; 5
+        bra     ch2end  ; 3
+ch2end  set     *       ; =>25 + wait
+        cmpx    <playlp ; 6 => ch2=31us
+*--------------------------------------
+* oscillo 3
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch3frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyc.)
+ch3rat  set     *-1
+        blo     ch3zer  ; 3
+        stu     ,s      ; 5
+        bra     ch3end  ; 3
+ch3zer  stx     ,s      ; 5
+        bra     ch3end  ; 3
+ch3end  set     *       ; =>25 + wait
+        nop             ; 2 => ch3=27us
+*--------------------------------------
+* oscillo 4 / noise
+        ldd     #0      ; 3
+noise   set     *
+        lsla            ; 2
+        adca    #0      ; 2
+*       nop
+*       adda    #0
+        addd    #0      ; 4
+ch4frq  set     *-2     ; freq
+        std     <noise-2 ;5
+        cmpa    #$80    ; 2 (rap. cyc.)
+ch4rat  set     *-1
+        blo     ch4zer  ; 3
+        stu     ,s      ; 5
+        bra     ch4end  ; 3
+ch4zer  stx     ,s      ; 5
+        bra     ch4end  ; 3
+ch4end  set     *       ; =>29
+*--------------------------------------
+* bouclage y fois: 31*2+27+29 = 125us
+        leay    -1,y    ; 4
+        bne     playlp  ; 3
+*--------------------------------------
+* pattern suivant        
+        lds     #0
+savsp   set     *-2
+        puls    cc,y,u
+        jmp     <tstEXIT
+*--------------------------------------
+main    pshs    d,x,y,u,dp,cc
+		orcc	#$50
+
+        lda     #*<-8
+        tfr     a,dp
+
+        lda     $E7CD
+        ora     #$3F
+        sta     $E7CD
+
+wait    jsr     KTST    ; anti-rebond
+        bcs     wait
+
+again   ldy     #stack
+        ldu     zik
+        
+tstEXIT jsr     KTST    ; debut pattern
+        bcs     exit    ; touche => sortie
+nxtCMD  ldd     ,u++
+        beq     cRTS    ; $0000 => rts
+        bgt     cJSR    ; call $label
+        anda    #$7
+        beq     cTEMPO  ; $80
+        suba    #2
+        ble     cPLAY   ; $81/$82
+        deca
+        beq     cTEXT   ; $83
+        
+exit    puls    d,x,y,u,dp,cc,pc
+
+*--------------------------------------
+cTEMPO  stb     <tempo  ; set tempo
+        bra     nxtCMD
+*--------------------------------------
+cJSR    stu     ,y++    ; push patt.
+        addd    #zik
+        tfr     d,u
+        bra     nxtCMD
+*--------------------------------------
+cRTS    ldu     ,--y    ; pop patt.
+        cmpy    #stack
+        bge     nxtCMD
+*       bra     exit    ; retour basic
+        bra     again   ; rebouc. zik
+*--------------------------------------
+* affiche texte
+cTEXT   jsr		PUTC
+		ldb     ,u+
+        bne		cTEXT
+		bra		nxtCMD
+*--------------------------------------
+* init params pattern
+cPLAY   pshs    cc,y,u  ; sauv regs 
+        beq     cNOTE   ; $82=>normal
+
+cBRUI   ldx     #$4889  ; $81=>bruit
+        bra     cBRUI+3+2+3
+cNOTE   ldx     #$128b  
+        stx     <noise
+        
+        stb     <length ; duree
+
+        lda     -2,u    ; voix changees
+        ldy     #chldat ; maj voix
+        bsr     setch2
+        bsr     setch2
+        stu     3,s     ; maj ptr patt.
+
+        ldd     #0
+tempo   set     *-2
+length  set     *-1
+        mul
+        tfr     d,y     ; nb tour bouc.
+        
+        sts     <savsp  ; sauve pile
+        orcc    #$50    ; no interr.
+        lds     #$E7C0  ; s=PIA systeme
+        ldd     ,s      
+        orb     #8
+        tfr     d,x     ; x=buzzer 1
+        eorb    #8
+        tfr     d,u     ; u=buzzer 0
+        jmp     <playlp ; boucle princ.
+*--------------------------------------        
+setch2  bsr     setch1  ; init 2 canaux
+setch1  lsla            ; init 1 canal
+        bmi     setch3
+        ldb     ,u+     ; lit code note
+        ldx     #zik+2
+        abx
+        abx
+        abx
+        ldb     ,x      ; decodage
+        ldx     1,x
+        stb     [,y]    ; ecrirure
+        stx     [2,y]
+        bne     setch3
+        stx     [4,y]   ;<-meilleur son
+setch3  leay    6,y
+        rts
+chldat  fdb     ch1rat,ch1frq,ch1frq-3
+        fdb     ch2rat,ch2frq,ch2frq-3
+        fdb     ch3rat,ch3frq,ch3frq-3
+        fdb     ch4rat,ch4frq,noise-2
+*--------------------------------------        
+stack   rmb     2*64        
+        
+        includ  ZIK
+
+        end     main
+(include)ZIK.ASM

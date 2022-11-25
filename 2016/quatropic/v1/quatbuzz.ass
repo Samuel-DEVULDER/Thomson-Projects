@@ -1,0 +1,192 @@
+(main)QUAT
+        org     $8000
+        setdp   *<-8
+
+KTST    equ     $E809
+        
+main    pshs    d,x,y,u,dp,cc
+
+        lda     $E7CD
+        ora     #$3F
+        sta     $E7CD
+        
+wait    jsr     KTST
+        bcs     wait
+
+        lda     #*<-8
+        tfr     a,dp
+
+again   ldx     #zik
+		ldu		#stack
+
+* lecture
+nextptn	jsr		KTST
+		bcs		exit
+next2	ldd		,x++
+		beq		cRTS
+		bgt		cJSR
+* note
+		anda	#$7F
+		beq		cNOTE
+		deca
+		beq		cNOIS
+		deca
+		beq		cTEMPO
+exit    puls    d,x,y,u,dp,cc,pc
+
+* tempo
+cTEMPO	stb		<tempo
+		bra		next2
+
+* appel un sous-motif
+cJSR	addd	#zik
+		stx		,u++
+		tfr		d,x
+		bra		next2
+
+* retour sous-motif
+cRTS	ldx		,--u
+		cmpu	#stack
+		bge		next2
+* sortie ou retour basic: commenter
+* la ligne suivante
+		bra		again
+		bra		exit
+		
+* bruit
+cNOIS	ldy		#$4889		; bruit
+		bra		cNOTE2
+cNOTE	ldy		#$128b		; pas de bruit
+cNOTE2	sty		<noise
+
+* tempo
+		lda		#0
+tempo	set		*-1
+		mul
+		tfr		d,y
+		
+* rapport cyclique
+        ldd     ,x++
+        sta     <ch1rat
+        stb     <ch2rat
+        ldd     ,x++
+        sta     <ch3rat
+        stb     <ch4rat
+		
+* frequence oscillateurs
+        ldd     ,x++
+        std     <ch1frq
+		bne		sp1
+		std		<ch1frq-3
+sp1     ldd     ,x++
+        std     <ch2frq
+   		bne		sp2
+		std		<ch2frq-3
+sp2     ldd     ,x++
+        std     <ch3frq
+   		bne		sp3
+		std		<ch3frq-3
+sp3     ldd     ,x++
+        std     <ch4frq
+		bne		play
+		std		<noise-2
+
+* joue pendant y cycles
+play    pshs    cc,x,u
+        orcc    #$50
+        sts     <savsp
+        lds     #$E7C0
+        ldd     ,s
+*        ldd     #$30
+        orb     #8
+        tfr     d,x     ; x=buzzer 0
+        eorb    #8
+        tfr     d,u     ; u=buzzer 1
+
+playlp  set     *
+* oscillo 1
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch1frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyclique)
+ch1rat  set     *-1
+        blo     ch1zer  ; 3
+        stu     ,s      ; 5
+        bra     ch1end  ; 3
+ch1zer  stx     ,s      ; 5
+        bra     ch1end  ; 3
+ch1end  set     *       ; 25=3+4+5+2+3+5+3
+
+		nop
+		nop
+		nop
+
+* oscillo 2
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch2frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyclique)
+ch2rat  set     *-1
+        blo     ch2zer  ; 3
+        stu     ,s      ; 5
+        bra     ch2end  ; 3
+ch2zer  stx     ,s      ; 5
+        bra     ch2end  ; 3
+ch2end  set     *       ; 25=3+4+5+2+3+5+3
+
+		nop
+		nop
+		nop
+
+* oscillo 3
+        ldd     #0      ; 3
+        addd    #0      ; 4
+ch3frq  set     *-2     ; freq
+        std     <*-5    ; 5
+        cmpa    #$80    ; 2 (rap. cyclique)
+ch3rat  set     *-1
+        blo     ch3zer  ; 3
+        stu     ,s      ; 5
+        bra     ch3end  ; 3
+ch3zer  stx     ,s      ; 5
+        bra     ch3end  ; 3
+ch3end  set     *       ; 25=3+4+5+2+3+5+3
+
+		nop
+
+* oscillo 4 / noise
+        ldd     #0      ; 3
+noise   set     *
+        lsla            ; 2
+        adca    #0      ; 2
+*       nop
+*       adda    #0
+        addd    #0      ; 4
+ch4frq  set     *-2     ; freq
+        std     <noise-2 ; 5
+        cmpa    #$80    ; 2 (rap. cyclique)
+ch4rat  set     *-1
+        blo     ch4zer  ; 3
+        stu     ,s      ; 5
+        bra     ch4end  ; 3
+ch4zer  stx     ,s      ; 5
+        bra     ch4end  ; 3
+ch4end  set     *       ; 29=3+2+2+4+5+2+3+5+3
+
+* bouclage
+        leay    -1,y    ; 4
+        bne     playlp  ; 3=>111
+        
+        lds     #0
+savsp   set     *-2
+        puls    cc,x,u
+		jmp		<nextptn
+
+stack	rmb		2*64		
+		
+        includ  ZIK
+        
+        end     main
+(include)ZIK.ASM
