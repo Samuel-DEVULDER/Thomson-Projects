@@ -1,7 +1,10 @@
-```
-Title:      TO8 deMODed?
+(image)[img/menu.gif]
+# Description
 
-Category:   Demo (other 8 bits)
+--:--
+Title :      TO8 deMODed?
+
+Category :   Demo (other 8 bits)
 Rank:       1st
 Party:      Forever-Party 2017 - Horna Suca
 
@@ -18,9 +21,7 @@ Machine(s): Thomson TO8, TO8D, TO9+ (6809e @ 1Mhz)
 Format:     Single standard Thomson disk in various emulator
             formats (SAP, FD).
 
-=====================================================================
-HISTORY
-=====================================================================
+# HISTORY
 
 Last year PULS showed that with huge effort, the Thomson machines
 that are usually silent, can produce sound and even play a karaoke,
@@ -65,9 +66,7 @@ of the 16 bit world :-)
 
         ==>>>> ENJOY OVER ONE HOUR OF MUSIC! <<<<<==
 
-=====================================================================
-FOREVER THEME?
-=====================================================================
+# FOREVER THEME?
 
 Okay, this is all very well. But one might ask how does this
 production fit into this year theme? Have a close look at
@@ -82,9 +81,7 @@ Got it? Yes!!!!!!
 
 Mad Max!!!! That's it :) :) :)
 
-=====================================================================
-CREDITS
-=====================================================================
+# CREDITS
 
 Here are the credits for the MODs and GFX that we used in this
 production. PULS sends all its greetings to them!
@@ -200,9 +197,7 @@ Tune for Menu
          of S!P
     WWW: ftp://ftp.modland.com/pub/favourites/Protracker/Chrono/
 
-=====================================================================
-REMARKS
-=====================================================================
+# REMARKS
 1) If you intend to listen the disk on an emulator, please
    choose one that respects the disk timings, or the waiting
    delays won't be good.
@@ -232,4 +227,3 @@ REMARKS
 
 4) Special guest: Pulkomandy in the first two pictures.
    Big thank to him!
-```
