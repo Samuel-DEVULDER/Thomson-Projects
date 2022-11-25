@@ -118,7 +118,7 @@ test2: $(DSK)
 	 ../teo/teow.exe -window -m MASS6809.M7 -disk0 `cygpath -w -s "$(PWD)/$<"`
 	
 TEODIR=../../TEO_WIN_187_BETA3_20220907/
-tst: $(DSK)
+tst: $(DSK) $(DSK:%.fd=%_0.sap)
 	cp $(DSK:%.fd=%_0.sap) $(TEODIR)/disk0.sap
 	cp $(DSK:%.fd=%_1.sap) $(TEODIR)/disk1.sap
 	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk0.sap -1 disk1.sap
