@@ -35,6 +35,7 @@ clean:
 	
 fullclean: clean
 	-rm 2>/dev/null m0d/* bin/* $(C6809) $(SPLITM0D) $(CREATEDISK)
+	-cd lua52/src && make -f Makefile.std clean && $(RM) lua$(EXE) luac$(EXE)
 	
 norm:
 	@for i in mod/*; do case $$i in *\ *) mv -v "$$i" `echo "$$i" | tr ' ' '_'`;; esac; done
@@ -48,14 +49,32 @@ gz: $(SAP)
 	-@rm *.sap.gz *.fd.gz
 	gzip *.sap *.fd
 	
+$(LUA): lua52/src $(wildcard lua52/src/*)
+	@echo Compining "$@" ...
+	@cd $< && export MAKE="make -f Makefile" && $$MAKE CC="$(CC)" CFLAGS="$(CFLAGS)" generic 
+	@test -e $</$(notdir $@) && cp $</$(notdir $@) "$@" || cp $</lua "$@"
+	@strip "$@"
+	
+lua52/src:
+	test -d lua52 || mkdir lua52
+	wget -q https://www.lua.org/ftp/lua-5.2.4.tar.gz -O - | tar xvzf - --strip-components=1 -Clua52/ 
+
 $(DSK): $(BIN) $(M0D) $(M0D_SPLIT) $(CREATEDISK)
 $(SAP): $(DSK)
-$(M0D_SPLIT): $(SPLITM0D) tools/mod2m0d.lua
-$(BIN): $(C6809)
+$(M0D_SPLIT): $(SPLITM0D) tools/mod2m0d.lua Makefile
+$(BIN): $(C6809) Makefile
 
-bin/menu.bin: m0d/menu.m0d bin/list.bin img/menu.map img/info.map
+tools/%$(EXE): trackdisk/%.c
+	$(CC) $(CFLAGS) -o "$@" "$<"
+	@sleep 1 && strip "$@"
 
-bin/list.bin: deMODed.manifest tools/manifest2list.lua
+tools/%$(EXE): c6809/%.c
+	$(CC) $(CFLAGS) -o "$@" "$<"
+	@sleep 1 && strip "$@"
+
+bin/menu.bin: $(LUA) m0d/menu.m0d bin/list.bin img/menu.map img/info.map
+
+bin/list.bin: deMODed.manifest tools/manifest2list.lua $(LUA) 
 	$(LUA) tools/manifest2list.lua "$<" "$@"
 
 # ftp://ftp.modland.com/pub/favourites/Protracker/Chrono/
@@ -97,3 +116,9 @@ test: $(SAP)
 
 test2: $(DSK)
 	 ../teo/teow.exe -window -m MASS6809.M7 -disk0 `cygpath -w -s "$(PWD)/$<"`
+	
+TEODIR=../../TEO_WIN_187_BETA3_20220907/
+tst: $(DSK)
+	cp $(DSK:%.fd=%_0.sap) $(TEODIR)/disk0.sap
+	cp $(DSK:%.fd=%_1.sap) $(TEODIR)/disk1.sap
+	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk0.sap -1 disk1.sap

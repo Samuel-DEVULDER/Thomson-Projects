@@ -23,6 +23,8 @@ local thomson = {
 	border=nil     -- if {} then output instructions to change the border color according to the volume.
 }
 
+loadstring = loadstring or load
+
 local function printf(...)
     io.stderr:write(string.format(...))
     io.stderr:flush()
@@ -49,8 +51,8 @@ end
 if not thomson.output or thomson.output=='' then
 	local path = thomson.input:gsub("[^/\\]*$","")
 	local name = thomson.input:gsub("^.*[/\\]","")
-							  :gsub("^[mM][oO][dD]\.","")
-							  :gsub("\.[mM][oO][dD]$","")
+							  :gsub("^[mM][oO][dD]%.","")
+							  :gsub("%.[mM][oO][dD]$","")
 	thomson.output = path .. name .. '.M0D'
 end
 if thomson.assembly=='' then
