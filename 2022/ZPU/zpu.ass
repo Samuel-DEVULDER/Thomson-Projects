@@ -135,12 +135,13 @@ opSTORESP_x
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
 opADDSP_x
+   LSRB              ; B ~ 4*x
    ANDB  %00111100   ; make 4*x postitive
    LEAX  B,U         ; X point to source
    LDD   2,X         ; load low word of source
    ADDD  2,U         ; add low word of TOS
    STD   2,U         ; store result to TOS (lower word)
-   LDD   ,X          ; load high word of source
+   LDD   ,X         < ; load high word of source<<
    ADCB  1,U         ; add with carry the TOS (high word)
    ADCA  ,U          ; second byte
    STD   ,U          ; store result to TOS (high word)
