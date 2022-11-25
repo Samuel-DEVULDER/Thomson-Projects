@@ -889,7 +889,7 @@ doBRANCH
    STD   ,U
    LDD   -2,U
    STD   2,U
-
+   * fall through
 opPOPPCREL
    bsr   addPCREL
    BRA   opPOPPC
