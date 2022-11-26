@@ -1,0 +1,150 @@
+/*--------------------------------------------------------------*
+ * Compilé avec C6809 v0.83                                     *
+ *--------------------------------------------------------------*
+ * Fichier source      : exobin.ass
+ * Fichier destination : toto.BIN
+ * Contenu :
+ *     Main     0:EXOBIN.ASM   1311
+ *--------------------------------------------------------------*/
+
+Macro Pass
+Pass1
+Pass2
+      2        8F64                       org     $9000-156
+      3                            
+      4                  5555     BINEXE  equ     $5555
+      5                  5555     BINEND  equ     $5555
+      6                  AAAA     ZIPEND  equ     $AAAA
+      7
+      8        8F64               biba    rmb     156
+      9
+     10                  90               setdp   *<-8
+     11                            
+(12) Unused Symbol
+     12  3     9000 CE   90A5     main    ldu     #regs
+     13  5+9   9003 37   7D               pulu    cc,b,dp,x,y,s
+     14  2     9005 4F            nxt     clra
+     15  5+2   9006 34   06               pshs    a,b
+     16  2     9008 C5   0F               bitb    #$0f
+     17  3     900A 26   03               bne     skp
+     18  3     900C CE   0001             ldu     #$0001
+     19  2     900F C6   04       skp     ldb     #4
+     20  7     9011 8D   68               bsr     getbits
+     21  4+2   9013 E7   80               stb     ,x+
+     22  2     9015 53                    comb
+     23  6+0   9016 69   E4       roll    rol     ,s
+     24  2     9018 49                    rola
+     25  2     9019 5C                    incb
+     26  3     901A 2B   FA               bmi     roll
+     27  4+0   901C E6   E4               ldb     ,s
+     28  5+3   901E EF   81               stu     ,x++
+     29  4+4   9020 33   CB               leau    d,u
+     30  5+2   9022 35   06               puls    a,b
+     31  2     9024 5A                    decb
+     32  3     9025 26   DE               bne     nxt
+(33) Unused Symbol
+     33  3     9027 CE   5555     go      ldu     #BINEND
+     34  2     902A C6   01       mloop   ldb     #1
+     35  7     902C 8D   4D               bsr     getbits
+     36  3     902E 26   17               bne     cpy
+     37  4     9030 D7   3B               stb     <idx+1
+     38        9032 8C                    fcb     $8c
+     39  6     9033 0C   3B       rbl     inc     <idx+1
+     40  2     9035 5C                    incb
+     41  7     9036 8D   43               bsr     getbits
+     42  3     9038 27   F9               beq     rbl
+     43  2     903A C6   00       idx     ldb     #$00
+     44  2     903C C1   10               cmpb    #$10
+     45  6     903E 1027 C513             lbeq    BINEXE
+     46  3     9042 25   0F               blo     coffs
+     47  2     9044 5A                    decb
+     48  7     9045 8D   34               bsr     getbits
+     49  6     9047 1F   01       cpy     tfr     d,x
+     50  4+2   9049 A6   A2       cpyl    lda     ,-y
+     51  4+2   904B A7   C2               sta     ,-u
+     52  4+1   904D 30   1F               leax    -1,x
+     53  3     904F 26   F8               bne     cpyl
+     54  3     9051 20   D7               bra     mloop
+     55  7     9053 8D   3F       coffs   bsr     cook
+     56  5+2   9055 34   06               pshs    d
+     57  3     9057 8E   909F             ldx     #tab1
+     58  5     905A 1083 0003             cmpd    #$03
+     59  3     905E 24   01               bhs     scof
+     60  3     9060 3A                    abx
+     61  7     9061 8D   16       scof    bsr     getbix
+     62  4+1   9063 EB   03               addb    3,x
+     63  7     9065 8D   2D               bsr     cook
+     64  5     9067 DD   6F               std     <offs+2
+     65  5+2   9069 35   10               puls    x
+     66  4+1   906B 33   5F       cpy2    leau    -1,u
+     67  4+4   906D A6   C9 5555  offs    lda     $5555,u
+     68  4+0   9071 A7   C4               sta     ,u
+     69  4+1   9073 30   1F               leax    -1,x
+     70  3     9075 26   F4               bne     cpy2
+     71  3     9077 20   B1               bra     mloop
+     72  4+0   9079 E6   84       getbix  ldb     ,x
+     73  6+2   907B 6F   E2       getbits clr     ,-s
+     74  6+2   907D 6F   E2               clr     ,-s
+     75  2     907F 86   00       bitbuf  lda     #$00
+     76  3     9081 20   09               bra     get3
+     77  4+2   9083 A6   A2       get1    lda     ,-y
+     78  2     9085 46            get2    rora
+     79  3     9086 27   FB               beq     get1
+     80  6+1   9088 69   61               rol     1,s
+     81  6+0   908A 69   E4               rol     ,s
+     82  2     908C 5A            get3    decb
+     83  3     908D 2A   F6               bpl     get2
+     84  4     908F 97   80               sta     <bitbuf+1
+     85  5+3   9091 EC   E1               ldd     ,s++
+     86  5     9093 39                    rts
+     87  3     9094 8E   8F64     cook    ldx     #biba
+     88  3     9097 3A                    abx
+     89  2     9098 58                    aslb
+     90  3     9099 3A                    abx
+     91  7     909A 8D   DD               bsr     getbix
+     92  6+1   909C E3   01               addd    1,x
+     93  5     909E 39                    rts
+     94        909F 04 02 04 10   tab1    fcb     4,2,4,16,48,32
+               90A3 30 20
+     95                           * CC, B, A, DP, X, Y, S
+     96        90A5 50            regs    fcb     $50    ! CC
+     97        90A6 34                    fcb     52     ! B
+     98        90A7 90                    fcb     *<-8   ! DP
+     99        90A8 8F64                  fdb     biba   ! X
+    100        90AA AAAA                  fdb     ZIPEND ! Y
+    101        90AC 60CC                  fdb     $60CC  ! S
+    102                  0000             end
+
+000002 Total Errors
+           Unused Symbol      12 main    ldu     #regs
+           Unused Symbol      33 go      ldu     #BINEND
+
+000027 Total Symbols
+     2x          Label 8F64 biba
+     1x          Equ   5555 BINEND
+     1x          Equ   5555 BINEXE
+     1x          Label 907F bitbuf
+     1x          Label 9053 coffs
+     2x          Label 9094 cook
+     1x          Label 9047 cpy
+     1x          Label 906B cpy2
+     1x          Label 9049 cpyl
+     1x          Label 9083 get1
+     1x          Label 9085 get2
+     1x          Label 908C get3
+     4x          Label 907B getbits
+     2x          Label 9079 getbix
+     0x          Label 9027 go
+     2x          Label 903A idx
+     0x          Label 9000 main
+     2x          Label 902A mloop
+     1x          Label 9005 nxt
+     1x          Label 906D offs
+     1x          Label 9033 rbl
+     1x          Label 90A5 regs
+     1x          Label 9016 roll
+     1x          Label 9061 scof
+     1x          Label 900F skp
+     1x          Label 909F tab1
+     1x          Equ   AAAA ZIPEND
+
