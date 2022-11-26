@@ -37,7 +37,9 @@ static IMG  *read_map(char *infile);
 static void optim(IMG *img);
 static void process(char *filename);
 static void membuf_cpy_plane(struct membuf *buf, unsigned char *data, unsigned char width, unsigned char height);
+#if 0
 static void save_ppm(char *filename, unsigned char *data);
+#endif
 
 int total = 0, total2 = 0, total3 = 0, num = 0;
 
@@ -115,7 +117,7 @@ static void convert(char *infile, char *outfile) {
 	struct crunch_info info[1];
 	static struct crunch_options options[1] = { CRUNCH_OPTIONS_DEFAULT };
 	char *name = infile;
-	int t3;
+	/* int t3; */
 	
 	if(!img) return;
 	
@@ -326,7 +328,7 @@ static char *decomp(FILE *f, IMG *img) {
 
 static IMG *read_map(char *infile) {
 	int len;
-	unsigned char buf[40];
+	unsigned char buf[41];
 	
 	char *msg = "bad file content";
 	IMG *img = alloc(sizeof(IMG));
@@ -416,6 +418,7 @@ static void membuf_cpy_plane(struct membuf *buf, unsigned char *data, unsigned c
 	}
 }
 
+#if 0
 static void save_ppm(char *filename, unsigned char *data) {
 	FILE *f = fopen(filename, "wb");
 	short i;
@@ -430,3 +433,4 @@ static void save_ppm(char *filename, unsigned char *data) {
 	
 	fclose(f);
 }
+#endif
