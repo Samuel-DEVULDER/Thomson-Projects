@@ -1053,6 +1053,7 @@ opTable
 ***************************************
    ORG   $A000
 
+* https://github.com/tobyjaffey/libzpu/blob/master/zpusim-mini/zpusim-mini.c
    FCB   $80,$3d,$0d,$f8,$80,$80,$82
    FCB   $80,$51,$80,$c8,$71,$0c,$80
    FCB   $e5,$71,$0c,$80,$ec,$71,$0c
