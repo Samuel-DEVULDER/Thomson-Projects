@@ -14,7 +14,21 @@ https://en.m.wikipedia.org/wiki/ZPU_(microprocessor)
 https://github.com/zylin/zpu/blob/master/zpu/docs/zpu_arch.html
 https://forums.parallax.com/discussion/119711/zog-a-zpu-processor-core-for-the-prop-gnu-c-c-and-fortran-now-replaces-s
 
+# Emulators?
+
+* in C:
+    https://forums.parallax.com/uploads/attachments/52350/70173.zip
+    https://github.com/robinsonb5/ZPUSim
+    https://github.com/tobyjaffey/libzpu/tree/master/zpusim-mini
+* in Java:
+    https://github.com/zylin/zpu/tree/master/zpu/sw/simulator
+
 # Compiler?
 
 https://github.com/zylin/zpugcc/
 https://github.com/zylin/zpugcc/blob/master/toolchain/gcc/libgloss/zpu/crt0.S
+
+# Misc?
+
+https://github.com/pdsmart/zSoft
+
