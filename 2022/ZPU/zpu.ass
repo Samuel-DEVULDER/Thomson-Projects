@@ -1,8 +1,23 @@
 (main)zpu
-   ORG   $9F00
+   ORG   $9000
 
 FIRST_PAGE  SET 4
 SAFE        SET 0
+
+ASRD  MACRO
+   ASRA
+   RORB
+   ENDM
+
+LSRD  MACRO
+   LSRA
+   RORB
+   ENDM
+
+LSLD  MACRO
+   LSLB
+   ROLA
+   ENDM
 
    SETDP PAGE0
 
@@ -139,7 +154,7 @@ opLDSTSP_x
 * B=-xxxxx00 (4*x)
 ***************************************
 opLOADSP_x
-   ANDB  %01111100   ; clear bit 7 of 4*x
+   ANDB  #%01111100   ; clear bit 7 of 4*x
    LEAX  B,U         ; X points to source
    LDD   ,X          ; load high word
    LDX   2,X         ; load low word
@@ -161,12 +176,12 @@ opSTORESP_x
 * B=0--xxxx00 (4*x)
 opADDSP_x
    LSRB              ; B ~ 4*x
-   ANDB  %00111100   ; make 4*x postitive
+   ANDB  #%00111100  ; make 4*x postitive
    LEAX  B,U         ; X point to source
    LDD   2,X         ; load low word of source
    ADDD  2,U         ; add low word of TOS
    STD   2,U         ; store result to TOS (lower word)
-   LDD   ,X         < ; load high word of source<<
+   LDD   ,X          ; load high word of source<<
    ADCB  1,U         ; add with carry the TOS (high word)
    ADCA  ,U          ; second byte
    STD   ,U          ; store result to TOS (high word)
@@ -191,6 +206,7 @@ opPUSHSPADD
    LDD   2,U
    LSLD
    LSLD
+   STD   $1234 ; ZZZZZZZZZZZZZZZZZZZZz
    LEAX  D,U
    LDD   #0          ; stack address is $0000:9xxx
    PSHU  D,X         ; bank 0, $Dxxx
@@ -669,8 +685,7 @@ opNEQ
 ***************************************
 
 LSHIFTRIGHT MACRO
-   LSRA
-   RORB
+   LSRD
    ROR   1,U
    ROR   2,U
    ENDM
@@ -713,11 +728,6 @@ opLSHIFTRIGHT16
 opLSHIFTRIGHT32
    JMP   <fetch
 
-LSRD  MACRO
-   LSRA
-   RORB
-   ENDM
-
 opLSHIFTRIGHT_
    LDD   2,U
    LSR  -1,U
@@ -749,8 +759,7 @@ opLSHIFTRIGHT_32
    JMP   <fetch
 
 ASHIFTLEFT MACRO
-   LSLB
-   ROLA
+   LSLD
    ROL   1,U
    ROL   ,U
    ENDM
@@ -793,11 +802,6 @@ opASHIFTLEFT16
 opASHIFTLEFT32
    JMP   <fetch
 
-LSLD  MACRO
-   LSLB
-   ROLA
-   ENDM
-
 opASHIFTLEFT_
    LDD   ,U
    LSR  -1,U
@@ -829,8 +833,7 @@ opASHIFTLEFT_32
    JMP   <fetch
 
 ASHIFTRIGHT MACRO
-   ASRA
-   RORB
+   ASRD
    ROR   1,U
    ROR   2,U
    ENDM
@@ -876,7 +879,6 @@ opASHIFTRIGHT32
 ***************************************
 * CONTROL FLOW (PC RELATED)
 ***************************************
-
 
 opEMULATE_x
    LSLB              ; B=01xx xxx0
