@@ -1,4 +1,5 @@
-EXO2=magli143-exomizer-bcf43222703e/src
+# EXO2=magli143-exomizer-bcf43222703e/src
+EXO2=exomizer2
 VPATH=.:$(EXO2)/
 ifeq ($(OS),Windows_NT)
 	EXE=.exe

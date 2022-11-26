@@ -19,7 +19,7 @@
 
 DBG    set    0    ; debug
 
-COLBLU set    1    ; etoiles bleues	
+COLBLU set    0    ; etoiles bleues	
 W8VBL  set    0    ; attente VBL
 DPCODE set    1    ; utilise DP dans player
  

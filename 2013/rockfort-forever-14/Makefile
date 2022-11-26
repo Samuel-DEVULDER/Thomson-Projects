@@ -34,11 +34,8 @@ build/%.BIN: %.ass
 	test -d build || mkdir -p build
 	cd build && ../$(C6809) -c -am -oOP ../$< ../$@
 
-build/%.B1N: build/%.BIN
+build/%.EXO: build/%.BIN
 	$(EXOBIN) "$<"
-	
-%.EXO: %.B1N
-	cp "$<" "$@"
 	
 $(SAPFS): 
 	cd $(dir $@) && make "CC=$(CC) -Dlinux" sapfs
