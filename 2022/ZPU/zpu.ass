@@ -346,6 +346,7 @@ opDIV2
    LDD   2,U
    COMA
    COMB
+opDIV4
    STD   2,X
    LEAU  ,X             ; fix stack
    LDB   ,S+            ; test sign
@@ -357,6 +358,7 @@ opDIV3
 opMOD
    LEAX  ,U
    LDB   ,X
+   STB   ,-S            ; store sign
    BPL   opMOD1
    BSR   neg_x          ; negate dividend
 opMOD1
@@ -366,12 +368,11 @@ opMOD1
    BSR   neg_x          ; negate divisor
 opMOD2
    BSR   UDIV32
-   LEAU  4,U            ; fix stack
-   LDD   -8,U
-   STD   ,U
-   LDD   -6,U
-   STD   2,U
-   JMP   <fetch
+   LEAX  4,U
+   LDD   -4,U
+   STD   ,X
+   LDD   -2,U
+   BRA   opDIV4
 
 * https://en.wikipedia.org/wiki/Division_algorithm#Integer_division_(unsigned)_with_remainder
 UDIV32
