@@ -1,0 +1,380 @@
+(main)DEF1BIT.ASM
+***************************************
+* Defender of the 1 bit intro.
+*
+* A variaton of the party theme image
+* is printed and the small music is
+* played on the 1 bit buzzer.
+*
+* Press any key to reset the machine.
+*
+* Should work on all Thomson TO-series.
+*
+* Participation to Forever Party 2016.
+*
+* Author: S.Devulder
+* Group:  PULS
+* Web:    http://www.pulsdemos.com
+* Date:   March 2016
+***************************************
+	   org    $6E00
+
+       setdp  $E7    ; system regs
+       
+main   ldu    #regs  ; sets regs rapily
+       pulu   cc,b,dp
+
+print  jsr    $E803  ; prints the screen
+       ldb    ,u+    ; using teletel-mode
+       bne    print  ; characters
+
+loop   ldy    #oscil
+       leas   ,y     ; fake stack-ptr (scratch text)
+       jsr    $E809  ; key-press?
+       bcc    newPat
+*       jmp    [$FFFE] ; yes=>reset
+       fcb    $3E
+newPat ldx    #zik   ; new pattern
+       cmpx   #zend  ; loop ?
+       bne    lp0
+       ldx    #zik   ; loop
+       
+lp0    ldd    ,x++   ; setup channels.
+       std    ,y     ; (channel 1)
+       bne    *+4    ; The code is sub-
+       std    2,y    ; optimal to allow
+       leay   4,y    ; better compress.
+
+       ldd    ,x++   ; (channel 2)
+       std    ,y    
+       bne    *+4    ; --+ 
+       std    2,y    ;   |
+       leay   4,y    ; <-+
+
+       ldd    ,x++   ; (channel 3)
+       std    ,y
+       bne    *+4
+       std    2,y
+       leay   4,y
+
+       stx    newPat+1 ; for next ptrn
+
+	   ldd    <$E7C0 ; setup buzzer
+*      orb    #8
+       tfr    d,s    ; s=buzzer 1
+       eorb   #8
+       tfr    d,u    ; u=buzzer 
+	   
+       ldx    #$940  ; tempo
+
+playChannels
+       ldd    ,--y   ; 8 (play channel 1)
+       addd   ,--y   ; 9
+       std    2,y    ; 6
+       cmpa   #$80   ; 2
+       blo    *+3    ; 3 STU/STS depending
+       fcb    $10    ; 1 on comparison
+       stu    <$E7C0 ; 5 => 8+9+6+2+3+6
+
+       ldd    ,--y   ; (play channel 2)
+       addd   ,--y
+       std    2,y
+       cmpa   #$80
+       blo    *+3    ; --+
+       fcb    $10    ;   |
+       stu    <$E7C0 ; <-+
+
+       ldd    ,--y   ; (play channel 3)
+       addd   ,--y
+       std    2,y
+       cmpa   #$80
+       blo    *+3
+       fcb    $10
+       stu    <$E7C0
+
+       leay   4*3,y  ; 5 restore y 
+
+       leax   -1,x   ; 5
+       bne    playChannels ; 3 ==> 115
+       bra    loop
+       
+* cc a b dp x y s pc
+regs   fcb    $50    ; cc
+       fcb    $1E    ; b=HOME
+       fcb    $E7    ; dp
+       
+* screen       
+txt    fcb    $1F,$6B ; no scroll
+       fcb    20      ; cursor off
+       fcb    $0E     ; teletel-mode
+       incdat def1bit.tel
+*      fcb     0
+
+oscil
+*    rmb 3*4
+ fdb $0000,$0000,$0000
+ fdb $0000,$0000,$0000
+ 
+* Defender of the Crown Theme
+zik
+ fdb $0000,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $044c,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $051f,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $05bd,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $044c,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $03d3,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $0308,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $0308,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $1148,$08a0,$044c
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$0000
+ fdb $0f65,$07af,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $1148,$08a0,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $1148,$08a0,$02db
+ fdb $0f65,$07af,$044c
+ fdb $0f65,$07af,$01e9
+ fdb $02db,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $148c,$0a46,$051f
+ fdb $186f,$0c37,$051f
+ fdb $148c,$0a46,$0000
+ fdb $186f,$0c37,$0244
+ fdb $186f,$0c37,$036a
+ fdb $170d,$0b82,$051f
+ fdb $170d,$0b82,$028f
+ fdb $148c,$0a46,$03d3
+ fdb $124f,$0927,$05bd
+ fdb $170d,$0b82,$0244
+ fdb $148c,$0a46,$036a
+ fdb $124f,$0927,$051f
+ fdb $170d,$0b82,$036a
+ fdb $148c,$0a46,$0244
+ fdb $148c,$0a46,$01e9
+ fdb $02db,$0000,$0000
+ fdb $1148,$08a0,$044c
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$0000
+ fdb $0f65,$07af,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $1148,$08a0,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $1148,$08a0,$02db
+ fdb $0f65,$07af,$044c
+ fdb $0db8,$06dc,$01e9
+ fdb $0c37,$0618,$02db
+ fdb $0db8,$06dc,$01b5
+ fdb $186f,$0c37,$028f
+ fdb $186f,$0c37,$03d3
+ fdb $0db8,$06dc,$03d3
+ fdb $0c37,$0618,$0000
+ fdb $186f,$0c37,$01b5
+ fdb $186f,$0c37,$028f
+ fdb $03d3,$0000,$0000
+ fdb $0c37,$0618,$0308
+ fdb $0db8,$06dc,$0244
+ fdb $0f65,$07af,$036a
+ fdb $1148,$08a0,$01b5
+ fdb $028f,$0000,$0000
+ fdb $124f,$0927,$03d3
+ fdb $148c,$0a46,$0308
+ fdb $124f,$0927,$051f
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $1148,$08a0,$044c
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$0000
+ fdb $0f65,$07af,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $1148,$08a0,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $1148,$08a0,$02db
+ fdb $0f65,$07af,$044c
+ fdb $0f65,$07af,$01e9
+ fdb $02db,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $148c,$0a46,$051f
+ fdb $186f,$0c37,$051f
+ fdb $148c,$0a46,$0000
+ fdb $186f,$0c37,$0244
+ fdb $186f,$0c37,$036a
+ fdb $170d,$0b82,$051f
+ fdb $170d,$0b82,$028f
+ fdb $148c,$0a46,$03d3
+ fdb $124f,$0927,$05bd
+ fdb $170d,$0b82,$0244
+ fdb $148c,$0a46,$036a
+ fdb $124f,$0927,$051f
+ fdb $170d,$0b82,$036a
+ fdb $148c,$0a46,$0244
+ fdb $148c,$0a46,$01e9
+ fdb $02db,$0000,$0000
+ fdb $1148,$08a0,$044c
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$0000
+ fdb $0f65,$07af,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $1148,$08a0,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $0f65,$07af,$02db
+ fdb $0f65,$07af,$044c
+ fdb $1148,$08a0,$01e9
+ fdb $1148,$08a0,$02db
+ fdb $0f65,$07af,$044c
+ fdb $0db8,$06dc,$01e9
+ fdb $0c37,$0618,$02db
+ fdb $0db8,$06dc,$01b5
+ fdb $186f,$0c37,$028f
+ fdb $186f,$0c37,$03d3
+ fdb $0db8,$06dc,$03d3
+ fdb $0c37,$0618,$0000
+ fdb $186f,$0c37,$01b5
+ fdb $186f,$0c37,$028f
+ fdb $03d3,$0000,$0000
+ fdb $0c37,$0618,$0308
+ fdb $0db8,$06dc,$0244
+ fdb $0f65,$07af,$036a
+ fdb $1148,$08a0,$01b5
+ fdb $028f,$0000,$0000
+ fdb $124f,$0927,$03d3
+ fdb $148c,$0a46,$0308
+ fdb $124f,$0927,$051f
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $044c,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $051f,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $05bd,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $044c,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $044c,$0000,$0000
+ fdb $01e9,$0000,$0000
+ fdb $02db,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $03d3,$0000,$0000 ;
+ fdb $0000,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $0308,$0000,$0000
+ fdb $0244,$0000,$0000
+ fdb $036a,$0000,$0000
+ fdb $01b5,$0000,$0000
+ fdb $028f,$0000,$0000
+ fdb $03d3,$0000,$0000
+ fdb $0308,$0000,$0000
+ fdb $051f,$0000,$0000
+ fdb $0000,$0000,$0000
+zend
+
+        end main

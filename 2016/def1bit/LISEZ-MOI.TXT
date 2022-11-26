@@ -1,0 +1,36 @@
+﻿Titre:      DEF1BIT (Defender of the 1 bit)
+Categorie:  Intro
+Taille:     1024 octets
+Classement: 4ème
+Party:      Forever-Party o17 - Horna Suca 2016
+
+Présente:   Une musique est jouée sur une image en caractères minitel
+            inspirée du thème de cette année.
+
+            La musique est celle du thème du jeu "Defender of the Crown"
+            et est jouée par une toute petite routine utilisant le buzzer
+            1 bit des machines Thomson.
+
+Groupe:     PULS (http://www.pulsdemos.com)
+Auteur:     __sam__ (Samuel DEVULDER)
+
+Machine(s): Thomson TO7/70, TO8, TO9, TO9+ (6809e @ 1Mhz) sans extension.
+
+Format:     Fichier binaire standard Thomson. Il peut être lancé en tapant:
+                  LOADM "def1bit.EXO",,r
+            depuis une K7. Pour faciliter la tache une diskette (virtuelle)
+            est fournie contenant un bootloader spécial permettant de
+            charger une copie de cette intro nommée "AUTO.BIN". Elle
+            fonctionne sur toutes les machines ayant un controleur de
+            diskette, même depuis le BASIC 1.
+
+Compression:
+            Exomizer2 par Magnus Lind
+
+Remarques:  1) On peut quitter l'intro à n'importe quel moment en appuyant
+               sur une touche (/!\ il faut que l'émulateur émule l'instruction
+               non documentée $3E).
+            2) Le programme utilise 3.2Ko de mémoire une fois décompressé.
+            3) Le code tient dans 128 octets, le reste est constitué par
+               les données (1.5ko d'image and 1.5ko de musique).
+            4) Le code source est fourni sur la diskette.
