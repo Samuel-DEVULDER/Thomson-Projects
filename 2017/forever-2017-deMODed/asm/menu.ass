@@ -48,6 +48,15 @@ state   set     *-2
 		jsr		display
         lda     #5			; menu.map
         jsr     SAFELD
+
+* pause for a while
+		lda		#10
+loop	set		*
+		ldx		#0
+		leax	-1,x
+		bne		*-2
+		deca
+		bne		loop
         
 * init menu song
         ldu     #SONG

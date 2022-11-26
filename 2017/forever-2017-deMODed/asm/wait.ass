@@ -53,7 +53,7 @@ init    orcc    #$50    ; no interrupts
 		endc
 		jsr		pulko2
 
-		ifne	0
+		ifne	1
 		ifeq	FAST
 		lda		#10
 loop	set		*
