@@ -3,6 +3,10 @@
 
 FIRST_PAGE  SET 4
 SAFE        SET 0
+TRACE       SET 1
+
+PUTC  EQU   $E803
+GETC  EQU   $E806
 
 ASRD  MACRO
    ASRA
@@ -44,6 +48,13 @@ main
 
 PAGE0   SET   */256
 
+FETCH_INSTRUCTION MACRO
+   IFNE  TRACE
+   JSR   doTRACE
+   ENDC
+   LDB   ,Y+         ; fetch next instruction code
+   ENDM
+
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
 opIM_nxt
@@ -58,8 +69,8 @@ opIM_nxt
    RORA              ; byte 2 is byte 3 rotated right once
    RORB              ; push bit back to value
    STD   2,U         ; write lower word
-   LDB   ,y+         ; is next opcode an opIm?
-   BMI   chkPC       ; yes => just increment PC
+   FETCH_INSTRUCTION
+   BMI   chkPC       ; opIM? yes => just increment PC
    LDA   #$81        ; no => disable hook ($81=CMPA)
    STA   <opIM       ; (write CMPA as the first instructon of opIM)
    BRA   chkPC       ; next instruction (B already fetched)
@@ -74,8 +85,8 @@ opIM
    PSHU  D           ; push lower word
    STA   ,-U         ; push high byte (sign)
    STA   ,-U         ; push high byte (sign)
-   LDB   ,Y+         ; is next opcode an immediate value?
-   BPL   chkPC       ; no => no change in hook. just update the PC reg.
+   FETCH_INSTRUCTION
+   BPL   chkPC       ; opIM? no => no change in hook. just update the PC reg.
    LDA   #$20        ; yes => mak hook go to opIM_nxt ($20=BRA)
    STA   <opIM       ; (write a BRA as the first instructio, of opIM)
    BRA   chkPC       ; next instruction (B already fetched)
@@ -125,10 +136,10 @@ updatePC_D
 
 * fetches and execute an instruction
 fetch
-   LDB   ,y+         ; load instruction byte
+   FETCH_INSTRUCTION
 chkPC
    CMPY  #$E000      ; check page change
-   BHS   decode      ; no => just decode inwtruction
+   BLO   decode      ; no => just decode inwtruction
    PSHS  B           ; preserve opcode
    LDD   <PC_PG      ; load PC page
    ADDD  #$40        ; adds 16kb
@@ -190,7 +201,7 @@ opADDSP_x
 opUNKNOWN
 
 opBREAKPT
-   BRA   opBREAKPT   ; do nothing (breakpoint)
+   SWI               ; back to monitor
 
 opNOP
    BRA   fetch       ; do nothing
@@ -206,7 +217,6 @@ opPUSHSPADD
    LDD   2,U
    LSLD
    LSLD
-   STD   $1234 ; ZZZZZZZZZZZZZZZZZZZZz
    LEAX  D,U
    LDD   #0          ; stack address is $0000:9xxx
    PSHU  D,X         ; bank 0, $Dxxx
@@ -520,6 +530,8 @@ opLOADIO
    BEQ   opLOADUART
    CMPD  #24         ; UART
    BEQ   opLOADUART
+   CMPD  #256
+   BEQ   opLOADUART
 opLOADIO_end
    CLRA
    STD   2,U
@@ -527,7 +539,7 @@ opLOADIO_end
    STA   ,U
    JMP   <fetch
 opLOADUART
-   JSR   $E806
+   JSR   GETC
    BRA   opLOADIO_end
 
 opSTOREIO
@@ -536,12 +548,14 @@ opSTOREIO
    BEQ   opSTOREUART
    CMPD  #24         ; UART
    BEQ   opSTOREUART
+   CMPD  #256        ; UART
+   BEQ   opSTOREUART
 opSTOREIO_end
    LEAU  8,U         ; fixup stack
    JMP   <fetch
 opSTOREUART
    LDB   7,U
-   JSR   $E803
+   JSR   PUTC
    BRA   opSTOREIO_end
 
 opLOAD
@@ -1047,8 +1061,283 @@ opTable
    FDB   opPUSHSPADD          ; 61 %0011 1101
    FDB   opMULT16X16          ; 62 %0011 1110
    FDB   opCALLPCREL          ; 63 %0011 1111
+(info)
+
+***************************************
+* MONITOR and TRACING
+***************************************
+
+OPCDE MACRO
+   FCC   \0
+   FCB   \1+0
+   ENDM
+
+   IFNE  TRACE
+doTRACE
+   PSHS  CC,DP,D,X,Y,U
+   LEAX  ,U
+   LDU   #traceFmt
+doTRACE1
+   LDB   ,U+
+   BEQ   endTRACE
+   CMPB  #'%
+   BNE   doTRACE2
+   BSR   doTRACE3
+   BRA   doTRACE1
+doTRACE2
+   JSR   PUTCHAR
+   BRA   doTRACE1
+endTRACE
+   PULS  CC,DP,D,X,Y,U,PC
+
+doTRACE3
+   LDB   ,U+
+   CMPB  #'s
+   BEQ   printSTACK
+   CMPB  #'p
+   BEQ   printPC
+   CMPB  #'o
+   BEQ   printOP
+   CMPB  #'a
+   BEQ   printASM
+   RTS
+
+printOP
+   LDB   ,y
+   BRA   HEX
+
+printPC
+   PSHS  D,X
+   TFR   Y,D
+   ANDA  #$1F
+   ORA   <PC_PG+1
+   PSHS  D
+   CLRA
+   LDB   <PC_PG
+   PSHS  D
+   LEAX  1,S
+   BSR   HEX8
+   BSR   HEX16
+   LEAS  ,X
+   PULS  D,X,PC
+
+printSTACK
+   CMPX  #$A000
+   BLO   HEX32
+   BSR   PUTSTR
+   FCC   /-------/
+   FCB   128+'-
+   RTS
+
+PUTS
+   PSHS  B        ; prints a 0 or neg-terminated string pointed by X (updated)
+   BRA   PUTS1
+PUTS0
+   BSR   PUTCHAR
+PUTS1
+   LDB   ,X+
+   BEQ   PUTS2
+   BPL   PUTS0
+   ANDB  #127
+   BSR   PUTCHAR
+PUTS2
+   PULS  B,PC
+
+PUTSTR
+   PSHS  X           ; prints the string follwing the call
+   LDX   2,S
+   BSR   PUTS
+   STX   2,S
+   PULS  X,PC
+
+HEX32
+   BSR   HEX16       ; prints 32 bits value at X (incremented)
+HEX16
+   BSR   HEX8        ; prints 16 bits value at X (incremented)
+HEX8
+   LDB   ,X+         ; prints 8 bits value at X (incremented)
+   * BRA   HEX
+HEX
+   BSR   HEX0        ; print B in hexa (A trashed)
+   EXG   A,B
+HEX0
+   LDA   #$10
+   MUL
+   ADDA  #$90
+   DAA
+   ADCA  #$40
+   DAA
+   EXG   A,B
+PUTCHAR
+   JMP   PUTC           ; prints a character (in B)
+
+printASM
+   PSHS  X,U
+   LDX   #asmTbl           ; find the #B th entry in table
+   LDB   ,Y
+   BPL   srchMNEMO
+
+   BSR   PUTSTR            ; IM d
+   FCC   /IM/
+   FCB   128+32
+   LSLB
+   ASRB
+   BRA   printDECIMAL
+
+srchMNEMO
+   LEAU  ,X
+   INCB
+   LDA   #32
+searchLOOP
+   CMPA  ,U+
+   BHI   nextEntry     ; 32-c>0
+   LEAX  -1,U
+skipMNEMO
+   CMPA  ,U+
+   BLO   skipMNEMO
+nextEntry
+   DECB
+   BNE   searchLOOP
+
+foundMNEMO
+   LDB   ,X+
+printOPCDE
+   BSR   PUTCHAR
+   LDB   ,X+
+   CMPB  #32
+   BHS   printOPCDE
+   TSTB
+   BEQ   noDECIMAL
+   ANDB  ,y
+printDECIMAL
+   BSR   DECIMAL
+noDECIMAL
+   PULS  X,U,PC
+
+DECIMAL
+   STB   ,-S
+   BPL   DECIMAL1
+   NEG   ,S
+   BSR   PUTSTR
+   FCB   128+'-
+DECIMAL1
+   CLRA
+   LDB   #8
+DECIMAL2
+   LSL   ,S
+   STA   ,-S
+   ADCA  ,S+
+   DAA
+   DECB
+   BNE   DECIMAL2
+   STA   ,S
+   BCC   DECIMAL3
+   BSR   PUTSTR
+   FCB   128+'1
+   LDB   ,S+
+   BRA   HEX8
+DECIMAL3
+   LDB   ,S
+   LSRB
+   LSRB
+   LSRB
+   LSRB
+   BEQ   DECIMAL4
+   ADDB  #'0
+   BSR   PUTCHAR
+DECIMAL4
+   LDB   ,S+
+   ANDB  #15
+   ADDB  #'0
+   BRA   PUTCHAR
+
+traceFmt
+   FCC   /%s %s %s %s/
+   FCB   10,13
+   FCC   /%s %s %s %s/
+   FCB   10,13
+   FCB   10,13
+   FCC   /  %p %o %a/
+   FCB   10,13
+   FCB   10,13
+   FCB   0
+
+asmTbl
+   OPCDE /BREAKPT/            ; 0
+   OPCDE /???/                ; 1
+   OPCDE /PUSHSP/             ; 2
+   OPCDE /???/                ; 3
+   OPCDE /POPPC/              ; 4
+   OPCDE /ADD/                ; 5
+   OPCDE /AND/                ; 6
+   OPCDE /OR/                 ; 7
+   OPCDE /LOAD/               ; 8
+   OPCDE /NOT/                ; 9
+   OPCDE /FLIP/               ; 10
+   OPCDE /NOP/                ; 11
+   OPCDE /STORE/              ; 12
+   OPCDE /POPSP/              ; 13
+   OPCDE /???/                ; 14
+   OPCDE /???/                ; 15
+   OPCDE /ADDSP/,32           ; 16..31
+   FCB   15,15,15,15
+   FCB   15,15,15,15
+   FCB   15,15,15,15
+   FCB   15,15,15,15
+   OPCDE /EMULATE/,32         ; 32
+   FCB   31
+   OPCDE /???/                ; 33
+   OPCDE /LOADH/              ; 34
+   OPCDE /STOREH/             ; 35
+   OPCDE /LESSTHAN/           ; 36
+   OPCDE /LESSTHANOREQUAL/    ; 37
+   OPCDE /ULESSTHAN/          ; 38
+   OPCDE /ULESSTHANOREQUAL/   ; 39
+   OPCDE /SWAP/               ; 40
+   OPCDE /MULT/               ; 41
+   OPCDE /LSHIFTRIGHT/        ; 42
+   OPCDE /ASHIFTLEFT/         ; 43
+   OPCDE /ASHIFTRIGHT/        ; 44
+   OPCDE /CALL/               ; 45
+   OPCDE /EQ/                 ; 46
+   OPCDE /NEQ/                ; 47
+   OPCDE /NEG/                ; 48
+   OPCDE /SUB/                ; 49
+   OPCDE /XOR/                ; 50
+   OPCDE /LOADB/              ; 51
+   OPCDE /STOREB/             ; 52
+   OPCDE /DIV/                ; 53
+   OPCDE /MOD/                ; 54
+   OPCDE /EQBRANCH/           ; 55
+   OPCDE /NEQBRANCH/          ; 56
+   OPCDE /POPPCREL/           ; 57
+   OPCDE /CONFIG/             ; 58
+   OPCDE /PUSHPC/             ; 59
+   OPCDE /SYSCALL/            ; 60
+   OPCDE /PUSHSPADD/          ; 61
+   OPCDE /MULT16X16/          ; 62
+   OPCDE /CALLPCREL/          ; 63
+   OPCDE /STORESP/,32         ; 64..95
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   OPCDE /LOADSP/,32         ; 96..127
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
+   FCB   31,31,31,31
 
 (info)
+   ENDC
 
 ***************************************
 * Hello world example
