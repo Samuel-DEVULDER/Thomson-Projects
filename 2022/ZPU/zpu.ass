@@ -3,7 +3,7 @@
 
 FIRST_PAGE  SET 4
 SAFE        SET 0
-TRACE       SET 1
+TRACE       SET 0
 
 PUTC  EQU   $E803
 GETC  EQU   $E806
@@ -103,7 +103,7 @@ getAddrL
 getAddr
    LDD   2,U         ; load lower part of the address
    ANDA  #$30        ; clear high bits
-   ADDA  #$a0        ; make it point to $A000...$DFFF
+   ADDA  #$A0        ; make it point to $A000...$DFFF
    TFR   D,X         ; X updated
    LDD   1,U         ; load 16kb page section of address
 
@@ -898,9 +898,11 @@ opEMULATE_x
    LSLB              ; B=01xx xxx0
    LSLB              ; B=1xxx xx00
    LSLB              ; B=xxxx x000
+   BEQ   opASHIFTRIGHT32
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
    LSLD              ; D=0000 00xx xxx0 0000=x*32
+   ADDD
    TFR   D,X
    LDD   #0
    PSHU  D,X
@@ -916,7 +918,7 @@ opCALL
    ADDA  #$A0
    EXG   Y,D         ; update PC_REG
 
-   ANDA  #$3F        ; clear upper bits of old PC
+   SUBA  #$A0        ; clear upper bits of old PC
    ADDA  <PC_PG+1    ; add page lower bits
    STD   2,U         ; store lower word of PC
    LDB   <PC_PG      , load pages upper bits
@@ -1169,11 +1171,11 @@ HEX0
    DAA
    EXG   A,B
 PUTCHAR
-   JMP   PUTC           ; prints a character (in B)
+   JMP   PUTC              ; prints a character (in B)
 
 printASM
    PSHS  X,U
-   LDX   #asmTbl           ; find the #B th entry in table
+   LDU   #asmTbl           ; find the #B th entry in table
    LDB   ,Y
    BPL   srchMNEMO
 
@@ -1185,21 +1187,17 @@ printASM
    BRA   printDECIMAL
 
 srchMNEMO
-   LEAU  ,X
-   INCB
    LDA   #32
-searchLOOP
-   CMPA  ,U+
-   BHI   nextEntry     ; 32-c>0
-   LEAX  -1,U
+   INCB
+srchLOOP
+   CMPA  ,U
+   BHI   skipMNEMO
+   LEAX  ,U+
 skipMNEMO
    CMPA  ,U+
-   BLO   skipMNEMO
-nextEntry
+   BLS   skipMNEMO
    DECB
-   BNE   searchLOOP
-
-foundMNEMO
+   BNE   srchLOOP
    LDB   ,X+
 printOPCDE
    BSR   PUTCHAR
