@@ -3,7 +3,7 @@
 
 FIRST_PAGE  SET 4
 SAFE        SET 0
-TRACE       SET 0
+TRACE       SET 1
 
 PUTC  EQU   $E803
 GETC  EQU   $E806
@@ -42,7 +42,7 @@ main
    STU   <page       ; force page to be out of address space
 
    LDD   #0
-   LDX   #0
+   LDX   #$0000
    PSHU  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
 
@@ -156,6 +156,7 @@ decode
 
 * COMmon part between opLD and opST depending on N flag
 opLDSTSP_x
+   EORB  #$20
    LSLB              ; B ~ x*4
    BPL   opSTORESP_x
 *  BRA   opLOADSP_x
@@ -186,7 +187,7 @@ opSTORESP_x
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
 opADDSP_x
-   LSRB              ; B ~ 4*x
+   LSLB              ; B ~ 4*x
    ANDB  #%00111100  ; make 4*x postitive
    LEAX  B,U         ; X point to source
    LDD   2,X         ; load low word of source
@@ -218,8 +219,9 @@ opPUSHSPADD
    LSLD
    LSLD
    LEAX  D,U
+   STX   2,U
    LDD   #0          ; stack address is $0000:9xxx
-   PSHU  D,X         ; bank 0, $Dxxx
+   STD   ,U          ; bank 0, $Dxxx
    JMP   <fetch
 
 ***************************************
@@ -895,14 +897,12 @@ opASHIFTRIGHT32
 ***************************************
 
 opEMULATE_x
-   LSLB              ; B=01xx xxx0
    LSLB              ; B=1xxx xx00
    LSLB              ; B=xxxx x000
    BEQ   opASHIFTRIGHT32
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
    LSLD              ; D=0000 00xx xxx0 0000=x*32
-   ADDD
    TFR   D,X
    LDD   #0
    PSHU  D,X
@@ -952,8 +952,9 @@ opPOPPCREL
 
 addPCREL
    TFR   Y,D
-   ANDA  #$3F
+   SUBA  #$A0
    ADDA  <PC_PG+1
+   SUBD  #1
    ADDD  2,U
    STD   2,U
    LDD   ,U
@@ -964,7 +965,7 @@ addPCREL
 
 opCALLPCREL
    BSR   addPCREL
-   BRA   opPOPPC
+   BRA   opCALL
 
 opEQBRANCH
    LDD   6,U
@@ -984,10 +985,12 @@ opNEQBRANCH
 
 opPUSHPC
    TFR   Y,D
-   ANDA  #$3F
+   SUBA  #$A0
    ADDA  <PC_PG+1
+   SUBD  #1
    PSHS  D
-   LDB  <PC_PG
+   LDB   <PC_PG
+   SBCB  #0
    CLRA              ; 24 bits
    PSHS  D
    JMP   <fetch
@@ -1111,7 +1114,7 @@ printOP
 printPC
    PSHS  D,X
    TFR   Y,D
-   ANDA  #$1F
+   SUBA  #$A0
    ORA   <PC_PG+1
    PSHS  D
    CLRA
@@ -1249,13 +1252,22 @@ DECIMAL4
    ADDB  #'0
    BRA   PUTCHAR
 
+COLOR MACRO
+
 traceFmt
+   FCB   27,$43
    FCC   /%s %s %s %s/
+   * FCB   10,13
+   * FCC   /%s %s %s %s/
    FCB   10,13
-   FCC   /%s %s %s %s/
    FCB   10,13
-   FCB   10,13
-   FCC   /  %p %o %a/
+   FCB   27,$42
+   FCC   /  %p/
+   FCB   27,$46
+   FCC   / %o/
+   FCB   27,$45
+   FCC   / %a/
+   FCB   27,$43
    FCB   10,13
    FCB   10,13
    FCB   0
@@ -1342,6 +1354,9 @@ asmTbl
 ***************************************
    ORG   $A000
 
+   INCDAT dhryston.bin
+
+   IFNE  0
 * https://github.com/tobyjaffey/libzpu/blob/master/zpusim-mini/zpusim-mini.c
    FCB   $80,$3d,$0d,$f8,$80,$80,$82
    FCB   $80,$51,$80,$c8,$71,$0c,$80
@@ -1352,5 +1367,6 @@ asmTbl
    FCB   $71,$0c,$80,$ec,$71,$0c,$80
    FCB   $e4,$71,$0c,$8d,$71,$0c,$8a
    FCB   $71,$0c,$00,$82,$3d,$0d,$04
+   ENDC
 
    END   main
