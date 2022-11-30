@@ -1,12 +1,22 @@
 (main)zpu
-   ORG   $9000
+   ORG   $7000
 
-FIRST_PAGE  SET 4
+FIRST_PAGE  SET 2
 SAFE        SET 0
 TRACE       SET 1
+LPR         SET 1
+STACK_SIZE  SET   2048
+
+COLOR MACRO
+   IFEQ  LPR
+   FCB   27,$40+\0
+   ENDC
+   ENDM
 
 PUTC  EQU   $E803
 GETC  EQU   $E806
+RSOPC   EQU   $602B
+RSCO  EQU   $E812
 
 ASRD  MACRO
    ASRA
@@ -38,7 +48,15 @@ main
    STA   >$6081      ; direct
    STA   >$e7e7      ; RAM
 
-   LDU   #$A000      ; set stack ptr
+   IFNE  LPR
+   LDB   #$40
+   STB   >RSOPC
+   JSR   >RSCO
+   LDB   #$08
+   STB   >RSOPC
+   ENDC
+
+   LDU   #$A000-8    ; set stack ptr
    STU   <page       ; force page to be out of address space
 
    LDD   #0
@@ -102,7 +120,7 @@ getAddrL
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
    LDD   2,U         ; load lower part of the address
-   ANDA  #$30        ; clear high bits
+   ANDA  #$3F        ; clear high bits
    ADDA  #$A0        ; make it point to $A000...$DFFF
    TFR   D,X         ; X updated
    LDD   1,U         ; load 16kb page section of address
@@ -1105,7 +1123,15 @@ doTRACE3
    BEQ   printOP
    CMPB  #'a
    BEQ   printASM
+   CMPB  #'u
+   BEQ   printSP
    RTS
+
+printSP
+   PSHS  X
+   LEAX  12,S
+   BSR   HEX16
+   PULS  X,PC
 
 printOP
    LDB   ,y
@@ -1130,8 +1156,14 @@ printSTACK
    CMPX  #$A000
    BLO   HEX32
    BSR   PUTSTR
+   COLOR 4
+   IFNE  LPR
    FCC   /-------/
    FCB   128+'-
+   ELSE
+   FCC   /--------/
+   ENDC
+   COLOR 128+COLOR_STACK
    RTS
 
 PUTS
@@ -1174,6 +1206,9 @@ HEX0
    DAA
    EXG   A,B
 PUTCHAR
+   IFNE  LPR
+   JSR   >RSCO
+   ENDC
    JMP   PUTC              ; prints a character (in B)
 
 printASM
@@ -1187,7 +1222,7 @@ printASM
    FCB   128+32
    LSLB
    ASRB
-   BRA   printDECIMAL
+   BRA   noXOR
 
 srchMNEMO
    LDA   #32
@@ -1211,6 +1246,11 @@ printOPCDE
    BEQ   noDECIMAL
    ANDB  ,y
 printDECIMAL
+   LDA   #%01000000
+   ANDA  ,y
+   BEQ   noXOR
+   EORB  #$10
+noXOR
    BSR   DECIMAL
 noDECIMAL
    PULS  X,U,PC
@@ -1252,24 +1292,37 @@ DECIMAL4
    ADDB  #'0
    BRA   PUTCHAR
 
-COLOR MACRO
+COLOR_ST    SET   2
+COLOR_PC    SET   3
+COLOR_OP    SET   6
+COLOR_INST  SET   5
+COLOR_STACK  SET  4
+
 
 traceFmt
-   FCB   27,$43
+   IFEQ  LPR
+   * IFEQ  LPR
+   * FCB   10,10,11,11
+   * ENDC
+   COLOR COLOR_STACK
    FCC   /%s %s %s %s/
-   * FCB   10,13
-   * FCC   /%s %s %s %s/
-   FCB   10,13
-   FCB   10,13
-   FCB   27,$42
-   FCC   /  %p/
-   FCB   27,$46
-   FCC   / %o/
-   FCB   27,$45
-   FCC   / %a/
-   FCB   27,$43
-   FCB   10,13
-   FCB   10,13
+   FCB   13,10
+   COLOR COLOR_ST
+   FCC   /%u /
+   COLOR COLOR_PC
+   FCC   /%p /
+   COLOR COLOR_OP
+   FCC   /%o /
+   COLOR COLOR_INST
+   FCC   /%a/
+   COLOR COLOR_STACK
+   ELSE
+   FCC   /0x%p 0x%o 0x%u/
+   fcc   / %a/
+   FCC   / 0x%s 0x%s 0x%s 0x%s/
+   FCC   / 0x%s 0x%s 0x%s 0x%s/
+   ENDC
+   FCB   13,10
    FCB   0
 
 asmTbl
@@ -1348,6 +1401,9 @@ asmTbl
 
 (info)
    ENDC
+
+   ORG   $A000-STACK_SIZE
+   RMB   STACK_SIZE,0
 
 ***************************************
 * Hello world example
