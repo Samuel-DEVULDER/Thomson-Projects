@@ -3,9 +3,10 @@
 
 FIRST_PAGE  SET 2
 SAFE        SET 0
-TRACE       SET 1
+TRACE       SET 0
 LPR         SET 1
 STACK_SIZE  SET   2048
+STACK_ZONE  SET   $01FF
 
 COLOR MACRO
    IFEQ  LPR
@@ -49,12 +50,25 @@ main
    STA   >$e7e7      ; RAM
 
    IFNE  LPR
-   LDB   #$40
+   LDB   #$40        ; open parallel port
    STB   >RSOPC
    JSR   >RSCO
-   LDB   #$08
+   LDB   #$08        ; to write bytes
    STB   >RSOPC
    ENDC
+
+   LDA   #FIRST_PAGE
+   LDX   #HEAP       ; clear HEAP
+CLRPAGE
+   STA   >$E7E5
+   BSR   CLRHEAP
+   LDX   #$A000
+   INCA
+   CMPA  #16
+   BNE   CLRPAGE
+
+   LDA   #FIRST_PAGE
+   STA   >$E7E5
 
    LDU   #$A000-8    ; set stack ptr
    STU   <page       ; force page to be out of address space
@@ -64,6 +78,32 @@ main
    PSHU  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
 
+CLRHEAP
+   PSHS  D,X
+   LDD   #0
+   BRA   CLRHEAP2
+CLRHEAP1
+   STD   ,X
+   STD   2,X
+   STD   4,X
+   STD   6,X
+   STD   8,X
+   STD   10,X
+   STD   12,X
+   STD   14,X
+   LEAX  16,X
+CLRHEAP2
+   CMPX  #$E000-16
+   BLS   CLRHEAP1
+   BRA   CLRHEAP4
+CLRHEAP3
+   STB   ,X+
+CLRHEAP4
+   CMPX  #$E000
+   BLO   CLRHEAP3
+   PULS  D,X,PC
+
+   ORG   ((*+255)/256)*256
 PAGE0   SET   */256
 
 FETCH_INSTRUCTION MACRO
@@ -119,6 +159,12 @@ getAddrL
 
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
+   LDD   ,U
+   SUBD  #STACK_ZONE
+   BNE   getAddrMapped
+   LDX   2,U
+   RTS
+getAddrMapped
    LDD   2,U         ; load lower part of the address
    ANDA  #$3F        ; clear high bits
    ADDA  #$A0        ; make it point to $A000...$DFFF
@@ -141,7 +187,7 @@ page equ *-2         ; page index (dynamic code)
 * A=bank number
 chgBank
    ADDA  #FIRST_PAGE
-   STA   $e7e6       ; need to check, might use PIA instead
+   STA   $E7E5       ; need to check, might use PIA instead
 donePage
    RTS               ; done
 
@@ -227,7 +273,7 @@ opNOP
 
 * Pushes stack address
 opPUSHSP
-   LDD   #0          ; stack address is $0000:9xxx
+   LDD   #STACK_ZONE ; stack address is $01FF:9xxx
    LEAX  ,U          ; this should be mapped to
    PSHU  D,X         ; bank 0, $Dxxx
    BRA   fetch
@@ -238,7 +284,7 @@ opPUSHSPADD
    LSLD
    LEAX  D,U
    STX   2,U
-   LDD   #0          ; stack address is $0000:9xxx
+   LDD   #STACK_ZONE ; stack address is $01FF:9xxx
    STD   ,U          ; bank 0, $Dxxx
    JMP   <fetch
 
@@ -503,27 +549,27 @@ opNOT
    JMP   <fetch
 
 flip2
-   LSLA              ; helper to flip A and B bits
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ROLA
-   RORB
-   ADCA  #0
+   LSRA              ; helper to flip A and B bits
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
+   ROLB
+   RORA
    RTS
 
 opFLIP
-   LDA   ,U          ; flips the bits of tje TOS
+   LDA   ,U          ; flips the bits of the TOS
    LDB   3,U
    BSR   flip2
    STA   ,U
@@ -545,21 +591,23 @@ opSWAP
 ***************************************
 
 opLOADIO
-   LDD   2,U
-   CMPD  #12         ; UART
-   BEQ   opLOADUART
-   CMPD  #24         ; UART
-   BEQ   opLOADUART
-   CMPD  #256
-   BEQ   opLOADUART
+   * LDD   2,U
+   * CMPD  #12         ; UART
+   * BEQ   opLOADUART
+   * CMPD  #24         ; UART
+   * BEQ   opLOADUART
+   * CMPD  #256
+   * BEQ   opLOADUART
+   LDD   #256
 opLOADIO_end
-   CLRA
    STD   2,U
+   CLRA
    STA   1,U
    STA   ,U
    JMP   <fetch
 opLOADUART
    JSR   GETC
+   CLRA
    BRA   opLOADIO_end
 
 opSTOREIO
@@ -580,7 +628,8 @@ opSTOREUART
 
 opLOAD
    LDB   ,U          ; chk IO range
-   BMI   opLOADIO    ; yes => io-specific
+   CMPB  #$08
+   BCC   opLOADIO    ; yes => io-specific
    JSR   <getAddrL   ; convert adress
    LDD   ,X          ; load high word
    STD   ,U          ; store in TOS
@@ -590,7 +639,8 @@ opLOAD
 
 opSTORE
    LDB   ,U          ; chk IO range
-   BMI   opSTOREIO   ; yes => io-specific code
+   CMPB  #$08
+   BCC   opSTOREIO   ; yes => io-specific code
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
@@ -642,35 +692,29 @@ opSTOREB
 ***************************************
 
 opLESSTHAN
+   LDD   2,U
+   SUBD  6,U
    LDD   ,U
    LEAU  4,U
-   SUBD  ,U
+   SBCA  1,U
+   SBCB  ,U
    BLT   outTRUE
-   BGT   outFALSE
-   LDD   -2,U
-   SUBD  2,U
-   BMI   outTRUE
-outFALSE
-   LDD   #0          ; writes 0 on top of stack
-   STD   ,U
-   STD   2,U
-   JMP   <fetch
+   BRA   outFALSE
 
 opLESSTHANOREQUAL
+   LDD   2,U
+   SUBD  6,U
+   STD   6,U
    LDD   ,U
    LEAU  4,U
-   SUBD  ,U
-   BGT   outFALSE
+   SBCA  1,U
+   SBCB  ,U
    BLT   outTRUE
-   LDD   -2,U
-   SUBD  2,U
-   BPL   outFALSE
-outTRUE
-   LDD   #0          ; write 1 on top of stack
-   STD   ,U
-   INCB
-   STD   2,U
-   JMP   <fetch
+   BGT   outFALSE
+   ORA   2,U
+   ORA   3,U
+   BNE   outFALSE
+   BRA   outTRUE
 
 opULESSTHAN
    LDD   ,U
@@ -680,8 +724,12 @@ opULESSTHAN
    BHI   outFALSE
    LDD   -2,U
    SUBD  2,U
-   BMI   outTRUE
-   BRA   outFALSE
+   BLO   outTRUE
+outFALSE
+   LDD   #0          ; writes 0 on top of stack
+   STD   ,U
+   STD   2,U
+   JMP   <fetch
 
 opULESSTHANOREQUAL
    LDD   ,U
@@ -692,7 +740,12 @@ opULESSTHANOREQUAL
    LDD   -2,U
    SUBD  2,U
    BHI   outFALSE
-   BRA   outTRUE
+outTRUE
+   LDD   #0          ; write 1 on top of stack
+   STD   ,U
+   INCB
+   STD   2,U
+   JMP   <fetch
 
 opEQ
    LDD   ,U
@@ -1207,9 +1260,10 @@ HEX0
    EXG   A,B
 PUTCHAR
    IFNE  LPR
-   JSR   >RSCO
-   ENDC
+   JMP   RSCO
+   ELSE
    JMP   PUTC              ; prints a character (in B)
+   ENDC
 
 printASM
    PSHS  X,U
@@ -1317,13 +1371,12 @@ traceFmt
    FCC   /%a/
    COLOR COLOR_STACK
    ELSE
-   FCC   /0x%p 0x%o 0x%u/
+   FCC   /0x0%p 0x%o 0x%u/
+   FCC   / 0x%s 0x%s 0x%s 0x%s/
+   FCC   / 0x%s 0x%s 0x%s 0x%s/
    fcc   / %a/
-   FCC   / 0x%s 0x%s 0x%s 0x%s/
-   FCC   / 0x%s 0x%s 0x%s 0x%s/
    ENDC
-   FCB   13,10
-   FCB   0
+   FCB   10,0
 
 asmTbl
    OPCDE /BREAKPT/            ; 0
@@ -1424,5 +1477,6 @@ asmTbl
    FCB   $e4,$71,$0c,$8d,$71,$0c,$8a
    FCB   $71,$0c,$00,$82,$3d,$0d,$04
    ENDC
+HEAP
 
    END   main
