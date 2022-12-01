@@ -28,6 +28,7 @@ bin: $(BIN)
 
 build/%.BIN: %.ass
 	test -d build || mkdir build
+	cp roadshow/*.bin build
 	cd build && ../$(C6809) -c -bh -am -oOP ../$< `echo $*.BIN|tr a-z A-Z`
 
 $(DISK): $(BIN) fill_sapdir
