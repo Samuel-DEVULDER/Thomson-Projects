@@ -1,12 +1,17 @@
 (main)zpu
    ORG   $7000
 
-FIRST_PAGE  SET 2
-SAFE        SET 0
-TRACE       SET 0
-LPR         SET 1
-STACK_SIZE  SET   2048
-STACK_ZONE  SET   $01FF
+FIRST_PAGE  SET   2           ; address 0 is mapped to that pae
+SAFE        SET   0           ; force long addressing for long ops (slower)
+TRACE       SET   0           ; traces executed instructions
+LPR         SET   1           ; also output result to printer on parallel port
+STACK_SIZE  SET   2048        ; size of stack
+UNMAPPED_H  SET   $01FF       ; high word of unmapped zone
+
+PUTC  EQU   $E803
+GETC  EQU   $E806
+RSOPC EQU   $602B
+RSCO  EQU   $E812
 
 COLOR MACRO
    IFEQ  LPR
@@ -14,10 +19,6 @@ COLOR MACRO
    ENDC
    ENDM
 
-PUTC  EQU   $E803
-GETC  EQU   $E806
-RSOPC   EQU   $602B
-RSCO  EQU   $E812
 
 ASRD  MACRO
    ASRA
@@ -55,6 +56,8 @@ main
    JSR   >RSCO
    LDB   #$08        ; to write bytes
    STB   >RSOPC
+   LDB   #12
+   JSR   >RSCO
    ENDC
 
    LDA   #FIRST_PAGE
@@ -160,7 +163,7 @@ getAddrL
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
    LDD   ,U
-   SUBD  #STACK_ZONE
+   SUBD  #UNMAPPED_H
    BNE   getAddrMapped
    LDX   2,U
    RTS
@@ -273,7 +276,7 @@ opNOP
 
 * Pushes stack address
 opPUSHSP
-   LDD   #STACK_ZONE ; stack address is $01FF:9xxx
+   LDD   #UNMAPPED_H ; stack address is $01FF:9xxx
    LEAX  ,U          ; this should be mapped to
    PSHU  D,X         ; bank 0, $Dxxx
    BRA   fetch
@@ -284,7 +287,7 @@ opPUSHSPADD
    LSLD
    LEAX  D,U
    STX   2,U
-   LDD   #STACK_ZONE ; stack address is $01FF:9xxx
+   LDD   #UNMAPPED_H ; stack address is $01FF:9xxx
    STD   ,U          ; bank 0, $Dxxx
    JMP   <fetch
 
@@ -624,6 +627,9 @@ opSTOREIO_end
 opSTOREUART
    LDB   7,U
    JSR   PUTC
+   IFNE  LPR
+   JSR   RSCO
+   ENDC
    BRA   opSTOREIO_end
 
 opLOAD
