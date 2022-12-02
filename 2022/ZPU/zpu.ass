@@ -3,22 +3,24 @@
 
 FIRST_PAGE  SET   2           ; address 0 is mapped to that pae
 SAFE        SET   0           ; force long addressing for long ops (slower)
-TRACE       SET   0           ; traces executed instructions
-LPR         SET   1           ; also output result to printer on parallel port
+TRACE       SET   1           ; traces executed instructions
+LPR         SET   0           ; also output result to printer on parallel port
 STACK_SIZE  SET   2048        ; size of stack
-UNMAPPED_H  SET   $01FF       ; high word of unmapped zone
+HOST_SPACE  SET   $01FF       ; high word of unmapped zone
+IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related
 
 PUTC  EQU   $E803
 GETC  EQU   $E806
 RSOPC EQU   $602B
 RSCO  EQU   $E812
+PRC   EQU   $E7C3
+BANK  EQU   $E7E5             ; memory bank
 
 COLOR MACRO
    IFEQ  LPR
    FCB   27,$40+\0
    ENDC
    ENDM
-
 
 ASRD  MACRO
    ASRA
@@ -50,28 +52,9 @@ main
    STA   >$6081      ; direct
    STA   >$e7e7      ; RAM
 
-   IFNE  LPR
-   LDB   #$40        ; open parallel port
-   STB   >RSOPC
-   JSR   >RSCO
-   LDB   #$08        ; to write bytes
-   STB   >RSOPC
-   LDB   #12
-   JSR   >RSCO
-   ENDC
+   BSR   INITLPR
 
-   LDA   #FIRST_PAGE
-   LDX   #HEAP       ; clear HEAP
-CLRPAGE
-   STA   >$E7E5
-   BSR   CLRHEAP
-   LDX   #$A000
-   INCA
-   CMPA  #16
-   BNE   CLRPAGE
-
-   LDA   #FIRST_PAGE
-   STA   >$E7E5
+   BSR   INITMEMORY
 
    LDU   #$A000-8    ; set stack ptr
    STU   <page       ; force page to be out of address space
@@ -81,11 +64,47 @@ CLRPAGE
    PSHU  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
 
+INITLPR
+   IFNE  LPR         ; open parallel port
+   LDB   #$40
+   STB   >RSOPC
+   JSR   >RSCO
+   LDB   #$08        ; to write bytes
+   STB   >RSOPC
+   LDB   #12
+   JMP   >RSCO
+   ELSE
+   RTS
+   ENDC
+
+LAST_PAGE
+   FCB   0
+
+BANKSIG
+   FCC   /BNK0/
+
+INITMEMORY
+   BSR   FINDMAX
+   BSR   PRINTMAX
+   LDX   #$A000
+   LDA   LAST_PAGE
+CLRPAGE
+   STA   BANK
+
+   CMPA  #FIRST_PAGE
+   BEQ   CLRHEAP
+   BSR   CLRMEM
+   DECA
+   BRA   CLRPAGE
 CLRHEAP
-   PSHS  D,X
+   LDX   #HEAP
+   * BRA   CLRMEM
+
+CLRMEM
+   PSHS  D,X         ; clears a memory zone upto $E000
    LDD   #0
-   BRA   CLRHEAP2
-CLRHEAP1
+   BRA   CLRMEM2
+CLRMEM1
    STD   ,X
    STD   2,X
    STD   4,X
@@ -95,16 +114,135 @@ CLRHEAP1
    STD   12,X
    STD   14,X
    LEAX  16,X
-CLRHEAP2
+CLRMEM2
    CMPX  #$E000-16
-   BLS   CLRHEAP1
-   BRA   CLRHEAP4
-CLRHEAP3
+   BLS   CLRMEM1
+   BRA   CLRMEM4
+CLRMEM3
    STB   ,X+
-CLRHEAP4
+CLRMEM4
    CMPX  #$E000
-   BLO   CLRHEAP3
+   BLO   CLRMEM3
    PULS  D,X,PC
+FINDMAX
+   PSHS  D,X
+   LDA   PRC
+   ORA   #1
+   STA   PRC
+   LDD   BANKSIG        ; determine max page
+   STD   $5FFC
+   LDD   BANKSIG+2
+   STD   $5FFE
+
+   LDA   #FIRST_PAGE
+FINDMAX1
+   STA   LAST_PAGE
+   INCA
+   STA   BANK
+
+   LDX   $DFFC
+   CMPX  BANKSIG
+   BNE   FINDMAX1
+   LDX   $DFFE
+   CMPX  BANKSIG+2
+   BNE   FINDMAX1
+   PULS  D,X,PC
+
+PRINTMAX
+   PSHS  D
+   JSR   PUTSTR
+   FCC   /Found/
+   FCB   128+32
+   LDB   LAST_PAGE
+   SUBB  #FIRST_PAGE-1
+   JSR   DECIMAL
+   JSR   PUTSTR
+   FCC   /x16 kb/
+   FCC   13,10+128
+   PULS  D,PC
+
+PUTS
+   PSHS  B        ; prints a 0 or neg-terminated string pointed by X (updated)
+   BRA   PUTS1
+PUTS0
+   BSR   PUTCHAR
+PUTS1
+   LDB   ,X+
+   BEQ   PUTS2
+   BPL   PUTS0
+   ANDB  #127
+   BSR   PUTCHAR
+PUTS2
+   PULS  B,PC
+
+PUTSTR
+   PSHS  X           ; prints the string follwing the call
+   LDX   2,S
+   BSR   PUTS
+   STX   2,S
+   PULS  X,PC
+
+HEX32
+   BSR   HEX16       ; prints 32 bits value at X (incremented)
+HEX16
+   BSR   HEX8        ; prints 16 bits value at X (incremented)
+HEX8
+   LDB   ,X+         ; prints 8 bits value at X (incremented)
+   * BRA   HEX
+HEX
+   BSR   HEX0        ; print B in hexa (A trashed)
+   EXG   A,B
+HEX0
+   LDA   #$10
+   MUL
+   ADDA  #$90
+   DAA
+   ADCA  #$40
+   DAA
+   EXG   A,B
+PUTCHAR
+   IFNE  LPR
+   JMP   RSCO
+   ELSE
+   JMP   PUTC              ; prints a character (in B)
+   ENDC
+
+DECIMAL
+   STB   ,-S               ; prints a signed byte in decimal
+   BPL   DECIMAL1
+   NEG   ,S
+   BSR   PUTSTR
+   FCB   128+'-
+DECIMAL1
+   CLRA
+   LDB   #8
+DECIMAL2
+   LSL   ,S
+   STA   ,-S
+   ADCA  ,S+
+   DAA
+   DECB
+   BNE   DECIMAL2
+   STA   ,S
+   BCC   DECIMAL3
+   BSR   PUTSTR
+   FCB   128+'1
+   LDB   ,S+
+   BRA   HEX8
+DECIMAL3
+   LDB   ,S
+   LSRB
+   LSRB
+   LSRB
+   LSRB
+   BEQ   DECIMAL4
+   ADDB  #'0
+   BSR   PUTCHAR
+DECIMAL4
+   LDB   ,S+
+   ANDB  #15
+   ADDB  #'0
+   BRA   PUTCHAR
 
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
@@ -163,7 +301,7 @@ getAddrL
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
    LDD   ,U
-   SUBD  #UNMAPPED_H
+   SUBD  #HOST_SPACE
    BNE   getAddrMapped
    LDX   2,U
    RTS
@@ -190,7 +328,8 @@ page equ *-2         ; page index (dynamic code)
 * A=bank number
 chgBank
    ADDA  #FIRST_PAGE
-   STA   $E7E5       ; need to check, might use PIA instead
+   STA   BANK
+        ; need to check, might use PIA instead
 donePage
    RTS               ; done
 
@@ -276,7 +415,7 @@ opNOP
 
 * Pushes stack address
 opPUSHSP
-   LDD   #UNMAPPED_H ; stack address is $01FF:9xxx
+   LDD   #HOST_SPACE ; stack address is $01FF:9xxx
    LEAX  ,U          ; this should be mapped to
    PSHU  D,X         ; bank 0, $Dxxx
    BRA   fetch
@@ -287,7 +426,7 @@ opPUSHSPADD
    LSLD
    LEAX  D,U
    STX   2,U
-   LDD   #UNMAPPED_H ; stack address is $01FF:9xxx
+   LDD   #HOST_SPACE ; stack address is $01FF:9xxx
    STD   ,U          ; bank 0, $Dxxx
    JMP   <fetch
 
@@ -633,8 +772,8 @@ opSTOREUART
    BRA   opSTOREIO_end
 
 opLOAD
-   LDB   ,U          ; chk IO range
-   CMPB  #$08
+   LDA   ,U          ; chk IO range
+   CMPA  #IO_SPACE/256
    BCC   opLOADIO    ; yes => io-specific
    JSR   <getAddrL   ; convert adress
    LDD   ,X          ; load high word
@@ -644,8 +783,8 @@ opLOAD
    JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
-   LDB   ,U          ; chk IO range
-   CMPB  #$08
+   LDA   ,U          ; chk IO range
+   CMPA  #IO_SPACE/256
    BCC   opSTOREIO   ; yes => io-specific code
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
@@ -1173,7 +1312,7 @@ endTRACE
    PULS  CC,DP,D,X,Y,U,PC
 
 doTRACE3
-   LDB   ,U+
+   LDB   ,U+            ; decodes %thing
    CMPB  #'s
    BEQ   printSTACK
    CMPB  #'p
@@ -1187,17 +1326,17 @@ doTRACE3
    RTS
 
 printSP
-   PSHS  X
+   PSHS  X              ; prints 16bit stack ptr
    LEAX  12,S
-   BSR   HEX16
+   JSR   HEX16
    PULS  X,PC
 
 printOP
-   LDB   ,y
-   BRA   HEX
+   LDB   ,y             ; prints 8bit op-code
+   JMP   HEX
 
 printPC
-   PSHS  D,X
+   PSHS  D,X            ; prints 24bit PC reg
    TFR   Y,D
    SUBA  #$A0
    ORA   <PC_PG+1
@@ -1206,15 +1345,15 @@ printPC
    LDB   <PC_PG
    PSHS  D
    LEAX  1,S
-   BSR   HEX8
-   BSR   HEX16
+   JSR   HEX8
+   JSR   HEX16
    LEAS  ,X
    PULS  D,X,PC
 
 printSTACK
    CMPX  #$A000
-   BLO   HEX32
-   BSR   PUTSTR
+   LBLO   HEX32
+   JSR   PUTSTR
    COLOR 4
    IFNE  LPR
    FCC   /-------/
@@ -1225,59 +1364,13 @@ printSTACK
    COLOR 128+COLOR_STACK
    RTS
 
-PUTS
-   PSHS  B        ; prints a 0 or neg-terminated string pointed by X (updated)
-   BRA   PUTS1
-PUTS0
-   BSR   PUTCHAR
-PUTS1
-   LDB   ,X+
-   BEQ   PUTS2
-   BPL   PUTS0
-   ANDB  #127
-   BSR   PUTCHAR
-PUTS2
-   PULS  B,PC
-
-PUTSTR
-   PSHS  X           ; prints the string follwing the call
-   LDX   2,S
-   BSR   PUTS
-   STX   2,S
-   PULS  X,PC
-
-HEX32
-   BSR   HEX16       ; prints 32 bits value at X (incremented)
-HEX16
-   BSR   HEX8        ; prints 16 bits value at X (incremented)
-HEX8
-   LDB   ,X+         ; prints 8 bits value at X (incremented)
-   * BRA   HEX
-HEX
-   BSR   HEX0        ; print B in hexa (A trashed)
-   EXG   A,B
-HEX0
-   LDA   #$10
-   MUL
-   ADDA  #$90
-   DAA
-   ADCA  #$40
-   DAA
-   EXG   A,B
-PUTCHAR
-   IFNE  LPR
-   JMP   RSCO
-   ELSE
-   JMP   PUTC              ; prints a character (in B)
-   ENDC
-
 printASM
    PSHS  X,U
    LDU   #asmTbl           ; find the #B th entry in table
    LDB   ,Y
    BPL   srchMNEMO
 
-   BSR   PUTSTR            ; IM d
+   JSR   PUTSTR            ; IM d
    FCC   /IM/
    FCB   128+32
    LSLB
@@ -1298,7 +1391,7 @@ skipMNEMO
    BNE   srchLOOP
    LDB   ,X+
 printOPCDE
-   BSR   PUTCHAR
+   JSR   PUTCHAR
    LDB   ,X+
    CMPB  #32
    BHS   printOPCDE
@@ -1311,46 +1404,9 @@ printDECIMAL
    BEQ   noXOR
    EORB  #$10
 noXOR
-   BSR   DECIMAL
+   JSR   DECIMAL
 noDECIMAL
    PULS  X,U,PC
-
-DECIMAL
-   STB   ,-S
-   BPL   DECIMAL1
-   NEG   ,S
-   BSR   PUTSTR
-   FCB   128+'-
-DECIMAL1
-   CLRA
-   LDB   #8
-DECIMAL2
-   LSL   ,S
-   STA   ,-S
-   ADCA  ,S+
-   DAA
-   DECB
-   BNE   DECIMAL2
-   STA   ,S
-   BCC   DECIMAL3
-   BSR   PUTSTR
-   FCB   128+'1
-   LDB   ,S+
-   BRA   HEX8
-DECIMAL3
-   LDB   ,S
-   LSRB
-   LSRB
-   LSRB
-   LSRB
-   BEQ   DECIMAL4
-   ADDB  #'0
-   BSR   PUTCHAR
-DECIMAL4
-   LDB   ,S+
-   ANDB  #15
-   ADDB  #'0
-   BRA   PUTCHAR
 
 COLOR_ST    SET   2
 COLOR_PC    SET   3
@@ -1361,6 +1417,8 @@ COLOR_STACK  SET  4
 
 traceFmt
    IFEQ  LPR
+
+* nice colorful trace
    * IFEQ  LPR
    * FCB   10,10,11,11
    * ENDC
@@ -1376,13 +1434,18 @@ traceFmt
    COLOR COLOR_INST
    FCC   /%a/
    COLOR COLOR_STACK
+   FCB   13,10,0
+
    ELSE
+
+* compatible with zpu.c
    FCC   /0x0%p 0x%o 0x%u/
    FCC   / 0x%s 0x%s 0x%s 0x%s/
    FCC   / 0x%s 0x%s 0x%s 0x%s/
    fcc   / %a/
-   ENDC
    FCB   10,0
+
+   ENDC
 
 asmTbl
    OPCDE /BREAKPT/            ; 0
