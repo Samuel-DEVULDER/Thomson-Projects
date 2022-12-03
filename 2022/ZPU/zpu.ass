@@ -341,7 +341,7 @@ LOAD
    PSHS  A        ; set BANK cpt
    SETDP $60
    LDD   #$6000
-   TFR   A,DPe
+   TFR   A,DP
    STB   DKDRV
    LDA   1,X
    CMPA  #':
