@@ -9,6 +9,9 @@ STACK_SIZE  SET   2048        ; size of stack
 HOST_SPACE  SET   $01FF       ; high word of unmapped zone
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related
 
+***************************************
+* System equates
+***************************************
 PUTC  EQU   $E803
 GETC  EQU   $E806
 RSOPC EQU   $602B
@@ -17,6 +20,25 @@ PRC   EQU   $E7C3
 LGA5  EQU   $E7E5             ; reg for memory bank at $A000-$DFFF
 LGA6  EQU   $E7E6             ; reg for memory bank at $0000-$3FFF
 LGA7  EQU   $E7E7             ; Gate Array "mode page"
+*DKOPC equ    $6048   ;operation d7
+DKDRV EQU   $6049             ; lecteur
+DKTRK EQU   $604A             ; piste (2 ocets)
+DKSEC EQU   $604C             ; secteur
+DKSTA EQU   $604E             ; status d7
+DKBUF EQU   $604F             ; buf i/o
+DKCAT EQU   $60E9             ; ptr catalogue
+DKNAM EQU   $60E7             ; nom fichier
+DKTYP EQU   $60EB             ; type fichier (2octets)
+DKFAT EQU   $60ED             ; ptr fat
+DKMOD EQU   $60F0             ; mode d'acces
+DKFIN EQU   $60F3             ; dernier bloc
+DKBLK EQU   $60F6             ; 1er bloc fichier
+DKTDS EQU   $60F7             ; nb octets dern sect (2octets)
+DKIFA EQU   $60F9             ; secteur fat fichier
+LECFA EQU   $E00D             ; lecture fat
+RECFI EQU   $E010             ; recherche fichier
+CONVB EQU   $E01F             ; converison bloc
+DKCOM EQU   $E82A             ; commande d7
 
 COLOR MACRO
    IFEQ  LPR
@@ -319,59 +341,59 @@ LOAD
    PSHS  A        ; set BANK cpt
    SETDP $60
    LDD   #$6000
-   TFR   A,DP
-   STB   $6049
+   TFR   A,DPe
+   STB   DKDRV
    LDA   1,X
    CMPA  #':
    BNE   LOAD00
    LDA   ,X++
    SUBA  #'0
-   STA   $6049
+   STA   DKDRV
 LOAD00
    LDA   #$02     A=2, B=$00
-   STB   $604E    Efface erreur
-   STD   $60EB    Type de fichier
-   STX   $60E7    Nom du fichier
+   STB   DKSTA    Efface erreur
+   STD   DKTYP    Type de fichier
+   STX   DKNAM    Nom du fichier
    STU   $60F1    Adr d'implantation
 * Chargement de la FAT
    LDX   #BUF
-   STX   $60E9
+   STX   DKCAT
    LDX   #FAT
-   STX   $60ED
-   JSR   $E00D    Charge la FAT
+   STX   DKFAT
+   JSR   LECFA    Charge la FAT
    BCS   ERRIO    Si "I/O Error"
 * Recherche du fichier
    LDA   #1       | Initialise
-   STA   $60F0    | en LOAD
-   JSR   $E010    Recherche fichier
-   TST   $60F9    | Si $60F9 = 0,
+   STA   DKMOD    | en LOAD
+   JSR   RECFI    Recherche fichier
+   TST   DKIFA    | Si $60F9 = 0,
    BEQ   ERRNF    | fich non trouve'
 * Convertit numero de bloc
 LOAD0
-   JSR   $E01F    Convertit bloc
-   STB   $604B    Initialise piste
-   LDX   $60ED    Pointeur sur FAT
-   LDB   $60F6    Bloc courant
+   JSR   CONVB    Convertit bloc
+   STB   DKTRK+1  Initialise piste
+   LDX   DKFAT    Pointeur sur FAT
+   LDB   DKBLK    Bloc courant
    INCB           | Bloc
    LDB   B,X      | suivant
-   STB   $60F6    Sauve le bloc
+   STB   DKBLK    Sauve le bloc
    CMPB  #$C0     | Si dernier bloc,
    BHI   LOAD1    | recupere taille
    LDB   #$08     8 secteurs a charg
 LOAD1
    ANDB  #$0F     Isole taille bloc
-   STA   $604C    Sauve premier bloc
-   ADDB  $604C    Ajoute depart bloc
+   STA   DKSEC    Sauve premier bloc
+   ADDB  DKSEC    Ajoute depart bloc
    DECB           Ajuste dern bloc
-   STB   $60F3    Sauve dernier bloc
+   STB   DKFIN    Sauve dernier bloc
 * Charge les secteurs
 LOAD2
-   JSR   $E82A    Charge le secteur
+   JSR   DKCOM    Charge le secteur
    BCS   ERRIO    Si "I/O Error"
    LDA   $604C    | Si secteur pas
    CMPA  $60F3    | secteur maximum,
    BNE   LOAD3    | passe
-   LDA   $60F6    | Si dernier
+   LDA   DKBLK    | Si dernier
    CMPA  #$C0     | secteur du
    BHI   LOAD4    | fichier, sort
    BSR   TFR      Transfere donnees
@@ -382,7 +404,7 @@ LOAD3
    BRA   LOAD2    Secteur suivant
 * Chargement dernier secteur et sortie
 LOAD4
-   LDD   $60F7    Taille dern sect
+   LDD   DKTDS    Taille dern sect
    BEQ   LOAD5    Si 0, sort
    BSR   TFR0     Transfere donnees
 LOAD5
@@ -422,7 +444,7 @@ TFR0
    ABX
    CMPX  #$E000
    LEAX  ,U
-   LDU   $604F   Ptr buffer secteur
+   LDU   DKBUF   Ptr buffer secteur
    BCC   TFRslow
 TFRfast
    LDA   ,U+     |
@@ -941,13 +963,14 @@ opSWAP
 ***************************************
 
 opLOADIO
-   * LDD   2,U
-   * CMPD  #12         ; UART
-   * BEQ   opLOADUART
-   * CMPD  #24         ; UART
-   * BEQ   opLOADUART
-   * CMPD  #256
-   * BEQ   opLOADUART
+   LDD   2,U
+   CMPD  #12         ; UART
+   BEQ   opLOADUART
+   CMPD  #24         ; UART
+   BEQ   opLOADUART
+   CMPD  #256
+   BEQ   opLOADUART
+opLOADIO_err
    LDD   #256
 opLOADIO_end
    STD   2,U
@@ -957,6 +980,8 @@ opLOADIO_end
    JMP   <fetch
 opLOADUART
    JSR   GETC
+   TSTB
+   BEQ   opLOADIO_err
    CLRA
    BRA   opLOADIO_end
 
