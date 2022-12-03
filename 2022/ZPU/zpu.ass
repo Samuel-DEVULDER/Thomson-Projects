@@ -20,25 +20,6 @@ PRC   EQU   $E7C3
 LGA5  EQU   $E7E5             ; reg for memory bank at $A000-$DFFF
 LGA6  EQU   $E7E6             ; reg for memory bank at $0000-$3FFF
 LGA7  EQU   $E7E7             ; Gate Array "mode page"
-*DKOPC equ    $6048   ;operation d7
-DKDRV EQU   $6049             ; lecteur
-DKTRK EQU   $604A             ; piste (2 ocets)
-DKSEC EQU   $604C             ; secteur
-DKSTA EQU   $604E             ; status d7
-DKBUF EQU   $604F             ; buf i/o
-DKCAT EQU   $60E9             ; ptr catalogue
-DKNAM EQU   $60E7             ; nom fichier
-DKTYP EQU   $60EB             ; type fichier (2octets)
-DKFAT EQU   $60ED             ; ptr fat
-DKMOD EQU   $60F0             ; mode d'acces
-DKFIN EQU   $60F3             ; dernier bloc
-DKBLK EQU   $60F6             ; 1er bloc fichier
-DKTDS EQU   $60F7             ; nb octets dern sect (2octets)
-DKIFA EQU   $60F9             ; secteur fat fichier
-LECFA EQU   $E00D             ; lecture fat
-RECFI EQU   $E010             ; recherche fichier
-CONVB EQU   $E01F             ; converison bloc
-DKCOM EQU   $E82A             ; commande d7
 
 COLOR MACRO
    IFEQ  LPR
@@ -81,6 +62,8 @@ main
    LDX   #FILENAME
    jSR   LOADFILE
 
+   JSR   INITTIMER
+
 GOZPU
    LDU   #$A000-8    ; set stack ptr
    STU   <page       ; force page to be out of address space
@@ -102,14 +85,17 @@ INITLPR
    RTS
    ENDC
 
-LAST_PAGE
-   FCB   0
-
 FILENAME
    FCC   /0:/
-   * FCC   /dhryston/
-   FCC   /test    /
+   FCC   /dhryston/
+   * FCC   /test    /
    FCC   /bin/
+   FCB   0
+
+***************************************
+* MEMORY
+***************************************
+LAST_PAGE
    FCB   0
 
 INITMEMORY
@@ -328,6 +314,7 @@ PRINTFN4
    DECA
    BNE   PRINTFN4
    RTS
+
 *--------------------------------------*|*
   * Module de chargement pour un fichier *
   * Entrees:                             *
@@ -335,10 +322,29 @@ PRINTFN4
   * X = Pointeur sur nom de fichier      *
   * U = Adresse d'implantation           *
   *--------------------------------------*
+*DKOPC equ    $6048  ; operation d7
+DKDRV EQU   $6049    ; lecteur
+DKTRK EQU   $604A    ; piste (2 ocets)
+DKSEC EQU   $604C    ; secteur
+DKSTA EQU   $604E    ; status d7
+DKBUF EQU   $604F    ; buf i/o
+DKCAT EQU   $60E9    ; ptr catalogue
+DKNAM EQU   $60E7    ; nom fichier
+DKTYP EQU   $60EB    ; type fichier (2octets)
+DKFAT EQU   $60ED    ; ptr fat
+DKMOD EQU   $60F0    ; mode d'acces
+DKFIN EQU   $60F3    ; dernier bloc
+DKBLK EQU   $60F6    ; 1er bloc fichier
+DKTDS EQU   $60F7    ; nb octets dern sect (2octets)
+DKIFA EQU   $60F9    ; secteur fat fichier
+LECFA EQU   $E00D    ; lecture fat
+RECFI EQU   $E010    ; recherche fichier
+CONVB EQU   $E01F    ; converison bloc
+DKCOM EQU   $E82A    ; commande d7
 LOAD
-   PSHS  D,X,U,DP
-   STA   LGA5     ; set bank
-   PSHS  A        ; set BANK cpt
+   PSHS  D,X,U,DP    ; Load a file from minidos
+   STA   LGA5        ; set bank
+   PSHS  A           ; set BANK cpt
    SETDP $60
    LDD   #$6000
    TFR   A,DP
@@ -354,7 +360,7 @@ LOAD00
    STB   DKSTA    Efface erreur
    STD   DKTYP    Type de fichier
    STX   DKNAM    Nom du fichier
-   STU   $60F1    Adr d'implantation
+   STU   LDPTR    Adr d'implantation
 * Chargement de la FAT
    LDX   #BUF
    STX   DKCAT
@@ -391,7 +397,7 @@ LOAD2
    JSR   DKCOM    Charge le secteur
    BCS   ERRIO    Si "I/O Error"
    LDA   $604C    | Si secteur pas
-   CMPA  $60F3    | secteur maximum,
+   CMPA  DKFIN    | secteur maximum,
    BNE   LOAD3    | passe
    LDA   DKBLK    | Si dernier
    CMPA  #$C0     | secteur du
@@ -439,7 +445,8 @@ TFR
    COMB          | maximum du
    ORB   #$80    | secteur
 TFR0
-   LDX   $60F1   Recupere ptr mem
+   LDX   #0      Recupere ptr mem
+LDPTR SET   *-2
    LEAU  ,X
    ABX
    CMPX  #$E000
@@ -452,7 +459,7 @@ TFRfast
    DECB          | les donnees
    BNE   TFRfast |
 TFR1
-   STX   $60F1   Sauve implantation
+   STX   LDPTR   Sauve implantation
    RTS
 TFRslow
    LDA   ,U+     |
@@ -473,6 +480,66 @@ TFRslow2
    DECB          | les donnees
    BNE   TFRfast
    BRA   TFR1
+
+   SETDP 0
+
+***************************************
+* Timer
+***************************************
+TIMEPT   EQU   $6027
+STATUS   EQU   $6019
+KBIN     EQU   $E830
+
+TIMER_CTR
+   FDB   0        ; timer counter (64 bits)
+   FDB   0
+   FDB   0
+   FDB   0
+TIMER_MHZ
+   FDB   0        ; board frequecy (32 bits)
+   FDB   1
+
+INITTIMER
+   PSHS  D,X      ; init timer
+   ORCC  #$50
+   LDD   #0
+   LDX   #0
+   LDU   #TIMER_MHZ
+   PSHU  D,X
+   PSHU  D,X
+   PSHU  D,X
+   PSHU  D,X
+   LDX   #TIMERINTER
+   STX   TIMEPT
+   LDA   STATUS
+   ORA   #%00100000
+   STA   STATUS
+   ANDCC #$FF-$50
+   PULS  D,X,PC
+
+* 100 ms = 100 000 us
+*        = $1 86A0
+TIMERINTER
+   LDX   #TIMER_CTR+4
+   LDD   #$86A0
+   ADDD  2,X
+   STD   2,X
+   LDD   ,X
+   ADCB  #$1
+   ADCA  #0
+   STD   ,X
+   BCC   TIMERINTERX
+   LDD   -2,X
+   ADCB  #0
+   ADCA  #0
+   STD   -2,X
+   BCC   TIMERINTERX
+   LDD   -4,X
+   ADCB  #0
+   ADCA  #0
+   STD   -4,X
+TIMERINTERX
+   JMP   KBIN
 
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
@@ -504,7 +571,6 @@ opIM_nxt
    LDA   #$81        ; no => disable hook ($81=CMPA)
    STA   <opIM       ; (write CMPA as the first instructon of opIM)
    BRA   chkPC       ; next instruction (B already fetched)
-
 
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
@@ -602,12 +668,18 @@ opLDSTSP_x
 * B=-xxxxx00 (4*x)
 ***************************************
 opLOADSP_x
-   ANDB  #%01111100   ; clear bit 7 of 4*x
+   ANDB  #%01111100  ; clear bit 7 of 4*x
    LEAX  B,U         ; X points to source
    LDD   ,X          ; load high word
    LDX   2,X         ; load low word
    PSHU  D,X         ; push 32 bits
    BRA   fetch       ; next instruction
+
+sampledTMR
+   FDB   0           ; sampled timer
+   FDB   0
+   FDB   0
+   FDB   0
 
 * Write top of stack at stack[x]
 * B=0xxxxx00 (4*x)
@@ -962,47 +1034,127 @@ opSWAP
 * MEMORY
 ***************************************
 
-opLOADIO
-   LDD   2,U
-   CMPD  #12         ; UART
-   BEQ   opLOADUART
-   CMPD  #24         ; UART
-   BEQ   opLOADUART
-   CMPD  #256
-   BEQ   opLOADUART
-opLOADIO_err
-   LDD   #256
-opLOADIO_end
-   STD   2,U
-   CLRA
-   STA   1,U
-   STA   ,U
-   JMP   <fetch
-opLOADUART
+* https://github.com/zylin/zpu/blob/master/zpu/sw/startup/crt_io.c
+
+* _cpu_config==0 => Abel
+* _cpu_config==1 => Zeta
+* _cpu_config==2 => Phi
+
+* CONFIG=2 (phi board)
+* UART  = 0x080a000c
+* TIMER = 0x080a0014
+* MHZ   = address to 64L
+
+* Abel board
+* UART  = 0xc000
+* TIMER = 0x9000
+* MHZ   = 0x8800
+
+* Software board
+* UART  = 0x80000024
+* TIMER = 0x80000100
+* MHZ   = 0x80000200
+
+* TIMER[0] = 2 == latch
+* TIMER[0] = low  long
+* TIMER[1] = high long
+
+
+ * UART[0] & 0x100 == 0 si busy (carractere a lire ?)
+ * UART[0] = C ecriture
+ * UART[1] = carractere lue | 0x100
+timer_high
+   LDX   sampledTMR     ; load high word of latched timer
+   LDD   sampledTMR+2
+   BRA   opLOADIO_end
+timer_low
+   LDX   sampledTMR+4   ; load low word of latched timer
+   LDD   sampledTMR+6
+   BRA   opLOADIO_end
+timer_mhz
+   LDX   #0             ; return Mhz (1 for Thomson)
+   LDD   #1
+   BRA   opLOADIO_end
+
+uart_read
+   LDA   #1          ; read keyoard
    JSR   GETC
    TSTB
-   BEQ   opLOADIO_err
+   BNE   opLOADIO_end
    CLRA
    BRA   opLOADIO_end
 
-opSTOREIO
-   LDD   2,U
-   CMPD  #12         ; UART
-   BEQ   opSTOREUART
-   CMPD  #24         ; UART
-   BEQ   opSTOREUART
-   CMPD  #256        ; UART
-   BEQ   opSTOREUART
-opSTOREIO_end
-   LEAU  8,U         ; fixup stack
-   JMP   <fetch
-opSTOREUART
-   LDB   7,U
+
+uart_write
+   LDB   7,U         ; prints a character
    JSR   PUTC
    IFNE  LPR
    JSR   RSCO
    ENDC
    BRA   opSTOREIO_end
+
+timer_latch
+   LDD   6,U
+   BITB  #2
+   BEQ   opSTOREIO_end
+   PSHS  U,CC        ; latches the current timer value
+   ORCC  #$50
+   LDU   #TIMER_CTR
+   PULU  D,X
+   STD   sampledTMR
+   STX   sampledTMR+2
+   PULU  D,X
+   STD   sampledTMR+4
+   STX   sampledTMR+6
+   PULS  U,CC
+   BRA   opSTOREIO_end
+
+opLOADIO
+   LDX   #0
+   LDD   2,U
+* phi board
+   CMPD  #$000C
+   BEQ   uart_rdy
+   CMPD  #$0010
+   BEQ   uart_read
+   CMPD  #$0014
+   BEQ   timer_high
+   CMPD  #$0018
+   BEQ   timer_low
+* soft board
+   CMPD  #$0024
+   BEQ   uart_rdy
+   CMPD  #$0028
+   BEQ   uart_read
+   CMPD  #$0104
+   BEQ   timer_high
+   CMPD  #$0108
+   BEQ   timer_low
+   CMPD  #$0200
+   BEQ   timer_mhz
+* default
+uart_rdy
+   LDD   #256        ; tell uar is rady to send
+opLOADIO_end
+   STX   ,U
+   STD   2,U
+   JMP   <fetch
+
+opSTOREIO
+   LDD   2,U
+* phi board
+   CMPD  #$000C
+   BEQ   uart_write
+   CMPD  #$0014
+   BEQ   timer_latch
+* soft board
+   CMPD  #$0024
+   BEQ   uart_write
+   CMPD  #$0100
+   BEQ   timer_latch
+opSTOREIO_end
+   LEAU  8,U         ; fixup stack
+   JMP   <fetch
 
 opLOAD
    LDA   ,U          ; chk IO range
