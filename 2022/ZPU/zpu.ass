@@ -3,7 +3,7 @@
 
 FIRST_PAGE  SET   2           ; address 0 is mapped to that pae
 SAFE        SET   0           ; force long addressing for long ops (slower)
-TRACE       SET   1           ; traces executed instructions
+TRACE       SET   0           ; traces executed instructions
 LPR         SET   0           ; also output result to printer on parallel port
 STACK_SIZE  SET   2048        ; size of stack
 HOST_SPACE  SET   $01FF       ; high word of unmapped zone
@@ -14,7 +14,9 @@ GETC  EQU   $E806
 RSOPC EQU   $602B
 RSCO  EQU   $E812
 PRC   EQU   $E7C3
-BANK  EQU   $E7E5             ; memory bank
+LGA5  EQU   $E7E5             ; reg for memory bank at $A000-$DFFF
+LGA6  EQU   $E7E6             ; reg for memory bank at $0000-$3FFF
+LGA7  EQU   $E7E7             ; Gate Array "mode page"
 
 COLOR MACRO
    IFEQ  LPR
@@ -37,8 +39,6 @@ LSLD  MACRO
    ROLA
    ENDM
 
-   SETDP PAGE0
-
 STACK
    RMB   64
 
@@ -47,18 +47,21 @@ main
 
    LDD   #PAGE0+$1000
    TFR   B,DP
+   SETDP PAGE0
 
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
-   STA   >$e7e7      ; RAM
+   STA   >LGA7       ; RAM
 
    BSR   INITLPR
-
    BSR   INITMEMORY
 
+   LDX   #FILENAME
+   jSR   LOADFILE
+
+GOZPU
    LDU   #$A000-8    ; set stack ptr
    STU   <page       ; force page to be out of address space
-
    LDD   #0
    LDX   #$0000
    PSHU  D,X         ; push address $0000 0000
@@ -80,24 +83,27 @@ INITLPR
 LAST_PAGE
    FCB   0
 
-BANKSIG
-   FCC   /BNK0/
+FILENAME
+   FCC   /0:/
+   * FCC   /dhryston/
+   FCC   /test    /
+   FCC   /bin/
+   FCB   0
 
 INITMEMORY
-   BSR   FINDMAX
-   BSR   PRINTMAX
+   BSR   FINDMAX        ; guess LAST_PAGE
+   BSR   PRINTMAX       ; prints a message about it
    LDX   #$A000
-   LDA   LAST_PAGE
-CLRPAGE
-   STA   BANK
-
-   CMPA  #FIRST_PAGE
-   BEQ   CLRHEAP
-   BSR   CLRMEM
-   DECA
-   BRA   CLRPAGE
+   LDA   LAST_PAGE      ; clear all banks starting from the last one
+CLRPAGES
+   STA   LGA5           ; update bank
+   CMPA  #FIRST_PAGE    ; first page ?
+   BEQ   CLRHEAP        ; yes => only clear HEAP data
+   BSR   CLRMEM         ; no => clear $A000..$DFFF
+   DECA                 ; next page
+   BRA   CLRPAGES
 CLRHEAP
-   LDX   #HEAP
+   LDX   #FAT
    * BRA   CLRMEM
 
 CLRMEM
@@ -125,28 +131,38 @@ CLRMEM4
    BLO   CLRMEM3
    PULS  D,X,PC
 FINDMAX
-   PSHS  D,X
-   LDA   PRC
-   ORA   #1
-   STA   PRC
-   LDD   BANKSIG        ; determine max page
-   STD   $5FFC
-   LDD   BANKSIG+2
-   STD   $5FFE
-
-   LDA   #FIRST_PAGE
+   PSHS  D,X            ; find maximum page (LAST_PAGE)
+   LDX   #$A000
+   LDD   #FIRST_PAGE-1
 FINDMAX1
-   STA   LAST_PAGE
-   INCA
-   STA   BANK
-
-   LDX   $DFFC
-   CMPX  BANKSIG
-   BNE   FINDMAX1
-   LDX   $DFFE
-   CMPX  BANKSIG+2
-   BNE   FINDMAX1
+   INCB
+   STB   LGA5
+   STB   ,X
+FINDMAX2
+   BSR   CHKSIG         ; check sucessfull writing of 256 random values at X
+   BNE   FINDMAX3       ; if one fails cut scan here
+   DECA                 ; decrement
+   BNE   FINDMAX2       ; 256 success ? no=>loop
+   BRA   FINDMAX1       ; yes => valid bank, try next one
+FINDMAX3
+   DECB
+   STB   LAST_PAGE
    PULS  D,X,PC
+
+CHKSIG
+   PSHS  D           ; suffle bits (multiply by 5)
+   LDA   ,X
+   LDB   #5
+   MUL
+   STB   ,X
+   LDB   1,X
+   LDA   #5
+   MUL
+   ORB   #1
+   ADDA  ,X
+   STD   ,X
+   SUBD  ,X          ; $5FFE is mapped on $DFFE when we wrapped around the number of pages
+   PULS  D,PC
 
 PRINTMAX
    PSHS  D
@@ -157,8 +173,8 @@ PRINTMAX
    SUBB  #FIRST_PAGE-1
    JSR   DECIMAL
    JSR   PUTSTR
-   FCC   /x16 kb/
-   FCC   13,10+128
+   FCC   /x16k free memory/
+   FCB   13,10+128
    PULS  D,PC
 
 PUTS
@@ -244,8 +260,201 @@ DECIMAL4
    ADDB  #'0
    BRA   PUTCHAR
 
+LOADFILE
+   PSHS  A,X,U
+   BSR   PUTSTR
+   FCC   /Loading/
+   FCB   32+128
+   BSR   PRINTFN
+   BSR   PUTSTR
+   FCC   /../
+   FCB   128+'.
+   LDA   #FIRST_PAGE
+   LDX   1,S
+   LDU   #$A000
+   BSR   LOAD
+   BSR   PUTSTR
+   FCC   /done/
+   FCB   13,10,13,10+128
+   PULS  A,X,U,PC
+PRINTFN
+   PSHS  D,X,U
+   LDA   #8
+   LDB   1,X
+   CMPB  #':
+   BNE   PRINTFN1
+   ADDA  #2
+PRINTFN1
+   LEAU  A,X
+PRINTFN2
+   DECA
+   BMI   PRINTFN3
+   LDB   A,X
+   CMPB  #32
+   BEQ   PRINTFN2
+   INCA
+   BSR   PRINTFN4
+PRINTFN3
+   LEAX  ,U
+   LDD   #3*256+'.
+   JSR   PUTCHAR
+   BSR   PRINTFN4
+   PULS  D,X,U,PC
+PRINTFN4
+   LDB   ,X+
+   JSR   PUTCHAR
+   DECA
+   BNE   PRINTFN4
+   RTS
+*--------------------------------------*|*
+  * Module de chargement pour un fichier *
+  * Entrees:                             *
+  * A = BANK                             *
+  * X = Pointeur sur nom de fichier      *
+  * U = Adresse d'implantation           *
+  *--------------------------------------*
+LOAD
+   PSHS  D,X,U,DP
+   STA   LGA5     ; set bank
+   PSHS  A        ; set BANK cpt
+   SETDP $60
+   LDD   #$6000
+   TFR   A,DP
+   STB   $6049
+   LDA   1,X
+   CMPA  #':
+   BNE   LOAD00
+   LDA   ,X++
+   SUBA  #'0
+   STA   $6049
+LOAD00
+   LDA   #$02     A=2, B=$00
+   STB   $604E    Efface erreur
+   STD   $60EB    Type de fichier
+   STX   $60E7    Nom du fichier
+   STU   $60F1    Adr d'implantation
+* Chargement de la FAT
+   LDX   #BUF
+   STX   $60E9
+   LDX   #FAT
+   STX   $60ED
+   JSR   $E00D    Charge la FAT
+   BCS   ERRIO    Si "I/O Error"
+* Recherche du fichier
+   LDA   #1       | Initialise
+   STA   $60F0    | en LOAD
+   JSR   $E010    Recherche fichier
+   TST   $60F9    | Si $60F9 = 0,
+   BEQ   ERRNF    | fich non trouve'
+* Convertit numero de bloc
+LOAD0
+   JSR   $E01F    Convertit bloc
+   STB   $604B    Initialise piste
+   LDX   $60ED    Pointeur sur FAT
+   LDB   $60F6    Bloc courant
+   INCB           | Bloc
+   LDB   B,X      | suivant
+   STB   $60F6    Sauve le bloc
+   CMPB  #$C0     | Si dernier bloc,
+   BHI   LOAD1    | recupere taille
+   LDB   #$08     8 secteurs a charg
+LOAD1
+   ANDB  #$0F     Isole taille bloc
+   STA   $604C    Sauve premier bloc
+   ADDB  $604C    Ajoute depart bloc
+   DECB           Ajuste dern bloc
+   STB   $60F3    Sauve dernier bloc
+* Charge les secteurs
+LOAD2
+   JSR   $E82A    Charge le secteur
+   BCS   ERRIO    Si "I/O Error"
+   LDA   $604C    | Si secteur pas
+   CMPA  $60F3    | secteur maximum,
+   BNE   LOAD3    | passe
+   LDA   $60F6    | Si dernier
+   CMPA  #$C0     | secteur du
+   BHI   LOAD4    | fichier, sort
+   BSR   TFR      Transfere donnees
+   BRA   LOAD0    Bloc suivant
+LOAD3
+   BSR   TFR      Transfere donnees
+   INC   $604C    Secteur + 1
+   BRA   LOAD2    Secteur suivant
+* Chargement dernier secteur et sortie
+LOAD4
+   LDD   $60F7    Taille dern sect
+   BEQ   LOAD5    Si 0, sort
+   BSR   TFR0     Transfere donnees
+LOAD5
+   CLRA           efface carry
+LOAD6
+   LDD   ,S+      ; fixe cpt BANK
+   STB   LGA5     ; restore init BANK
+   PULS  D,X,U,DP,PC
+ERRIO
+   JSR   PUTSTR
+   FCB   13,10
+   FCC   /IO ERROR/
+   FCB   7+128
+ERRLOOP
+   BRA   ERRLOOP
+ERRNF
+   JSR   PUTSTR
+   FCB   13,10
+   FCC   /FILE NOT FOUND/
+   FCB   7+128
+   BRA   ERRLOOP
+ERROM
+   LEAS  2,S
+   JSR   PUTSTR
+   FCB   13,10
+   FCC   /OUT OF MEMORY/
+   FCB   7+128
+   BRA   ERRLOOP
+* Transfert des donnees
+TFR
+   LDB   $6058   | Ajuste taille
+   COMB          | maximum du
+   ORB   #$80    | secteur
+TFR0
+   LDX   $60F1   Recupere ptr mem
+   LEAU  ,X
+   ABX
+   CMPX  #$E000
+   LEAX  ,U
+   LDU   $604F   Ptr buffer secteur
+   BCC   TFRslow
+TFRfast
+   LDA   ,U+     |
+   STA   ,X+     | Transfere
+   DECB          | les donnees
+   BNE   TFRfast |
+TFR1
+   STX   $60F1   Sauve implantation
+   RTS
+TFRslow
+   LDA   ,U+     |
+   STA   ,X+     | Transfere
+   CMPX  #$E000
+   BEQ   TFRslow2
+   DECB          | les donnees
+   BNE   TFRslow |
+   BRA   TFR1
+TFRslow2
+   LDX   #$A000
+   LDA   3,S
+   INCA
+   CMPA  LAST_PAGE
+   BHI   ERROM
+   STA   3,S
+   STA   LGA5
+   DECB          | les donnees
+   BNE   TFRfast
+   BRA   TFR1
+
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
+   SETDP PAGE0
 
 FETCH_INSTRUCTION MACRO
    IFNE  TRACE
@@ -315,7 +524,7 @@ getAddrMapped
 * updates page when neeeded
 * D=high bytes of the 24bits address
 updatePage
-   ANDB  #$c0        ; just keep the 2 top bits
+   ANDB  #$C0        ; just keep the 2 top bits
    CMPD  #page       ; compare with current page index
 page equ *-2         ; page index (dynamic code)
    BEQ   donePage    ; same => just return
@@ -323,13 +532,12 @@ page equ *-2         ; page index (dynamic code)
    LSLB              ; compute the proper memory bank
    ROLA
    LSLB
-   ROLA '
-* map proper bank onto $A000...$DFFF space
-* A=bank number
-chgBank
+   ROLA
+* map proper BANk onto $A000...$DFFF space
+* A=BANk number
+chgBANK
    ADDA  #FIRST_PAGE
-   STA   BANK
-        ; need to check, might use PIA instead
+   STA   LGA5        ; need to check, might use PIA instead
 donePage
    RTS               ; done
 
@@ -350,7 +558,7 @@ chkPC
    LDD   <PC_PG      ; load PC page
    ADDD  #$40        ; adds 16kb
    STD   <PC_PG      ; update PC page
-   BSR   updatePage  ; update bank
+   BSR   updatePage  ; update BANk
    LDY   #$A000      ; go to start of page
    PULS  B           ; restore opcode
 decode
@@ -417,7 +625,7 @@ opNOP
 opPUSHSP
    LDD   #HOST_SPACE ; stack address is $01FF:9xxx
    LEAX  ,U          ; this should be mapped to
-   PSHU  D,X         ; bank 0, $Dxxx
+   PSHU  D,X         ; BANk 0, $Dxxx
    BRA   fetch
 
 opPUSHSPADD
@@ -427,7 +635,7 @@ opPUSHSPADD
    LEAX  D,U
    STX   2,U
    LDD   #HOST_SPACE ; stack address is $01FF:9xxx
-   STD   ,U          ; bank 0, $Dxxx
+   STD   ,U          ; BANk 0, $Dxxx
    JMP   <fetch
 
 ***************************************
@@ -813,7 +1021,7 @@ outXpos
 
 opSTOREH
    JSR   <getAddr    ; stores 16 bits
-   LDD   2,U
+   LDD   6,U
    STD   ,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC
@@ -1100,11 +1308,13 @@ opASHIFTRIGHT8
 opASHIFTRIGHT16
    LSR   -1,U
    BCC   opASHIFTRIGHT32
-   LDB   ,U
-   SEX
-   TFR   A,B
-   STD   ,U
+   LDX   #0
+   LDD   ,U
    STD   2,U
+   BPL   opASHIFTRIGHT16x
+   LDX   #-1
+opASHIFTRIGHT16x
+   STX   ,U
 opASHIFTRIGHT32
    JMP   <fetch
 
@@ -1524,15 +1734,17 @@ asmTbl
 (info)
    ENDC
 
-   ORG   $A000-STACK_SIZE
-   RMB   STACK_SIZE,0
+FAT
+   RMB   256
+BUF
+   RMB   256
 
 ***************************************
 * Hello world example
 ***************************************
-   ORG   $A000
+   * ORG   $A000
 
-   INCDAT dhryston.bin
+* INCDAT dhryston.bin
 
    IFNE  0
 * https://github.com/tobyjaffey/libzpu/blob/master/zpusim-mini/zpusim-mini.c
