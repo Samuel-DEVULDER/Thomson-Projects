@@ -44,7 +44,7 @@ $(SAPFS):
 fill_sapdir: compile
 	test -d build/sapdir || mkdir -p build/sapdir
 	-rm *.fd *.FD
-	for e in ASM BIN; do \
+	for e in ASM BIN bin; do \
 		cp build/*.$$e build/sapdir; \
 	done
 
