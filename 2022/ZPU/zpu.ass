@@ -4,7 +4,7 @@
 FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 SAFE        SET   0           ; force long addressing for long ops (slower)
 TRACE       SET   0           ; traces executed instructions
-LPR         SET   1           ; also output result to printer on parallel port
+LPR         SET   0           ; also output result to printer on parallel port
 CYCLE_TIMER SET   0           ; timer based on cycle or rtc ?
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
@@ -1953,8 +1953,9 @@ asmTbl
 
 FILENAME
    FCC   /0:/
-   FCC   /dhryston/
+   * FCC   /dhryston/
    * FCC   /test    /
+   FCC   /test2   /
    * FCC   /a       /
    FCC   /bin/
    FCB   0
