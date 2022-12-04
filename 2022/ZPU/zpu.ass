@@ -57,6 +57,16 @@ main
    STA   >$6081      ; direct
    STA   >LGA7       ; RAM
 
+   LDA   >$E000      ; $E00 sentinel
+   STA   <romSentinel+1
+   BGE   okSentinel
+   JSR   PUTSTR
+   FCC   /ERROR $E000</
+   FCB   128+'0
+   SWI
+   BRA   *
+okSentinel
+
    BSR   INITLPR
    BSR   INITMEMORY
 
@@ -562,9 +572,22 @@ FETCH_INSTRUCTION MACRO
    LDB   ,Y+         ; fetch next instruction code
    ENDM
 
+* loads a 7 bit immediate value
+* B=xxxxxxx0 (value*2)
+opIM
+   ASRB              ; left align signed value
+   SEX               ; [2] extends sign to A ($00 or $FF)
+   PSHU  D           ; [7] push lower word
+   STA   ,-U         ; [6] push high byte (sign)
+   STA   ,-U         ; [6] push high byte (sign)
+   FETCH_INSTRUCTION
+   BPL   chkPC       ; next is opIM ? no ==> process next
+   * BRA   opIM_nxt        instruction (B already fetched)
+
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
 opIM_nxt
+   LSLB
    LSR   ,U          ; rotate TOS 7 bits left and add B/2 at the bottom
    LDA   1,U
    RORA
@@ -577,24 +600,7 @@ opIM_nxt
    RORB              ; push bit back to value
    STD   2,U         ; write lower word
    FETCH_INSTRUCTION
-   BMI   chkPC       ; opIM? yes => just increment PC
-   LDA   #$81        ; no => disable hook ($81=CMPA)
-   STA   <opIM       ; (write CMPA as the first instructon of opIM)
-   BRA   chkPC       ; next instruction (B already fetched)
-
-* loads a 7 bit immediate value
-* B=xxxxxxx0 (value*2)
-opIM
-   BRN   opIM_nxt    ; hook to go to continued version (dynamic code)
-   ASRB              ; left align signed value
-   SEX               ; [2] extends sign to A ($00 or $FF)
-   PSHU  D           ; [7] push lower word
-   STA   ,-U         ; [6] push high byte (sign)
-   STA   ,-U         ; [6] push high byte (sign)
-   FETCH_INSTRUCTION
-   BPL   chkPC       ; opIM? no => no change in hook. just update the PC reg.
-   LDA   #$20        ; yes => mak hook go to opIM_nxt ($20=BRA)
-   STA   <opIM       ; (write a BRA as the first instructio, of opIM)
+   BMI   opIM_nxt    ; opIM? yes => just increment PC
    BRA   chkPC       ; next instruction (B already fetched)
 
 * SAFE version of getAddr for long values
@@ -650,11 +656,15 @@ updatePC_D
 
 * fetches and execute an instruction
 fetch
+opNOP
    FETCH_INSTRUCTION
 chkPC
    IFNE  CYCLE_TIMER
    JSR   TIMERINTER
    ENDC
+romSentinel
+   CMPB  #$4D        ; speed up: if next byte is different
+   BNE   decode      ; from the one on $E000 we are safe to decode
    CMPY  #$E000      ; check page change
    BLO   decode      ; no => just decode inwtruction
    PSHS  B           ; preserve opcode
@@ -725,10 +735,10 @@ opADDSP_x
 opUNKNOWN
 
 opBREAKPT
+   LDA   STATUS
+   ORA   #%11011111  ; disable timer interrupt
+   STA   STATUS
    SWI               ; back to monitor
-
-opNOP
-   BRA   fetch       ; do nothing
 
 * Pushes stack address
 opPUSHSP
@@ -1955,9 +1965,9 @@ asmTbl
 
 FILENAME
    FCC   /0:/
-   * FCC   /dhryston/
+   FCC   /dhryston/
    * FCC   /test    /
-   FCC   /test2   /
+   * FCC   /test2   /
    * FCC   /a       /
    FCC   /bin/
    FCB   0
