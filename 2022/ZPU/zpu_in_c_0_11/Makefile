@@ -6,7 +6,7 @@
 CC=gcc
 
 # Compiler flags. Compile only, debug info, all warnings, optimize for size
-CFLAGS=-c -g -Wall -O3 -std=c99 -I.
+CFLAGS=-c -g -Wall -Os -std=c99 -I.
 
 #Linker flags. phi platform, shrink(relax) immediates, remove unwanted sections
 LDFLAGS= -static

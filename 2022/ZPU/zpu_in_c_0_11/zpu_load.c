@@ -22,10 +22,11 @@ void zpu_load(char *fileName)
 		perror("");
 		exit(0);
 	}
+
 	for (address = 0; address < memorySize(); address++)
 	{
 		bytesRead = fread(&inByte, 1, 1, f);
-		if (ferror(f))
+		if (bytesRead!=1 && ferror(f))
 		{
 			printf("Error reading RAM image from %s\n", fileName);
 			perror("");

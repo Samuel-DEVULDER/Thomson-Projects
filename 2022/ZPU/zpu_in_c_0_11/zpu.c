@@ -25,7 +25,7 @@
 #include "zpu_syscall.h"
 
 // Uncomment this for a simple single step debug functionality.
-#define SINGLE_STEP
+// #define SINGLE_STEP
 
 uint32_t pc;
 static uint32_t sp;
@@ -91,7 +91,9 @@ long long cycle = 0;
 
 void zpu_execute()
 {
+#ifdef SINGLE_STEP
     static int step = 0;
+#endif
     // Due to the way the VM is optimized here it is required to have
     // a free space at the bottom of the stack, else address zero may get written to
     // during a push on an emty stack.
