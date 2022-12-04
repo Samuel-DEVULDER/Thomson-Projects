@@ -1,13 +1,14 @@
 (main)zpu
    ORG   $7000
 
-FIRST_PAGE  SET   2           ; address 0 is mapped to that pae
+FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 SAFE        SET   0           ; force long addressing for long ops (slower)
 TRACE       SET   0           ; traces executed instructions
-LPR         SET   0           ; also output result to printer on parallel port
+LPR         SET   1           ; also output result to printer on parallel port
+CYCLE_TIMER SET   0           ; timer based on cycle or rtc ?
 STACK_SIZE  SET   2048        ; size of stack
-HOST_SPACE  SET   $01FF       ; high word of unmapped zone
-IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related
+IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
+HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
 
 ***************************************
 * System equates
@@ -60,7 +61,7 @@ main
    BSR   INITMEMORY
 
    LDX   #FILENAME
-   jSR   LOADFILE
+   JSR   LOADFILE
 
    JSR   INITTIMER
 
@@ -84,13 +85,6 @@ INITLPR
    ELSE
    RTS
    ENDC
-
-FILENAME
-   FCC   /0:/
-   FCC   /dhryston/
-   * FCC   /test    /
-   FCC   /bin/
-   FCB   0
 
 ***************************************
 * MEMORY
@@ -226,6 +220,9 @@ HEX0
    EXG   A,B
 PUTCHAR
    IFNE  LPR
+   IFEQ  TRACE
+   JSR   PUTC
+   ENDC
    JMP   RSCO
    ELSE
    JMP   PUTC              ; prints a character (in B)
@@ -495,37 +492,46 @@ TIMER_CTR
    FDB   0
    FDB   0
    FDB   0
-TIMER_MHZ
-   FDB   0        ; board frequecy (32 bits)
-   FDB   1
 
 INITTIMER
    PSHS  D,X      ; init timer
    ORCC  #$50
    LDD   #0
    LDX   #0
-   LDU   #TIMER_MHZ
+   LDU   #TIMER_CTR+8
    PSHU  D,X
    PSHU  D,X
    PSHU  D,X
    PSHU  D,X
+   IFEQ  CYCLE_TIMER
    LDX   #TIMERINTER
    STX   TIMEPT
    LDA   STATUS
    ORA   #%00100000
    STA   STATUS
+   ENDC
    ANDCC #$FF-$50
    PULS  D,X,PC
 
 * 100 ms = 100 000 us
 *        = $1 86A0
+   IFNE  CYCLE_TIMER
+TINC2 SET 0
+TINC1 SET 1
+   ELSE
+TINC2 SET $1
+TINC1 SET $86A0
+   ENDC
 TIMERINTER
+   IFNE  CYCLE_TIMER
+   PSHS  D,X
+   ENDC
    LDX   #TIMER_CTR+4
-   LDD   #$86A0
+   LDD   #TINC1
    ADDD  2,X
    STD   2,X
    LDD   ,X
-   ADCB  #$1
+   ADCB  #TINC2
    ADCA  #0
    STD   ,X
    BCC   TIMERINTERX
@@ -539,7 +545,11 @@ TIMERINTER
    ADCA  #0
    STD   -4,X
 TIMERINTERX
+   IFNE  CYCLE_TIMER
+   PULS  D,X,PC
+   ELSE
    JMP   KBIN
+   ENDC
 
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
@@ -577,10 +587,10 @@ opIM_nxt
 opIM
    BRN   opIM_nxt    ; hook to go to continued version (dynamic code)
    ASRB              ; left align signed value
-   SEX               ; extends sign to A ($00 or $FF)
-   PSHU  D           ; push lower word
-   STA   ,-U         ; push high byte (sign)
-   STA   ,-U         ; push high byte (sign)
+   SEX               ; [2] extends sign to A ($00 or $FF)
+   PSHU  D           ; [7] push lower word
+   STA   ,-U         ; [6] push high byte (sign)
+   STA   ,-U         ; [6] push high byte (sign)
    FETCH_INSTRUCTION
    BPL   chkPC       ; opIM? no => no change in hook. just update the PC reg.
    LDA   #$20        ; yes => mak hook go to opIM_nxt ($20=BRA)
@@ -640,6 +650,9 @@ updatePC_D
 fetch
    FETCH_INSTRUCTION
 chkPC
+   IFNE  CYCLE_TIMER
+   JSR   TIMERINTER
+   ENDC
    CMPY  #$E000      ; check page change
    BLO   decode      ; no => just decode inwtruction
    PSHS  B           ; preserve opcode
@@ -917,16 +930,16 @@ UDIV32
    STD   -2,U
    LDX   #32
 UDIV32_1
-   ROR   3,U            ; N = N<<1
-   ROR   2,U
-   ROR   1,U
-   ROR   ,U             ; carry = N(i)
+   ROL   3,U            ; N = N<<1
+   ROL   2,U
+   ROL   1,U
+   ROL   ,U             ; carry = N(i)
    LDD   -2,U
-   RORB                 ; inject N(i)
-   RORA
+   ROLB                 ; inject N(i)
+   ROLA
    STD   -2,U
-   ROR   -3,U
-   ROR   -4,U           ; R = {R<<1 | N(i)}
+   ROL   -3,U
+   ROL   -4,U           ; R = {R<<1 | N(i)}
    SUBD  6,U            ; R-D (low)
    STD   -6,U           ; save temp
    LDD   -4,U
@@ -939,10 +952,10 @@ UDIV32_1
 UDIV32_2
    LEAX  -1,X
    BNE   UDIV32_1
-   ROR   3,U            ; inject last comparison bit
-   ROR   2,U
-   ROR   1,U
-   ROR   ,U
+   ROL   3,U            ; inject last comparison bit
+   ROL   2,U
+   ROL   1,U
+   ROL   ,U
    RTS
 
 ***************************************
@@ -1063,6 +1076,29 @@ opSWAP
  * UART[0] & 0x100 == 0 si busy (carractere a lire ?)
  * UART[0] = C ecriture
  * UART[1] = carractere lue | 0x100
+
+   IFEQ  CYCLE_TIMER
+timer_latch_phi
+* phi expects running at 64Mhz, so multiply our microsecond timer by 64
+   LDB   3,U
+   CMPB  #$14        ; phi ?
+   BNE   timer_latch_phi3
+   LDB   #6
+timer_latch_phi2
+   LSL   sampledTMR+7
+   ROL   sampledTMR+6
+   ROL   sampledTMR+5
+   ROL   sampledTMR+4
+   ROL   sampledTMR+3
+   ROL   sampledTMR+2
+   ROL   sampledTMR+1
+   ROL   sampledTMR
+   DECB
+   BNE   timer_latch_phi2
+timer_latch_phi3
+   JMP   opSTOREIO_end
+   ENDC
+
 timer_high
    LDX   sampledTMR     ; load high word of latched timer
    LDD   sampledTMR+2
@@ -1072,8 +1108,12 @@ timer_low
    LDD   sampledTMR+6
    BRA   opLOADIO_end
 timer_mhz
-   LDX   #0             ; return Mhz (1 for Thomson)
+   LDX   #0             ; return Mhz (1 for Thomson rtc)
+   IFNE  CYCLE_TIMER
+   LDD   #64
+   ELSE
    LDD   #1
+   ENDC
    BRA   opLOADIO_end
 
 uart_read
@@ -1083,18 +1123,18 @@ uart_read
    BNE   opLOADIO_end
    CLRA
    BRA   opLOADIO_end
-
-
 uart_write
    LDB   7,U         ; prints a character
    JSR   PUTC
    IFNE  LPR
+   IFEQ  TRACE
    JSR   RSCO
+   ENDC
    ENDC
    BRA   opSTOREIO_end
 
 timer_latch
-   LDD   6,U
+   LDB   7,U
    BITB  #2
    BEQ   opSTOREIO_end
    PSHS  U,CC        ; latches the current timer value
@@ -1107,7 +1147,11 @@ timer_latch
    STD   sampledTMR+4
    STX   sampledTMR+6
    PULS  U,CC
+   IFEQ  CYCLE_TIMER
+   BRA   timer_latch_phi
+   ELSE
    BRA   opSTOREIO_end
+   ENDC
 
 opLOADIO
    LDX   #0
@@ -1118,18 +1162,18 @@ opLOADIO
    CMPD  #$0010
    BEQ   uart_read
    CMPD  #$0014
-   BEQ   timer_high
-   CMPD  #$0018
    BEQ   timer_low
+   CMPD  #$0018
+   BEQ   timer_high
 * soft board
    CMPD  #$0024
    BEQ   uart_rdy
    CMPD  #$0028
    BEQ   uart_read
+   CMPD  #$0100
+   BEQ   timer_low
    CMPD  #$0104
    BEQ   timer_high
-   CMPD  #$0108
-   BEQ   timer_low
    CMPD  #$0200
    BEQ   timer_mhz
 * default
@@ -1186,13 +1230,10 @@ opPOPSP
 
 opLOADH
    JSR   <getAddr    ; loads 16 bits
-   LDX   ,X
-outX
+   LDD   ,X
+outUnsigned
+   STD   2,U
    LDD   #0
-   STX   2,U
-   BPL   outXpos
-   LDD   #-1
-outXpos
    STD   ,U
    JMP   <updatePC
 
@@ -1205,10 +1246,9 @@ opSTOREH
 
 opLOADB
    JSR   <getAddr    ; loads 8 bits
+   CLRA
    LDB   ,X
-   LDX   #0
-   LEAX  B,X         ; sign extend
-   BRA   outX
+   BRA   outUnsigned
 
 opSTOREB
    JSR   <getAddr    ; stores 8 bits
@@ -1225,9 +1265,9 @@ opLESSTHAN
    LDD   2,U
    SUBD  6,U
    LDD   ,U
-   LEAU  4,U
-   SBCA  1,U
-   SBCB  ,U
+   LEAU  4,U         ; fixup stack
+   SBCB  1,U
+   SBCA  ,U
    BLT   outTRUE
    BRA   outFALSE
 
@@ -1303,8 +1343,8 @@ opNEQ
 
 LSHIFTRIGHT MACRO
    LSRD
-   ROR   1,U
    ROR   2,U
+   ROR   3,U
    ENDM
 
 opLSHIFTRIGHT
@@ -1451,8 +1491,8 @@ opASHIFTLEFT_32
 
 ASHIFTRIGHT MACRO
    ASRD
-   ROR   1,U
    ROR   2,U
+   ROR   3,U
    ENDM
 
 opASHIFTRIGHT
@@ -1502,7 +1542,7 @@ opASHIFTRIGHT32
 opEMULATE_x
    LSLB              ; B=1xxx xx00
    LSLB              ; B=xxxx x000
-   BEQ   opASHIFTRIGHT32
+   BEQ   opASHIFTRIGHT32 ; fetch
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
    LSLD              ; D=0000 00xx xxx0 0000=x*32
@@ -1910,6 +1950,14 @@ asmTbl
 
 (info)
    ENDC
+
+FILENAME
+   FCC   /0:/
+   FCC   /dhryston/
+   * FCC   /test    /
+   * FCC   /a       /
+   FCC   /bin/
+   FCB   0
 
 FAT
    RMB   256
