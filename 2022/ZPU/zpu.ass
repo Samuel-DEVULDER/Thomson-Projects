@@ -607,9 +607,11 @@ getAddrL
 
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
-   LDD   ,U
-   SUBD  #HOST_SPACE
-   BNE   getAddrMapped
+   * LDD   ,U
+   * SUBD  #HOST_SPACE
+   * BNE   getAddrMapped
+   LDB   ,U          ; speedup: if nul then adress is mapped
+   BEQ   getAddrMapped
    LDX   2,U
    RTS
 getAddrMapped
