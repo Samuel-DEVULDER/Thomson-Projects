@@ -42,9 +42,6 @@ LSLD  MACRO
    ROLA
    ENDM
 
-STACK
-   RMB   64
-
 main
    LEAS  main,PCR
 
