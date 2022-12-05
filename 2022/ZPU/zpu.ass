@@ -706,12 +706,11 @@ sampledTMR
 * B=0xxxxx00 (4*x)
 opSTORESP_x
    LEAX  B,U         ; X point to dest (bit7 already 0)
-   LDD   ,U          ; load high word
+   PULU  D           ; load high word
    STD   ,X          ; store high word
-   LDD   2,U         ; load low word
+   PULU  D           ; load low word
    STD   2,X         ; store low word
-   LEAU  4,U         ; adjust the stack
-   BRA   fetch       ; next instructio,
+   BRA   fetch       ; next instruction
 
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
@@ -758,7 +757,19 @@ opPUSHSPADD
 ***************************************
 
 opADD
-   LEAU  4,U         ; add TOS with NOS
+*    PULU  D           ; adds TOS with NOS (43 avg cycles)
+*    ADDD  2,U
+*    STD   2,U
+*    PULU  D
+*    ADDD  2,U
+*    STD   2,U
+*    BCC   opADD1
+*    INC   1,U
+*    BNE   opADD1
+*    INC   ,U
+* opADD1
+*    JMP   <fetch
+   LEAU  4,U         ; adds TOS with NOS (44 cycles)
    LDD   2,U         ; load lower word of NOS
    ADDD  -2,U        ; adds lower word of TOS
    STD   2,U         ; store result to NOS lower part
@@ -973,8 +984,10 @@ UDIV32_2
 opAND
    LDD   ,U          ; bitwise "and" of TOS with NOS
    LEAU  4,U
+   BEQ   opAND1
    ANDA  ,U
    ANDB  1,U
+opAND1
    STD   ,U
    LDD   -2,U
    ANDA  2,U
@@ -985,9 +998,11 @@ opAND
 opOR
    LDD   ,U          ; bitwise "or" of TOS with NOS
    LEAU  4,U
+   BEQ   opOR1
    ORA   ,U
    ORB   1,U
    STD   ,U
+opOR1
    LDD   -2,U
    ORA   2,U
    ORB   3,U
@@ -1232,8 +1247,9 @@ opSTORE
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
 opPOPSP
-   PULU  D,X         ; change SP with the value of TOS
-   LEAU  ,X          ; presumably we just keep the lower part of the address
+   * PULU  D,X         ; change SP with the value of TOS
+   * LEAU  ,X          ; presumably we just keep the lower part of the address
+   LDU   2,U
    JMP   <fetch
 
 opLOADH
