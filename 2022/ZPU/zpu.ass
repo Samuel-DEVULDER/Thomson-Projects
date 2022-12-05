@@ -5,7 +5,7 @@ FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 SAFE        SET   0           ; force long addressing for long ops (slower)
 TRACE       SET   0           ; traces executed instructions
 LPR         SET   0           ; also output result to printer on parallel port
-CYCLE_TIMER SET   0           ; timer based on cycle or rtc ?
+CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) ?
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
 HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
@@ -13,11 +13,10 @@ HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is belo
 ***************************************
 * System equates
 ***************************************
-PUTC  EQU   $E803
-GETC  EQU   $E806
-RSOPC EQU   $602B
-RSCO  EQU   $E812
-PRC   EQU   $E7C3
+PUTC  EQU   $E803             ; prints a char
+GETC  EQU   $E806             ; reads the keybord
+RSOPC EQU   $602B             ; serial/parallel command
+RSCO  EQU   $E812             ; serial/parallel execute
 LGA5  EQU   $E7E5             ; reg for memory bank at $A000-$DFFF
 LGA6  EQU   $E7E6             ; reg for memory bank at $0000-$3FFF
 LGA7  EQU   $E7E7             ; Gate Array "mode page"
