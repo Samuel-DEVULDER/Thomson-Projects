@@ -735,7 +735,7 @@ opUNKNOWN
 
 opBREAKPT
    LDA   STATUS
-   ORA   #%11011111  ; disable timer interrupt
+   ANDA  #%11011111  ; disable timer interrupt
    STA   STATUS
    SWI               ; back to monitor
 
@@ -1968,6 +1968,7 @@ FILENAME
    * FCC   /test    /
    * FCC   /test2   /
    * FCC   /a       /
+   * FCC   /eliza   /
    FCC   /bin/
    FCB   0
 
