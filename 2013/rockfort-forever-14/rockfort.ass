@@ -16,16 +16,18 @@
 *       org    $9000-$A5B
 *      org    $7000-$A4B ; TO7
        org    $9000-$A4B
+       org	$8000
+*	org	$8000-$B9E
 
 DBG    set    0    ; debug
 
-COLBLU set    0    ; etoiles bleues	
+COLBLU set    1    ; etoiles bleues	
 W8VBL  set    0    ; attente VBL
 DPCODE set    1    ; utilise DP dans player
  
 WIDTH  set    220  ; jusqu'a 240
 HEIGHT set    128  ; jusqu'a 200
-NPTS   set    128  ; nb de pts
+NPTS   set    96   ; nb de pts
 
 ***************************************
 * boucle:
@@ -89,6 +91,7 @@ b3     sta    ,x+
 ***************************************
 * X contient deja la bonne valeur
 *      ldx    #scroll
+SCR_SZ set    ((33*2)+3)*16+1
 b0     ldd    #$6410
 b1     std    ,x++
        lda    #$69
@@ -104,17 +107,16 @@ b1     std    ,x++
        std    ,x++
        ldd    #$2839
        std    ,x+	; <=trop fort! le ",x+"
-       cmpx   #scroll+((33*2)+3)*16
+       cmpx   #scroll+SCR_SZ-1
        blo    b0 
-       
 ***************************************
 * Couleur dans le scrolleur
 ***************************************
-* ici A=40
+       lsla		; A=80
        clrb
 *      ldd    #$7840
 *      ldd    #$5020
-       ldx    #$4000+40*0
+       ldx    #$4000
        dec    <PRC
 b4     pshs   d
        lsrb
@@ -128,7 +130,8 @@ b4     pshs   d
        WHILE  ne
 b5     puls   d
        addb   #%00001000
-       bne    b4
+       cmpx   #$5F40
+       blo    b4
        inc    <PRC
  
 ***************************************
@@ -179,6 +182,20 @@ bouc   set    *
        endc
        ldx    #$4000+19+40*8
        jsr    scroll
+
+       ifne   1
+       ldx    #$4000+19+40*8*21
+       jsr    scroll
+       else
+       ldu   #$4000+40*(8+2)+4
+       REPEAT
+       pulu  d,x,y
+       leau  40*8*20,u
+       pshu  d,x,y
+       leau  6-40*8*20,u
+       cmpu  #$4000+40*(8+2)+4+92*6
+       WHILE ne
+       endc
 ***************************************
 * deplace et affiche tous les pixels
 ***************************************
@@ -280,7 +297,7 @@ rnd	ldd	#$03F9
 * masque point
 ***************************************
 OFF_X	set	(320-WIDTH)/16
-OFF_Y	set	(200-HEIGHT)/2
+OFF_Y	set	(200-HEIGHT-8)/2
 
 u_plt	ldd	,y
 	ldx	#m_plt+128
@@ -377,7 +394,7 @@ R_\0	fcb	\2	; max
 	ifeq    COLBLU
 TRJ	fcb	82	; Vie particule	(synchronise avec zik)
 	else
-TRJ	fcb	96	; Vie particule	(synchronise avec zik)
+TRJ	fcb	118	; 96 Vie particule	(synchronise avec zik)
 	endc
 PX	fcb	WIDTH/2	; position X
 	fcb	WIDTH-1	; max X
@@ -394,12 +411,89 @@ AY	fcb	0
 	RND	AY,-5,10
 		
 	includ	PLAY.ASM
-
+	
 Song	set	*
 	includ  SONG.ASM
-		
+
 * constantes pour l'init ecran
-dat_scr	fcb	$14	; cursor off
+dat_scr
+	ifne	1
+       fcb    $1b,$40,$1b,$50,$1b,$60
+       fcb    $14,$0c,$0e,$20,$37,$31
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$62,$6b,$20
+       fcb    $20,$29,$68,$28,$30,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $28,$24,$34,$26,$20,$20
+       fcb    $3a,$30,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$60
+       fcb    $65,$20,$20,$6a,$20,$65
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$36,$22,$34
+       fcb    $20,$0a,$0a,$0a,$0a,$0a
+       fcb    $0a,$0a,$0a,$0a,$0a,$0a
+       fcb    $0a,$0a,$0a,$0a,$0a,$20
+       fcb    $37,$31,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$62
+       fcb    $6b,$20,$20,$29,$68,$28
+       fcb    $30,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$28,$24,$34,$26
+       fcb    $20,$20,$3a,$30,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$60,$65,$20,$20,$6a
+       fcb    $20,$65,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$36
+       fcb    $22,$34,$0f,$1f,$40,$4c
+       fcb    $77,$77,$77,$2e,$70,$75
+       fcb    $6c,$73,$64,$65,$6d,$6f
+       fcb    $73,$2e,$63,$6f,$6d,$1f
+       fcb    $42,$45,$1b,$4d,$45,$4c
+       fcb    $56,$49,$53,$20,$4c,$49
+       fcb    $56,$45,$53,$21,$20,$3e
+       fcb    $72,$6f,$63,$6b,$3c,$20
+       fcb    $46,$6f,$72,$65,$76,$65
+       fcb    $72,$20,$31,$34,$20,$1f
+       fcb    $56,$45,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$31,$30
+       fcb    $32,$31,$62
+	fcb	0
+	else
+	fcb	$14	; cursor off
 	fcb	$1B,$60	; tour=0
 	fcb	$1B,$50	; fond=0
 	fcb	12	; cls
@@ -428,17 +522,21 @@ dat_scr	fcb	$14	; cursor off
 	fcc     ,:,
 	fcb     10,13
 	fcc     ,/ >,
-	
 	fcb	$1F,$40,$40+12
 	fcc     /www.pulsdemos.com/
 	
 	fcb	0	
+	endc
 
+****************************************
+* /!\ important m_plt juste apres le
+*     texte
+****************************************	
 m_plt   set     *
 *       RPT32   M_PLT
         rmb     256
 
-scroll	rmb	((33*2)+3)*16+1
+scroll	rmb	SCR_SZ
 
         ifeq    COLBLU
 * un nb multiple de 7
@@ -475,29 +573,14 @@ CRB    equ    $E7CF  ; ctrl port B
     
 * code:
 * 0xxx xxxx Note
-* 100x xxxx Duree
-* 110x xxxx ForI
-* 111x xxxx ForJ
-* 1011 xxxx staccato
-* 1010 0000 BMP
-* 1010 0001 End
-* 1010 0010 Goto
-* 1010 1xxx ForK
+* 10xx xxxx Duree
+* 1100 0000 BPM
+* 110x xxxx Stac
+* 111x xxxx Restart
 
-WITH_J set    0
-
-cGoto  equ    %10100010
-cEnd   equ    %10100001
-cBPM   equ    %10100000
-cForI  equ    %11000000
-cNxtI  equ    cForI
-       ifne   WITH_J
-cForJ  equ    %11100000
-cNxtJ  equ    cForJ
-       endc
-cForK  equ    %10101000
-cNxtK  equ    cForK
-STAC_  equ    %10110000
+cEnd   equ    %11111111
+cBPM   equ    %11000000
+STAC_  equ    %11000000
 STAC   equ    STAC_+8
     
 ***************************************
@@ -580,9 +663,9 @@ NewCmd set    *
        VAR2   ldu,Song,SongPtr
 NxtCmd ldb    ,u+     ; A = 0
        lslb
-       bcs    CmdXXX
+       bcs    CmdLen
 **************************************
-* 0xxx xxxxx HAUTEUR
+* (0)xxx xxxx 0 Note
 **************************************
        bne    FrqNZ
        ldx    TckTRef
@@ -614,78 +697,48 @@ Frq6846 stb   SndMsk
        sta    TCR
        bra    EndIntr
 **************************************
-* 0xxx xxxx Commandes
+* 1)0xx xxxx 0 Duree
 **************************************
-CmdXXX bitb   #%11000000
-       bmi    CmdFor
-       bne    CmdExtra
-**************************************
-* 100x xxxxx DUREE
-**************************************
-CmdLen ldx    #numTcks
+CmdLen bmi    CmdBPM
+       ldx    #numTcks
        lsrb
        lda    b,x
        ldb    b,x
        std    NoteMute
        bra    NxtCmd
 **************************************
-* 110x xxxxx ForI
-* 111x xxxxx ForJ
-**************************************
-CmdFor ldx    #ForDat
-       lsrb
-       ifne   WITH_J
-       bitb   #%00100000
-       beq    CmdFo2
-       leax   3,x
-       endc
-CmdFo2 andb   #%00011111
-CmdFo4 bne    CmdFo3
-       dec    ,x
-       beq    NxtCmd
-       ldu    1,x
-       bra    NxtCmd
-CmdFo3 stb    ,x
-       stu    1,x
-       bra    NxtCmd
-**************************************
-* 101x xxxx EXTRA
-**************************************
-CmdExtra  
-       lslb
-       lslb  
-       lslb          ; CC=x B=xxxx0000
-       bcs    CmdSTAC
-       beq    CmdBPM
-       ldu    #Song  ; autre chose: reset
-       bra    NxtCmd
-**************************************
-* 1011 xxxx STACCATO
-**************************************
-CmdSTAC lda   NoteMute
-       mul
-       sta    NoteMute+1
-       jmp    NxtCmd
-**************************************
-* 1010 0000 BMP
-**************************************
-CmdBPM pulu   d       ;ldd    ,u++
-       std    TckTime
-       std    TckTRef
-       jmp    NxtCmd
-ForDat fcb    0,0,0   ; I,PTRI
-       ifne   WITH_J
-       fcb    0,0,0   ; J,PTRJ
-       endc
-*      fcb    0,0,0   ; K,PTRK
-  
 * BPM = nb de noires par minute 
 * 1 noire = 32*ticks
 * 32*BPM = nb de ticks par minute
 * 60 000 000/(32*BPM) = periode du tick
 * 1 875 000/BPM = periode du tick
-
-* Speed (100x xxxx)
+**************************************
+* 11)00 0000 00 BPM
+**************************************
+CmdBPM lslb
+       bne    CmdSTAC
+       pulu   d       ;ldd    ,u++
+       std    TckTime
+       std    TckTRef
+       bra    NxtCmd
+**************************************
+* 11)0x xxxx 00 STACCATO
+**************************************
+CmdSTAC bmi   CmdEnd
+       lslb
+       lslb
+       lda    NoteMute
+       mul
+       sta    NoteMute+1
+       bra    NxtCmd
+************************************** 
+* 11)1x xxxx 00 Restart
+**************************************
+CmdEnd 
+       ldu    #Song  ; autre chose: reset
+       bra    NxtCmd
+ 
+* Speed (10xx xxxx)
 TICKsi set    %10000000
 TICKS  macro
 \1     equ    TICKsi
@@ -695,6 +748,7 @@ TICKsi set    TICKsi+1
 
 * le tick est à 1/32 de noire
 numTcks set   *
+	ifne	1
 *        TICKS %10000000,s1    ; ronde
 *        TICKS %11000000,s1d   ; .
 *        TICKS %11100000,s1dd  ; ..
@@ -721,6 +775,34 @@ numTcks set   *
 *        TICKS %00000010,s64   ; 8croc
 *        TICKS %00000011,s64d  ; .
 *        TICKS %00000001,s128  ; 16croc
+	else
+        TICKS %10000000,s1    ; ronde
+        TICKS %11000000,s1d   ; .
+        TICKS %11100000,s1dd  ; ..
+        TICKS %11110000,s1ddd ; ...
+        TICKS %01000000,s2    ; blanc
+        TICKS %01100000,s2d   ; .
+        TICKS %01110000,s2dd  ; ..
+        TICKS %01111000,s2ddd ; ...
+        TICKS %00100000,s4    ; noire
+        TICKS %00110000,s4d   ; .
+        TICKS %00111000,s4dd  ; ..
+        TICKS %00111100,s4ddd ; ...
+        TICKS %00010000,s8    ; croche
+        TICKS %00011000,s8d   ; .
+        TICKS %00011100,s8dd  ; ..
+        TICKS %00011110,s8ddd ; ...
+        TICKS %00001000,s16   ; 2croch
+        TICKS %00001100,s16d  ; .
+        TICKS %00001110,s16dd ; ..
+        TICKS %00001111,s16ddd
+        TICKS %00000100,s32   ; 4croch
+        TICKS %00000110,s32d  ; .
+        TICKS %00000111,s32dd ; ..
+        TICKS %00000010,s64   ; 8croc
+        TICKS %00000011,s64d  ; .
+        TICKS %00000001,s128  ; 16croc
+	endc
   
 * Demi periode pour l'octave 0. Echelle
 * temperee.
@@ -764,11 +846,20 @@ nB\0   equ    16*\0+12
        OCTAVE 7    
 
 (include)SONG.ASM
+
+
         fcb     cBPM,$26,$f5
-        fcb     cForI+8
+*        fcb     cForI+8
         fcb     s8,nE5,s4d,nP
-        fcb     cNxtI
-        fcb     cForI+4
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+*        fcb     cNxtI
+*        fcb     cForI+4
         fcb     s2,nE4,s8,nE5,nP,s4d
         fcb     nFs5,nP,s8,nE5,nP,s4d
         fcb     nE5,nP,s8,nE5,s4d,nP,s8
@@ -779,7 +870,37 @@ nB\0   equ    16*\0+12
         fcb     nE5,s16,nGs3,nGs2,s8,nP
         fcb     nB3,nE4,nA3,nB3,nAs3
         fcb     nE5,s4d,nB3
-        fcb     cNxtI
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+*        fcb     cNxtI
         fcb     s8,nE4,nB2,s4,nAs4,s8
         fcb     nE5,s4d,nE4,nB4,s8,nAs4
         fcb     nE5,nAs4,s2,nB4,s4,nAs4
@@ -804,11 +925,14 @@ nB\0   equ    16*\0+12
         fcb     s8,nE5,s16,nGs3,nGs2,s8
         fcb     nP,nB3,nE4,nA3,nB3,nAs3
         fcb     nE5,s4d,nB3,s8,nE4,nB2
-        fcb     cForI+2
+*        fcb     cForI+2
         fcb     s4,nAs4,s8,nE5,s4d,nE4
         fcb     nB4,s8,nAs4,nE5,nAs4,s2
         fcb     nB4
-        fcb     cNxtI
+        fcb     s4,nAs4,s8,nE5,s4d,nE4
+        fcb     nB4,s8,nAs4,nE5,nAs4,s2
+        fcb     nB4
+*        fcb     cNxtI
         fcb     s2d,nG5,s4d,nAs4,s8,nG3
         fcb     nE5,nG3,s2,nAs4,s4d,nG5
         fcb     nFs5,nA4,s8,nGs3,nE5
@@ -818,18 +942,34 @@ nB\0   equ    16*\0+12
         fcb     nE4,s4d,nB4,nA4,s8,nE5
         fcb     nB4,s1ddd,nG5,s8,nG5
         fcb     s1ddd,nFs5,s8,nFs5
-        fcb     cForI+4
+*        fcb     cForI+4
         fcb     nE3,nD4,nE4,nB3,nCs4
         fcb     nG3,nE5,nB3,s4,nA3,s8
         fcb     nE4,s4,nAs3,s8,nB3,nE5
         fcb     nB3
-        fcb     cNxtI
-        fcb     cForI+2
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+*        fcb     cNxtI
+*        fcb     cForI+2
         fcb     nA3,nG4,nFs4,nE4,nFs4
         fcb     nC4,nE5,nE4,s4,nD4,s8
         fcb     nE4,s4,nDs4,s8,nE4,nE5
         fcb     nE4
-        fcb     cNxtI
+        fcb     nA3,nG4,nFs4,nE4,nFs4
+        fcb     nC4,nE5,nE4,s4,nD4,s8
+        fcb     nE4,s4,nDs4,s8,nE4,nE5
+        fcb     nE4
+*        fcb     cNxtI
         fcb     nE3,nD4,nE4,nB3,nCs4
         fcb     nG3,nE5,nB3,s4,nA3,s8
         fcb     nE4,s4,nAs3,s8,nB3,nE5
