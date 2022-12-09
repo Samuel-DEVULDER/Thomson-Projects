@@ -10,11 +10,12 @@ endif
 
 C6809=../../c6809/c6809$(EXE)
 SAPFS=../../sapfs/sapfs$(EXE)
-EXOBIN=../../exobin/exobin$(EXE)
+EXOBIN=../../exobin/exobin.buggy$(EXE)
 
 TEODIR=../../TEO_WIN_187_BETA3_20220907/
 
-ASM=$(wildcard *.ass)
+ASM=$(wildcard *.ass.in)
+ASM:=$(ASM:%.in=%)
 BIN=$(ASM:%.ass=build/%.BIN)
 
 all: compile fill_sapdir
@@ -32,7 +33,10 @@ clean:
 	
 build/%.BIN: %.ass		
 	test -d build || mkdir -p build
-	cd build && ../$(C6809) -c -am -oOP ../$< ../$@
+	cd build && ../$(C6809) -c -am -oOP ../$< `echo ../$@ | tr a-z A-Z` 
+	
+%.ass: %.ass.in TEXTE.ASM 
+	perl -e 'while(<>) {if(/@TEXT.ASM@/) {open FILE,"TEXTE.ASM"; print <FILE>; close FILE;} else {print;}}' $< > $@
 
 build/%.EXO: build/%.BIN
 	$(EXOBIN) -x "$<"
@@ -51,7 +55,7 @@ fill_sapdir:
 	-cp build/*.ASM sapdir  2>/dev/null	
 	-cp build/*.BIN sapdir 2>/dev/null
 	-cp build/*.EXO sapdir 2>/dev/null
-	-cp bas/*.BA* sapdir 2>/dev/null
+	-cp *.BA* sapdir 2>/dev/null
 	$(SAPFS) -c $(DISK)
 	$(SAPFS) -a $(DISK) sapdir/*
 	
