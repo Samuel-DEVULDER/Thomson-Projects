@@ -250,7 +250,6 @@ static void convert(char *infile, char *outfile, int hexaddr) {
 	membuf_init(inbuf);
 	len = bin->max - bin->min;
 	membuf_append(inbuf, bin->mem + bin->min, len);
-	
 	crunch_backwards(inbuf, outbuf, options, info);
 	/*reverse_buffer(membuf_get(outbuf), membuf_memlen(outbuf));*/
 	
