@@ -258,7 +258,7 @@ static void convert(char *infile, char *outfile, int hexaddr) {
 	if(hexaddr == HEXADDR_AUTO) {
 		hexaddr = bin->min - decomp_size;
 		if(!((0x4000<=hexaddr && hexaddr+decomp_size<=0x5F40) ||
-	             (0x6100<=hexaddr && hexaddr+decomp_size<=0xE000))) 
+	             (0x6300<=hexaddr && hexaddr+decomp_size<=0xE000))) 
 		hexaddr = 0x5f40 - decomp_size;
 		while(hexaddr>=0x4000 &&
 		     ((hexaddr+0x44)>>8) != ((hexaddr + 0x89)>>8)) --hexaddr;
