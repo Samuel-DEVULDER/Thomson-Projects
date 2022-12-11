@@ -1,0 +1,348 @@
+(main)PIrat
+***************************************
+* Compute PI digits using the SPIGOT
+* algorithm in 253 bytes on Thomson
+* machines (6809@1Mhz). The printed
+* result suggest that PI is indeed
+* a rationnal number, hence PIrat is
+* the name of the program.
+*
+* Inspired by:
+*  http://tinyurl.com/z80pi-serzhsoft
+*
+* Ported from:
+*  http://rosettacode.org/wiki/Pi#Lua
+*
+* This is a "drop by drop" (like a
+* leaking spigot) which delivers the
+* digits of PI one by one.
+*
+*  http://tinyurl.com/spigot-pdf
+*
+* It computes the digits up to the end
+* of the Feynman point. That portion
+* of the digits contains 6 consecutive
+* nines, suggesting that PI is indeed
+* a plain finite rational number :)
+*
+*  http://tinyurl.com/Feynman-point
+*
+* It works on both TO or MO machines.
+* TO = TO7+16k, TO7/70, TO8, TO9, TO9+
+* MO = MO5 or MO6.
+*
+* This implementation is bigger than
+* the 128bytes one, but it is much
+* much faster. It takes about 11 or
+* 12mins to compute the first 769 
+* digits.
+*
+* Compiles it with:
+*  http://www.pulsdemos.com/c6809.html
+*
+* (c) Samuel DEVULDER, Nov 2015
+*     http://www.pulsdemos.com
+*
+***************************************
+
+* Use a memory space available on both
+* MO and TO machines.
+       org    $8000
+
+* Number or digits to compute
+* (end of feynman point)
+N      set    769
+
+* Size of the array use for calculation
+* (5 extra elements are added for
+* extra precision)
+LEN    set    (10*N/3)+5
+
+***************************************
+* Entry point
+ini    pshs   d,x,y,u,cc,dp
+
+***************************************
+* Machine detection:
+       ldu    #$2019
+* On MO machine alters the STATUS
+* flag in page-0, if the byte value
+* is not changed this means we are
+* poking into ROM which mean we are
+* running on a TO machine.
+       lda    ,u
+       eora   #$50
+       sta    ,u
+       cmpa   ,u
+       beq    inireg
+* For TO machines, replace the "goto 2"
+* (print char) instruction into a
+* "cmpa #2" which changes no registers
+* but then fall though to the TO api
+* to print a char.
+       lda    #$81
+       sta    PUTC
+
+***************************************
+* initialize a bunch of registers in
+* one go.
+inireg ldu    #regs
+       pulu   d,dp,x,y
+
+       setdp  *<-8
+
+***************************************
+* Put $0002 in all the array values
+set2   std    ,u++
+       cmpu   #tabend
+       bne    set2
+
+***************************************
+* External loop: one digit at a time
+boucJ  clrb
+
+* current value (q) is stored on the
+* top of stack. It is set to zero on
+* the beginning of each internal loop.
+       pshs   d,x,y,u
+
+***************************************
+* Internal loop.
+* for i=LEN downto 1
+* reg X = i
+* reg Y = 2i+1
+* reg U = tab+2i
+* Top of stack = q
+       ldx    #LEN
+* retrieve tab[i]
+boucI  ldd    ,--u
+
+* compute tab[i]*10
+       lslb
+       rola
+       lslb
+       rola
+       addd   ,u
+       lslb
+       rola
+       std    <mul3+1
+
+* compute i*q using the fact that
+* q is maximum 7 bits.
+       stx    <nextI+1
+       lda    <nextI+1
+       ldb    1,s
+       mul
+       stb    <mul2+1
+       lda    <nextI+2
+       ldb    1,s
+       mul
+mul2   adda   #0
+
+* compute tab[i]*10 + i*q
+* preserving carry
+mul3   addd   #0
+
+* makes y = 2*i-1 without altering
+* the carry.
+       leay   -2,y
+* tab[i] = (tab[i]*10 + i*q) % (2*i-1)
+       bsr    div
+* done by div:
+*       stx    ,u
+
+* q = (tab[i]*10 + i*q) / (2*i-1)
+* only reg B is stored because q is
+* 7 bits max.
+       stb    1,s
+
+* loop for internal loop
+nextI  ldx    #0
+       leax   -1,x
+       bne    boucI
+
+* clear carry for division by ten
+       clra
+       leay   10,x
+*  d = q/10 tab[1] = q % 10
+       bsr    div
+* done by div:
+*       stx    ,u
+* at this point q<=10. It is stored
+* in reg D. So it suffice to test reg B
+* only.
+
+***************************************
+* if q==9 then ++nines
+*              loop again
+       inc    <nines
+       addd   #$3930
+       cmpb   #$39
+       beq    nextJ
+
+***************************************
+* if q==10 then prints predig+1
+*               predig = 0
+*               prints '0' nines times
+*               nines  = 0
+q_gt_9 blt    print
+       inc    <predig
+       ldd    #$3030
+* fall though
+
+***************************************
+* else (q<9)
+*   prints previous digit (predig)
+*   copy new digit (reg B) into predig
+*   prints char of reg A 'nines' times
+*   clear nines
+print  exg    a,b
+       stb    <print2+3
+       ldb    <predig
+       sta    <predig
+print2 bsr    PLIC
+       ldb    #0
+       dec    <nines
+       bne    print2
+
+* on printing the first '3' (i.e. when
+* current char is the first '1') prints
+* a dot (seof modifying test).
+print3 cmpa   #$31
+       bne    nextJ
+       clr    <print3+1
+       ldb    #'.
+       bsr    PUTC
+
+***************************************
+* end of external loop, ready for new
+* digit
+nextJ  puls   d,x,y,u
+       leax   -1,x
+       bne    boucJ
+
+***************************************
+* all digits printed: prints the
+* trailing elipsis and a message.
+       ldx    #railleur
+
+***************************************
+* Prints the nul-terminated string
+* pointed by reg X
+puts   ldb    ,x+
+       beq    exit
+       bsr    PUTC
+       bra    puts
+
+***************************************
+* End: returrn to basic.
+exit   puls   d,x,y,u,cc,dp,pc
+
+***************************************
+* Divide CC:D (17 bits) par reg Y.
+*
+* returns quotient in reg D, an
+* remainder in 2 bytes pointed by
+* reg U.
+***************************************
+       if     0
+
+* Disabled version of the division.
+* It is the traitionnal shift+sub
+* implementation. It works great
+* but it is much slower compared
+* to the version below.
+div    pshs   y
+       std    <div4+1
+       ldx    #17
+* clear reg D but preserve carry
+       ldd    #0
+div0   rolb
+       rola
+       subd   ,s
+       bcc    div3
+       addd   ,s
+div3   rol    <div4+2
+       rol    <div4+1
+       leax   -1,x
+       bne    div0
+       std    ,u
+div4   ldd    #0
+       coma
+       comb
+       puls   y,pc
+
+       else
+
+* Enabled version of the division.
+* It is a simple repeat subtraction
+* without shifts. This is naive, but
+* for the number sizes involved in
+* the spigot algorithm, this version
+* proves to be faster by a factor of
+* 3 compared to the version above.
+div    pshs   y
+       ldx    #-1
+       bcc    loop1
+       bsr    loop2
+loop1  bsr    loop2
+       addd   ,s++
+       std    ,u
+       tfr    x,d
+       rts
+loop2  leax   1,x
+       subd   2,s
+       bcc    loop2
+       rts
+       endc
+
+***************************************
+* Prints a char and emits a sound.
+***************************************
+PLIC   stb    <PLOC+1
+       ldb    #7
+       bsr    PUTC
+PLOC   ldb    #0
+* fall through
+
+***************************************
+* Calls the rom routine to print a
+* char (code is modified in the init
+* to use the TO api when running on
+* a TO machine)
+***************************************
+PUTC   goto   2     * MO api
+       jmp    $E803 * TO api
+
+***************************************
+* trailing smiley (railleur) message
+***************************************
+railleur
+       fcc    /.../
+       fcb    10,8,8
+       fcc    /Pi is rationnal! :-)/
+       fcb    10,10,13
+       fcc    /           /
+       fcc    /(c) PULS Nov 2015/
+       fcb    10,13
+
+* At the end of the algorithm nines is 
+* used as the ending char of the
+* string since it is zero.
+nines  set    *
+
+* Reuse the reg init-values as storage
+predig set    *+1
+
+* Init-values registers D, DP, X, and
+* Y at the start of the algorithm.
+regs   fdb    2
+       fcb    *<-8
+       fdb    N
+       fdb    2*LEN+1
+
+* Array to compute the digits
+tab    rmb    LEN*2
+tabend set    *
+
+       end    ini

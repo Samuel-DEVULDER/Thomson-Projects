@@ -1,0 +1,257 @@
+(main)sPIgot
+***************************************
+* Compute PI digits using the SPIGOT
+* algorithm in 128 bytes on Thomson
+* "TO" machines (6809@1Mhz). The printed
+* result suggest that PI is indeed
+* a rationnal number.
+*
+* Inspired by this 128 bytes version
+* for ZX80:
+*  http://tinyurl.com/z80pi-serzhsoft
+*
+* Ported from:
+*  http://rosettacode.org/wiki/Pi#Lua
+*
+* This is a "drop by drop" (like a
+* leaking spigot) which delivers the
+* digits of PI one by one.
+*
+*  http://tinyurl.com/spigot-pdf
+*
+* It computes the digits up to the end
+* of the Feynman point. That portion
+* of the digits contains 6 consecutive
+* nines, suggesting that PI is indeed
+* a plain finite rational number :)
+*
+*  http://tinyurl.com/Feynman-point
+*
+* Due to size limits, there are
+* traeoffs:
+*  - It ony works on "TO" machines:
+*    TO7+16k, TO7/70, TO8, TO9, TO9+
+*  - It doesn't return to the basic.
+*    You'll have to reset the machine
+*    by hand.
+*  - It doesn't print the decimal
+*    point.
+*  - It uses a tiny but very slow
+*    16 bits multiplication algorithm.
+*    You'll have to wait ~45secs per
+*    new digit, hence ~10h for the
+*    whole program to finish.
+*    Note: there is a faster version
+*    named PIrat which only takes
+*    12 mins (50x faster!).
+*
+* Compiles it with:
+*  http://www.pulsdemos.com/c6809.html
+*
+* (c) Samuel DEVULDER, Nov 2015
+*     http://www.pulsdemos.com
+*
+***************************************
+
+       org    $8000
+
+* nombre de chiffres
+N      set    769
+
+* Number or digits to compute
+* (end of feynman point)
+N      set    769
+
+* Monitor entry-point for printing
+* a char
+PUTC   equ    $E803
+
+* Size of the array use for calculation
+* (5 extra elements are added for
+* extra precision)
+LEN    set    (10*N/3)+5
+
+       setdp  *<-8
+
+***************************************
+* Entry point
+ini    set    *
+
+***************************************
+* initialize a bunch of registers in
+* one go.
+       ldu    #regs
+       pulu   d,dp,x,y
+
+***************************************
+* Put $0002 in all the array values.
+* Note: due to size reason we write
+* values up to reaching the rom.
+* This is more than needed, but it
+* is harmless for the programm which
+* works on [U-LEN,U[.
+set2   std    ,u++
+       cmpb   -1,u
+       beq    set2
+
+***************************************
+* External loop: one digit at a time
+boucJ  clrb
+
+* current value (q) is stored on the
+* top of stack. It is set to zero on
+* the beginning of each internal loop.
+* reg X = N
+* reg Y = 2N+1
+       pshs   d,x,y,u
+
+***************************************
+* Internal loop.
+
+* reg X = 2i
+       leax   -1,y
+
+boucI  pshs   x
+
+* retrieve tab[i]
+       ldd    ,--u
+
+* compute i*q+tab[i] using additions
+* 2,s   = q
+* reg D = tab[i]
+* reg X = 2q
+mul    addd  2,s
+       leax  -2,x
+       bne   mul
+
+* compute (i*q+tab[i])+tab[i]*9
+* on 17 bits (carry)
+       leax  9,x
+mul2   addd  ,u
+* preserve carry
+       ror   2,s
+       leax  -1,x
+       bne   mul2
+* set carry if any of the 8 previous
+* carries is set
+       neg  2,s
+
+* makes y = 2*i-1 without altering
+* the carry.
+       leay   -2,y
+* tab[i] = (tab[i]*10 + i*q) % (2*i-1)
+       jsr    <div
+
+* q = (tab[i]*10 + i*q) / (2*i-1)
+* only reg B is stored because q is
+* 7 bits max.
+       std    2,s
+
+* new internal loop index
+       puls   x
+       leax   -2,x
+       bne    boucI
+
+* clear carry for division by ten
+       clra
+       leay   10,x
+*  d = q/10 tab[1] = q % 10
+       bsr    div
+* done by div:
+*       stx    ,u
+* at this point q<=10. It is stored
+* in reg D. So it suffice to test reg B
+* only.
+
+***************************************
+* if q==9 then ++nines
+*              loop again
+       inc    <nines
+       addd   #$3930
+       cmpb   #$39
+       beq    nextJ
+
+***************************************
+* if q==10 then prints predig+1
+*               predig = 0
+*               prints '0' nines times
+*               nines  = 0
+q_gt_9 blt    print
+       inc    <predig
+       ldd    #$3030
+* fall though
+
+***************************************
+* else (q<9)
+*   prints previous digit (predig)
+*   copy new digit (reg B) into predig
+*   prints char of reg A 'nines' times
+*   clear nines
+print  exg    a,b
+       stb    <print2+4
+       ldb    <predig
+       sta    <predig
+print2 jsr    PUTC
+       ldb    #0
+       dec    <nines
+       bne    print2
+
+***************************************
+* end of external loop, ready for new
+* digit
+nextJ  puls   d,x,y,u
+       leax   -1,x
+       bne    boucJ
+
+***************************************
+* finished! Do not return to system
+* but loop forevere.
+exit   bra    exit
+
+***************************************
+* Divide CC:D (17 bits) par reg Y.
+*
+* returns quotient in reg D, an
+* remainder in 2 bytes pointed by
+* reg U.
+*
+* It is a simple repeat subtraction
+* without shifts. This is naive, but
+* for the number sizes involved in
+* the spigot algorithm, this version
+* is quite small.
+***************************************
+div    pshs   y
+       ldx    #-1
+       bcc    loop1
+       bsr    loop2
+loop1  bsr    loop2
+       addd   ,s++
+       std    ,u
+       tfr    x,d
+       rts
+loop2  leax   1,x
+       subd   2,s
+       bcc    loop2
+       rts
+
+* At the end of the algorithm nines is
+* used as the ending char of the
+* string since it is zero.
+nines  set    *
+
+* Reuse the reg init-values as storage
+predig set    *+1
+
+* Init-values registers D, DP, X, and
+* Y at the start of the algorithm.
+regs   fdb    2
+       fcb    *<-8
+       fdb    N
+       fdb    2*LEN+1
+
+* Array to compute the digits
+tab    rmb    LEN*2
+tabend set    *
+
+       end    ini
