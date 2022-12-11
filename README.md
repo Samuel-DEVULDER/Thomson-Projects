@@ -15,6 +15,7 @@ for i in */*; do test -d "$i" && git ls-files --error-unmatch "$i" >/dev/null 2>
 * [2014/forever15-PiMiTV](2014/forever15-PiMiTV)
 * [2014/forever15-TopOPop](2014/forever15-TopOPop)
 * [2014/forever15-WRBP](2014/forever15-WRBP)
+* [2015/PIrat](2015/PIrat)
 * [2016/def1bit](2016/def1bit)
 * [2016/quatropic](2016/quatropic)
 * [2016/sowebuzz](2016/sowebuzz)
