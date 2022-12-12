@@ -1,9 +1,12 @@
 (main)SUDOKU
 
 DEBUG SET   0     ; debug la resolution
+SHRTC SET   1     ; retarde la detection des contradiction (plus rapide)
+DYNST SET   1     ; Adapte la position du demarrage de la recherche dynamiquement (plus rapide)
+GRID  SET   17
+
 DBGEN SET   0     ; debug la generation
 GENMX SET   0     ; algorithme de generation 0/1
-GRID  SET   17
 
   ORG   $A000
   BRA   INI
@@ -44,7 +47,7 @@ INI
   PSHS  D,X,Y,U,CC,DP
   STS   BAKS-2
   LDS   #STACKTOP
-  
+
 
   JSR   PUTS
   FCC   "Input:"
@@ -60,7 +63,7 @@ INI
   JSR   SOLVE
   JSR   TMROFF
 
-  LBEQ  NOSOL
+  LBCC  NOSOL
 
   JSR   PUTS
   FCC   "Output:"
@@ -68,8 +71,8 @@ INI
   JSR   AFFICHE
   JSR   PUTS
   FCB   13,0
-  JMP   FINSOL 
-  
+  JMP   FINSOL
+
 *  lecture arguments a exec
   JSR   $3FFD       ; argument dispo ?
   BEQ   USAGE       ; non => passe
@@ -96,7 +99,7 @@ INI1
 
   JSR   RNDINI      ; ajoute un peu d'entropie
 
-  JSR   PUTS  
+  JSR   PUTS
   FCC   "Generation..."
   FCB   $18,0
   JSR   TMRON
@@ -198,7 +201,9 @@ AFF1
   CMPB  #'0
   BNE   PUTC
   LDB   #'.
-* /!\ passe au travers
+  IFNE  *-PUTC
+  ERROR "/!\ passe au travers"
+  ENDC
 
 ***************************************
 * affiche un caractere
@@ -256,7 +261,7 @@ TMRON
   LDA   #$10    ; capture etat IRQ
   ANDA  ,S
   STA   TMRCC+1
-  
+
   LDA   #$EF    ; active IEQ
   ANDA  ,S
   STA   ,S
@@ -290,8 +295,8 @@ TMRPRT
   LDX   #TMRDAT+4
   LDA   #4
 TMRPR1
-  LDB   ,-X         ; on empile les
-  ANDB  #15         ; 8 digits
+  LDB   ,-X     ; on empile les
+  ANDB  #15     ; 8 digits
   STB   ,-S
   LDB   ,X
   LSRB
@@ -302,18 +307,18 @@ TMRPR1
   DECA
   BNE   TMRPR1
   LDB   #$80
-  ORB   6,S         ; on marque le
-  STB   6,S         ; chiffre des unites
+  ORB   6,S     ; on marque le
+  STB   6,S     ; chiffre des unites
 TMRPR2
   LDB   ,S+
-  BEQ   TMRPR2      ; on saute au dessus des '0'
-  BMI   TMRPR4      ; => dernier chiffre
+  BEQ   TMRPR2  ; on saute au dessus des '0'
+  BMI   TMRPR4  ; => dernier chiffre
 TMRPR3
   BSR   TMRPR5
-  LDB   ,S+         ; suivant
+  LDB   ,S+     ; suivant
   BPL   TMRPR3
 TMRPR4
-  ANDB  #$7F        ; l'avant dernier chiffre
+  ANDB  #$7F    ; l'avant dernier chiffre
   BSR   TMRPR5
   LDB   #'.
   JSR   PUTC
@@ -349,29 +354,31 @@ TMRDAT
 * (espace dde travail optimise)
 ***************************************
 TOWORK
-  PSHS  D,X,Y,U
-  LDX   #SUDOKU
-  LDY   #MASKS
-  LDU   #WORK+1
+  PSHS  D,X,U
+  LDX   #WORK
+  CLRB
 TOW1
-  LDB   ,X+
-  SUBB  #'0
-  LSLB
-  LDD   B,Y
-  CLR   -1,U
-  STD   ,U
-  LEAU  43,U
-  CMPX  #SUDOKU+81
+  LDA   #9
+  STA   ,X
+  CLRA
+  STD   1,X
+  STD   3,X
+  STD   5,X
+  STD   7,X
+  STD   9,X
+  LEAX  51,X
+  CMPX  #WORK+81*51
   BNE   TOW1
-
-  LDY   #BITCOUNT+128
+  LDX   #SUDOKU
+  LDU   #WORK+1
 TOW2
-  LEAU  -43,U
-  JSR   UPDATE
-  CMPU  #WORK+1
+  LDA   ,X+
+  SUBA  #'0
+  JSR   PUTDIGIT
+  LEAU  51,U
+  CMPX  #SUDOKU+81
   BNE   TOW2
-  
-  PULS  D,X,Y,U,PC
+  PULS  D,X,U,PC
 
 ***************************************
 * Converti le WORK vers SUDOKU
@@ -381,32 +388,13 @@ TOSUDOKU
   LDX   #SUDOKU
   LDU   #WORK+1
 TOSUD1
-  LDD   ,U
-  BSR   MSKDGT
-  STA   ,X+
-  LEAU  43,U
+  LDB   ,U
+  LEAU  51,U
+  ADDB  #'0
+  STB   ,X+
   CMPX  #SUDOKU+81
   BNE   TOSUD1
   PULS  D,X,U,PC
-
-***************************************
-* Converti un mask en ascci
-***************************************
-MSKDGT
-  ANDA  #1
-  BEQ   MSKDG1
-  LDA   #'9
-  RTS
-MSKDG1
-  TSTB
-  BNE   MSKDG2
-  DECA
-MSKDG2
-  INCA
-  LSRB
-  BNE   MSKDG2
-  ADDA  #'0
-  RTS
 
 ***************************************
 * Callback qui stoppe a la 1ere soluce
@@ -432,7 +420,7 @@ CHKSOL
 *       solution est trouvee.
 *       Cette routine doit retourner:
 *       C=0 (CLRB) s'il faut continuer
-*       C=1 (COMB) s'il faut stopper. 
+*       C=1 (COMB) s'il faut stopper.
 *
 * En sortie:
 *   WORK inchange
@@ -443,11 +431,11 @@ CHKSOL
 ***************************************
 SOLVE
   PSHS  DP,X,Y,U,D
-  LDY   #BITCOUNT+128
   SETDP BSTCNT<-8
   LDA   #BSTCNT<-8
   TFR   A,DP
   STU   <SOLFND+1
+
   IFNE  DEBUG
   JSR   PUTS
   FCC   "DEBUG:"
@@ -456,7 +444,18 @@ SOLVE
   JSR   PUTS
   FCB   $14,$1B,$68,0
   ENDC
-  JSR   SOLV0
+
+  IFNE  DYNST
+  LDX   #WORK+1-51
+SOLINI1
+  LEAX  51,X
+  LDA   ,X
+  BGT   SOLINI1
+  STX   <SOLSTART+1
+  ENDC
+  
+  JSR   <SOLV0
+
   IFNE  DEBUG
   PSHS  CC
   JSR   PUTS
@@ -466,38 +465,22 @@ SOLVE
   FCB   11,11,11,11,11,11,11,11,11,11,0
   PULS  CC
   ENDC
+
   PULS  DP,X,Y,U,D,PC
 
-***************************************
-* Conversion chiffre -> masque
-***************************************
-MASKS
-  FDB   %000000000
-  FDB   %000000001
-  FDB   %000000010
-  FDB   %000000100
-  FDB   %000001000
-  FDB   %000010000
-  FDB   %000100000
-  FDB   %001000000
-  FDB   %010000000
-  FDB   %100000000
-
 * alignement DP
-  RMB   ((*+255)&$FF00)-*-23,0
+  RMB   ((*+255)&$FF00)-*,0
 
-* Mets a jour les caches des cases
-* impactees par U et lanse la rech.
-UPDSLV
-  JSR   <UPDIMP
-  BCC   SOLV0
-  CLRA
-  RTS
-
+***************************************
 * recherche recursive
-* Sortie A=0, 
+* Sortie A=0
 *        C=1 si on stoppe la recherche
-* WORK est remis a son etat d'entree en sortie
+*        C=0 si on doit continuer la
+*               recherche.
+*
+* WORK est remis a son etat d'entree en
+* sortie
+***************************************
 SOLV0
   PSHS  B,U
 
@@ -505,81 +488,212 @@ SOLV0
   JSR   DBGPRT
   ENDC
 
-  LDB   #10       ; majorant
+  IFNE  DYNST
+  LDB   #-51       ; -majorant
+SOLSTART
+  LDX   #WORK+1
+  LEAX  B,X
+  NEGB
   STB   <BSTCNT+1
+  ELSE
+  LDB   #51       ; majorant
+  STB   <BSTCNT+1
+  LDX   #WORK-50
+  ENDC
 
-* recherche une case vide
-  LDU   #WORK-43
+***************************************
+* recherche une case vide avec le moins
+* de contraintes
+***************************************
 SOLV1
-  LEAU  43,U
-SOLV1a
-  LDA   ,U
-  BEQ   SOLV1
-  BMI   SOLV4     ; sentinelle ? oui => termine cette partie
- 
+  ABX
+  LDA   ,X        ; case vide ?
+  BGT   SOLV1     ; non => boucle
+  BMI   SOLV4     ; sentinelle ?
+  LDA   -1,X
 BSTCNT
   CMPA  #0        ; meilleure ?
   BGE   SOLV1     ; non => case suivante
   STA   <BSTCNT+1 ; on sauve le nouveau nb de choix,
-  STU   <BSTCEL+1 ; et la case actuelle   
-  DECA
-  BNE   SOLV1     ; on passe a la case suivante (sauf si on a qu'un choix)
-*  BRA   SOLV1
- 
-* on a fini de trouver la meilleure case possible
-SOLV4
-  LDB   #10
-  SUBB  <BSTCNT+1 ; comparaison qui force C=0
-  BNE   BSTCEL    ; il y a eu des cases vides ==> on choisit la meilleure
+  BEQ   SOLRET0   ; infaisable ? oui => termine
+  STX   <BSTCEL+1 ; sauve la case actuelle
 
-* la grille est pleine: on a trouve
-SOLFND
-  JSR   >$1234    ; callback pour continuer (C=0) ou stopper (C=1)
-  LDA   #0
-  PULS  B,U,PC
-
-* recup meilleur mask et meilleur case
-BSTCEL
-  LDU   #0        ; adr cell
-  CLR   ,U+       ; TODO make it faster ?
-POSMSK
-  JSR   <GETMASK
-
-* on essaie toutes les possibilites
-  TSTA            ; chiffre 9 possible ?
-  BEQ   SOLV5     ; non ==> on passe a la partie basse (1..8)
-  STA   ,U        ; ecrit chiffre 9
-  BSR   UPDSLV    ; recherche
-  STA   ,U        ; annulation chiffre
-  BCS   SOLVRET1  ; il faut stopper ?
-SOLV5
-  STB   <MSKLOW-1
-  NEGB            ; calcul rapide d'un bit a 1
-  ANDB  #0        ; avec la formule (B & -B)
-MSKLOW
-  STB   1,U       ; on fige ce chiffre dans la case
-  BEQ   SOLVRET0  ; plus de bits ? ==> fini (C=0)
-  EORB  <MSKLOW-1 ; effacement du chiffre parmi les possibilites
-  BSR   UPDSLV    ; recherche avec cette case figee
-  BCC   SOLV5     ; C=0 => on continue
-  STA   1,U
-* BRA   SOLVRET1  ; C=1 => on stoppe
-
-SOLVRET1
-  BSR   UPDATE 
-  BSR   UPDIMP
-  CLRA
-  COMB
-  PULS  B,U,PC
-  
-SOLVRET0
-  BSR   UPDATE 
-  BSR   UPDIMP
-  CLRA
-  PULS  B,U,PC
+  IFNE  SHRTC
+  DECA            ; raccourcis: si un seul choix
+  BNE   SOLV1     ; on s'arrete la en ignorant les impossibilites
+  ELSE
+  BRA   SOLV1
+  ENDC
 
 ***************************************
-* Retourne un nombre aleatoire entre 0 
+* on a fini de dergarder toutes les
+* cases
+***************************************
+SOLV4
+  LDB   <BSTCNT+1
+  SUBB  #51       ; a t'on rencontre une
+  BNE   BSTCEL    ; case libre ?
+SOLFND
+  JSR   >$1234    ; non => la grille est pleine
+  LDA   #0        ; appel du callback pour poursuivre
+  PULS  B,U,PC    ; ou pas (force A=0 sans change carry)
+BSTCEL
+  LDU   #0        ; oui => recup addr. case
+  CLRB            ; masque des chifres 1 a 8 libres
+  LDA   1,U
+  BNE   *+4
+  ORB   #1
+  LDA   2,U
+  BNE   *+4
+  ORB   #2
+  LDA   3,U
+  BNE   *+4
+  ORB   #4
+  LDA   4,U
+  BNE   *+4
+  ORB   #8
+  LDA   5,U
+  BNE   *+4
+  ORB   #16
+  LDA   6,U
+  BNE   *+4
+  ORB   #32
+  LDA   7,U
+  BNE   *+4
+  ORB   #64
+  LDA   8,U
+  BNE   *+4
+  ORB   #128
+
+***************************************
+* on essaie toutes les possibilites
+***************************************
+  LDA   9,U       ; chiffre 9 possible ?
+  BNE   SOLV5     ;
+  LDA   #9        ; oui => on l'essaye
+  BSR   SOLTRY
+  BCS   SOLRET1   ; arrete si C=1
+SOLV5
+  LDX   #FIRSTBITSET
+  ABX             ; autres chiffres (dans B)
+  ABX
+  LDA   ,X        ; chiffre dans B ?
+  BEQ   SOLRET0   ; non => termine avec C=0
+  EORB  1,X       ; oui => efface chiffre dans masque
+  BSR   SOLTRY    ; essaye ce chiffre
+  BCC   SOLV5     ; continue autre chiffre si C=0
+
+***************************************
+* Sort de la recherche avec A=0 C=0/1
+***************************************
+SOLRET1
+  LDA   #1        ; termine ce niveau avec
+  LSRA            ; A=0 et C=1 (==on cherche pas plus)
+  PULS  B,U,PC
+SOLRET0
+  CLRA            ; termine ce niveau avec
+  PULS  B,U,PC    ; A=0 et C=0
+
+***************************************
+* Pose le chiffre "A" dans la case "U"
+* et lance une recherche. En sortie
+* retire ce chiffre, et retourne C=0/1
+***************************************
+SOLTRY
+  JSR   <PUTDGT
+  JSR   <SOLV0
+* JMP   CLRDGT
+  IFNE  *-CLRDGT
+  ERROR "/!\ fall through"
+  ENDC
+
+***************************************
+* Efface le chiffre dans la case "U"
+* en mainteant les donnees de contraintes
+*
+* Entree A=0
+*        U=case
+* Sortie A=0
+*        U=inchange
+*        X=trash
+*        Y=trash
+*        C=inchangee
+***************************************
+CLRDGT
+  IFNE  DYNST
+  PSHS  B,U,CC
+  ELSE
+  PSHS  B,U
+  ENDC
+  LDB   ,U        ; deja un chiffre ?
+  BEQ   CLRDGT1   ; non => saute
+  
+  IFNE  DYNST
+  CMPU  <SOLSTART+1
+  BHS   CLRDGT0
+  STU   <SOLSTART+1
+CLRDGT0  
+  ENDC
+  
+  STA   ,U        ; efface chiffre
+  LEAU  10,U      ; avance jsuqu'aux pointeurs
+  BSR   CLRDGT2   ; |
+  BSR   CLRDGT2   ; | mets a jour les stats
+  BSR   CLRDGT2   ; | du chiffre efface pour
+  BSR   CLRDGT2   ; | les 20 cases dependantes
+  BSR   CLRDGT2   ; | de "U"
+CLRDGT1
+  IFNE  DYNST
+  PULS  B,U,CC,PC
+  ELSE
+  PULS  B,U,PC
+  ENDC
+CLRDGT2
+  PULU  X,Y       ; recupere deux pointeur sur cases dependante
+* mets a jour les contraintes de case "X"
+  DEC   B,X       ; decremente X->contrainte[chiffre-efface]
+  BNE   CLRDGT3   ; si passe a zero ?
+  INC   -1,X      ; oui => augmente 1 chiffre possible sur la case dependante
+CLRDGT3
+* mets a jour les contraintes de case "Y"
+  DEC   B,Y       ; idem mais avec la case "Y"
+  BNE   CLRDGT4
+  INC   -1,Y
+CLRDGT4
+  PULU  X,Y       ; recupere deux pointeur sur cases dependante
+* mets a jour les contraintes de case "X"
+  DEC   B,X       ; decremente X->contrainte[chiffre-efface]
+  BNE   CLRDGT5   ; si passe a zero ?
+  INC   -1,X      ; oui => augmente 1 chiffre possible sur la case dependante
+CLRDGT5
+* mets a jour les contraintes de case "Y"
+  DEC   B,Y       ; idem mais avec la case "Y"
+  BNE   CLRDGT6
+  INC   -1,Y
+CLRDGT6
+  RTS
+
+***************************************
+* Place le chiffre "A" (0..9, 0=efface)
+* dans la case "U" en mainteant les
+* donnees de contraintes.
+*
+* Entree A=chiffre
+*        U=case
+* Sortie A,B,X,Y,U=inchanges
+***************************************
+* Place un digit
+PUTDIGIT
+  PSHS  A,X,Y
+  CLRA            ; on commence par effacer
+  BSR   CLRDGT    ; chiffre en case "U"
+  LDA   ,S        ; recupe "A"
+  BEQ   *+4       ; vrai chiffre 1 a 9 ?
+  BSR   PUTDGT    ; oui => alors on le place
+  PULS  A,X,Y,PC
+
+***************************************
+* Retourne un nombre aleatoire entre 0
 * et 255 dans B (A ecrase)
 *
 * Algo XOR-SHIFT 798 de George
@@ -589,10 +703,12 @@ SOLVRET0
 *  - adapte aux 8 bits (rotation 1bit)
 *  - couvre tous les entiers 16bits!=0
 *
-* Resultat: 
+* Resultat:
 * B = nb aleatoire entre 0 et 255
 * A detruit (utiliser RND+1 si on veut
 *            16 bits aleatoires)
+*
+* (mis ici pour beneficier du DP)
 ***************************************
 RND
   LDD   #1      ; graine
@@ -609,153 +725,84 @@ RND2
   RTS
 
 ***************************************
+* Place le chiffre "A" dans la case "U"
+* en mainteant les donnees de contraintes.
+*
+* Entree A=chiffre 1..9
+*        U=case
+* Sortie A=inchange
+*        U=inchange
+*        C=inchangee
+***************************************
+PUTDGT
+  
+  IFNE  DYNST
+  PSHS  B,U,CC
+  CMPU  <SOLSTART+1
+  BNE   PUTDGT1
+  LEAX  ,U
+PUTDGT0
+  LEAX  51,X
+  LDB   ,X
+  BGT   PUTDGT0
+  STX   <SOLSTART+1
+PUTDGT1
+  ELSE
+  PSHS  B,U
+  ENDC
+  
+  STA   ,U        ; ecrit chiffre
+  LEAU  10,U      ; avanche jusqu'au pointeurs
+  BSR   PUTDGT2   ; |
+  BSR   PUTDGT2   ; | mise a jour des 20
+  BSR   PUTDGT2   ; | cases dependantes
+  BSR   PUTDGT2   ; |
+  BSR   PUTDGT2   ; |
+  
+  IFNE  DYNST
+  PULS  B,U,CC,PC
+  ELSE
+  PULS  B,U,PC
+  ENDC
+PUTDGT2
+  PULU  X,Y       ; recup deux pointeurs sur cases dependantes
+  LDB   A,X       ; chiffre deja utilise par X->contraintes[chiffre] ?
+  BNE   PUTDGT3   ; oui => increment simple
+  DEC   -1,X      ; non ==> 1 degre de liberte en moins
+PUTDGT3
+  INC   A,X       ; marque chiffre comme utilise une fois de plus
+  LDB   A,Y
+  BNE   PUTDGT4   ; idem avec case contrainte "Y"
+  DEC   -1,Y
+PUTDGT4
+  INC   A,Y
+  PULU  X,Y       ; recup deux pointeurs sur cases dependantes
+  LDB   A,X       ; chiffre deja utilise par X->contraintes[chiffre] ?
+  BNE   PUTDGT5   ; oui => increment simple
+  DEC   -1,X      ; non ==> 1 degre de liberte en moins
+PUTDGT5
+  INC   A,X       ; marque chiffre comme utilise une fois de plus
+  LDB   A,Y
+  BNE   PUTDGT6   ; idem avec case contrainte "Y"
+  DEC   -1,Y
+PUTDGT6
+  INC   A,Y
+  RTS
+
+***************************************
 * Callback qui stoppe a la 2e soluce
 * (initialise TWOSOL+1 a +1)
 ***************************************
 TWOSOL
-  LDB   #0
-  SUBB  #1
-  STB   <TWOSOL+1
-  RTS         ; retourne C=1 lorsque la valeur passe a -1
+  LDB   #0        ; compteur de nb solution
+  SUBB  #1        ; decremente (SUBB pour positionner C)
+  STB   TWOSOL+1  ; sauvegarde
+  RTS             ; retourne C=1 lorsque la valeur passe a -1
 
+  IFNE 0
 ***************************************
-* Mets a jour la prochaine cellule
-* pointee par X
-* X = pointeur sur tableau de case
-* Y = BITCOUNT+128
-* Sortie : X avance', D = trash
-***************************************
-UPDXpp
-  BCS   UPD2
-  LDU   ,X++
-  IFNE  *-UPDATE
-  ERROR "/!\ fall through"
-  ENDC
-  
-***************************************
-* Mets a jour le cache de la case 
-* pointe' par U-1
-*
-* Entree Y=BITCOUNT+128
-* Sortie D=trash
-*        C=1 si pas faisable
-***************************************
-UPDATE
-  LDD   ,U
-  BEQ   UPD1
-  CLR   -1,U      ; C=0
-  RTS         
-UPD1
-  BSR   GETMASK
-  ADDA  B,Y
-  STA   -1,U
-  SUBA  #1        ; C=1 si pas faisable
-UPD2
-  RTS
 
-***************************************
-* Mets a jour le cache des cases
-* impactees par la valeur de la case
-* U-1
-* Entree Y = BITCOUNT+1
-* Sortie A = trash
-***************************************  
-UPDIMP
-  PSHS  B,U,X
-  LEAX  2,U
-  CLRA
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  BSR   UPDXpp
-  PULS  B,U,X,PC
-    
-***************************************
-* Recupere le masque des possibilites
-* pour la cellule pointee par U
-***************************************
-GETMASK
-  PSHS  U,X,Y
-  
-  PULU  D,X,Y   ; D pour que X,Y pointent sur les autres cases
-  LDD   ,X
-  ORA   ,Y
-  ORB   1,Y
-  
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
-
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
- 
-  PULU  X,Y
-  ORA   ,X
-  ORA   ,Y
-  ORB   1,X
-  ORB   1,Y
-
-  ANDA  #1
-  EORA  #1
-  EORB  #255
-  PULS  U,X,Y,PC
+CODE PAS ACTIF A REVOIR
 
 ***************************************
 * Genere un sudoku avec A indices
@@ -772,9 +819,9 @@ GENERATE
   PSHS  D,X,Y,U,DP
   LDB   #BSTCNT<-8
   TFR   B,DP
-  LDY   #BITCOUNT+128
-  
-GEN1 
+*  LDY   #BITCOUNT+128
+
+GEN1
   IFNE  DBGEN
   JSR PUTS
   FCB $18,10,$18,10,$18,10
@@ -786,17 +833,17 @@ GEN1
   FCC   "."
   FCB 0
   ENDC
-  
+
 * grille de depart
   JSR   GENSTART
 
 * mise en place compteurs
   LDB   ,S        ; max cases bloquees
   LDA   #81
-  SUBA  ,S        ; nombre de trous a creer 
+  SUBA  ,S        ; nombre de trous a creer
   BEQ   GENDONE   ; aucun ? oui => fini
-  
-  
+
+
 * phase 1 on efface au pif et tant que ca reste en solution
 * unique on continue
 GEN2a
@@ -813,7 +860,7 @@ GEN2b
   STX   ,U
 
 GEN3
-  PSHS  D         ; (2) sauve nb restant (A) et nb spare (B) 
+  PSHS  D         ; (2) sauve nb restant (A) et nb spare (B)
 
 * Majorant/minorant
   IFNE  GENMX
@@ -822,7 +869,7 @@ GEN3
   ELSE
   CLR   <BSTCNT+1
   ENDC
-  
+
   IFNE  DBGEN
   JSR   DBGPRT
   ENDC
@@ -843,44 +890,44 @@ GEN5
   BNE   GEN5      ; non => continue
   PULS  X         ; recolle avec PSHS D
   STX   ,U        ; retire sentinelle
-  
+
   ANDA  #1
-  ADDA  B,Y       ; combien de contraintes 
-  CMPA  <BSTCNT+1 ; plus qu'avant ? 
+  ADDA  B,Y       ; combien de contraintes
+  CMPA  <BSTCNT+1 ; plus qu'avant ?
   IFNE  GENMX
   BGE   GEN6      ; oui => saute
   ELSE
   BLE   GEN6
   ENDC
   STA   <BSTCNT+1 ; non => garde
-  STU   <POSMSK+1
+  STU   <BSTCEL+1
 GEN6
   LEAU  42,U
   LDD   ,U
   BEQ   GEN6
-  BMI   GEN6a   
+  BMI   GEN6a
   BITA  #2
   BNE   GEN6
   BRA   GEN4
 
-* recup contenu case a effacer  
+* recup contenu case a effacer
 GEN6a
-  LDU   <POSMSK+1
+  LDU   <BSTCEL+1
   LDD   ,U
   BSR   GENCHK      ; une seule solution ?
   BEQ   GEN7        ; oui => continue
   ORA   #2          ; non => marque bloque'
-  STD   ,U          
+  STD   ,U
   PULS  D           ; match (2)
   DECB
   BNE   GEN3        ; on essaye avec une autre case
   JMP   GEN1        ; plus de spare ==> nouvelle grille
-  
+
 GEN7
   PULS  D           ; match (2)
   DECA              ; encore ?
   BNE   GEN3        ; oui ==> autre case
-  
+
 GENDONE
   JSR   TOSUDOKU    ; non => termine'
   PULS  D,X,Y,U,DP,PC
@@ -888,17 +935,17 @@ GENDONE
 * verifie qu'en effacant la case pointee par U on a
 * bien une solution unique
 GENCHK
-  PSHS  D,U         
-  LDD   #0          
+  PSHS  D,U
+  LDD   #0
   STD   ,U          ; efface case
-  LDU   #TWOSOL         
-  LDB   #1          ; regarde si le 
-  STB   <TWOSOL+1   ; sudoku resultant
+  LDU   #TWOSOL
+  LDB   #1          ; regarde si le
+  STB   1,U         ; sudoku resultant
   JSR   SOLVE       ; a exactement 1 sol
-  LDB   <TWOSOL+1   ; plus rapide que tst!
-  PULS  D,U,PC      
-  
-  
+  LDB   1,U         ; plus rapide que tst!
+  PULS  D,U,PC
+
+
 * tire une case "pleine" au pif (retour dans U)
 GENRND
   PSHS  D
@@ -913,9 +960,9 @@ GENRN2
   LDD   ,U        ; deja vide ?
   BEQ   GENRN2    ; oui => on retire
   BITA  #2        ; case bloquee ?
-  BNE   GENRN2    ; oui => on retire  
+  BNE   GENRN2    ; oui => on retire
   PULS  D,PC
-  
+
 * Genere une grille de depart
 GENSTART
 * met tout a 0
@@ -928,7 +975,7 @@ GENS1
   BPL   GENS1
 
 * rempli les chiffre 1 a 9 au hasard
-  LDX   #MASKS+20
+*  LDX   #MASKS+20
 GENS2
   STD   ,U          ; ecriture chiffre
 GENS3
@@ -948,7 +995,9 @@ GENS3
   LDU   #CPYSOL
   JSR   SOLVE       ; resout le sudoku
   JMP   TOWORK      ; retour dans work
- 
+****************************************
+  ENDC
+
   SETDP 255
 
 ****************************************
@@ -968,7 +1017,7 @@ RNDIN1
 RNDIN2
   STD   >RND+1
   PULS  D,X,PC
-       
+
   IFNE  DEBUG+DBGEN
 ***************************************
 * affiche le sudoku pour le debug
@@ -984,58 +1033,72 @@ DBGPRT
   ENDC
 
 ***************************************
-* Tableau indiquant le nb de bits a 1
+* Tableau le 1er bit a 1
 ***************************************
-BITCOUNT
 / EXECUTER CE QUI SUIT POUR GENERER
 ./luajit - <<EOF
-for i=-128,127 do
-  if (i%16)==0 then
+for i=0,255 do
+  if (i%8)==0 then
     io.stdout:write('\n  FCB \t')
-  elseif i>-128 then
+  elseif i>0 then
     io.stdout:write(',')
   end
   i,n = (i+256)%256, 0
-  while i>0 do
-    n,i = n + (i%2), math.floor(i/2)
+  while i>0 and i%2==0 do i,n = math.floor(i/2),n+1 end
+  if i==0 then
+    io.stdout:write('0,0')
+  else
+    io.stdout:write((n+1)..','..2^n)
   end
-  io.stdout:write(n)
 end
 io.stdout:write('\n')
 EOF
 /
-  FCB   1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
-  FCB   3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
-  FCB   4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
-  FCB   0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4
-  FCB   1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5
-  FCB   1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6
-  FCB   3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7
+FIRSTBITSET
+  FCB   0,0,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   6,32,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   7,64,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   6,32,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   8,128,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   6,32,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   7,64,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   6,32,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   5,16,1,1,2,2,1,1,3,4,1,1,2,2,1,1
+  FCB   4,8,1,1,2,2,1,1,3,4,1,1,2,2,1,1
 
 ***************************************
 * ESPACE DE TRAVAIL
 *
 * Sructure:
 *    81*(case)
-*    FDB  -1
+*    FDB -1
 * case:
-*    FCB FLAG
-*    FDB MASK
+*    FCB nb_chiffres_libres
+*    FCB chiffre (decimal)
+*    RMB 9,0 (tableau d'usage des chiffres)
 *    20*(FDB <ADRESSE CASE INFLUENTES>)
-*
-* FLAG is
-*   0  fixed cell
-*   n  free cell with 'n' possibilites
-*  -1  end of sudoku
 ***************************************
 / EXECUTER POUR GENERER:
 reset; ./luajit - <<EOF
@@ -1043,24 +1106,23 @@ long = false
 print('WORK')
 for i=0,8 do
   for j=0,8 do
-    print('  FCB ', '0', '; CASE ' .. i .. ',' ..j)
-    print('  FDB ', '0')
+    print('  RMB ', '11,0', '; CASE ' .. i .. ',' ..j)
     t = {}
     for k=0,8 do
       if k~=i then
         if long then
-          print('  FDB ', 'WORK+'..((k*9 + j)*43+1)..'   ', '; '..k..','..j)
+          print('  FDB ', 'WORK+'..((k*9 + j)*51+1)..'   ', '; '..k..','..j)
         else
-          table.insert(t, 'WORK+'..((k*9 + j)*43+1))
+          table.insert(t, 'WORK+'..((k*9 + j)*51+1))
         end
       end
     end
     for k=0,8 do
       if k~=j then
         if long then
-          print('  FDB ', 'WORK+'..((i*9 + k)*43+1)..'   ', '; '..i..','..k)
+          print('  FDB ', 'WORK+'..((i*9 + k)*51+1)..'   ', '; '..i..','..k)
         else
-          table.insert(t, 'WORK+'..((i*9 + k)*43+1))
+          table.insert(t, 'WORK+'..((i*9 + k)*51+1))
         end
       end
     end
@@ -1069,9 +1131,9 @@ for i=0,8 do
       for jj=jj,jj+2 do
         if ii~=i and jj~=j then
           if long then
-            print('  FDB ', 'WORK+'..((ii*9 + jj)*43+1)..'   ', '; '..ii..','..jj)
+            print('  FDB ', 'WORK+'..((ii*9 + jj)*51+1)..'   ', '; '..ii..','..jj)
           else
-            table.insert(t, 'WORK+'..((ii*9 + jj)*43+1))
+            table.insert(t, 'WORK+'..((ii*9 + jj)*51+1))
           end
         end
       end
@@ -1083,582 +1145,501 @@ print('  FDB ',-1,'; sentinel')
 EOF
 /
 WORK
-  FCB   0       ; CASE 0,0
-  FDB   0
-  FDB   WORK+388,WORK+775,WORK+1162,WORK+1549
-  FDB   WORK+1936,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+44,WORK+87,WORK+130,WORK+173
-  FDB   WORK+216,WORK+259,WORK+302,WORK+345
-  FDB   WORK+431,WORK+474,WORK+818,WORK+861
-  FCB   0       ; CASE 0,1
-  FDB   0
-  FDB   WORK+431,WORK+818,WORK+1205,WORK+1592
-  FDB   WORK+1979,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+1,WORK+87,WORK+130,WORK+173
-  FDB   WORK+216,WORK+259,WORK+302,WORK+345
-  FDB   WORK+388,WORK+474,WORK+775,WORK+861
-  FCB   0       ; CASE 0,2
-  FDB   0
-  FDB   WORK+474,WORK+861,WORK+1248,WORK+1635
-  FDB   WORK+2022,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+1,WORK+44,WORK+130,WORK+173
-  FDB   WORK+216,WORK+259,WORK+302,WORK+345
-  FDB   WORK+388,WORK+431,WORK+775,WORK+818
-  FCB   0       ; CASE 0,3
-  FDB   0
-  FDB   WORK+517,WORK+904,WORK+1291,WORK+1678
-  FDB   WORK+2065,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+1,WORK+44,WORK+87,WORK+173
-  FDB   WORK+216,WORK+259,WORK+302,WORK+345
-  FDB   WORK+560,WORK+603,WORK+947,WORK+990
-  FCB   0       ; CASE 0,4
-  FDB   0
-  FDB   WORK+560,WORK+947,WORK+1334,WORK+1721
-  FDB   WORK+2108,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+1,WORK+44,WORK+87,WORK+130
-  FDB   WORK+216,WORK+259,WORK+302,WORK+345
-  FDB   WORK+517,WORK+603,WORK+904,WORK+990
-  FCB   0       ; CASE 0,5
-  FDB   0
-  FDB   WORK+603,WORK+990,WORK+1377,WORK+1764
-  FDB   WORK+2151,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+1,WORK+44,WORK+87,WORK+130
-  FDB   WORK+173,WORK+259,WORK+302,WORK+345
-  FDB   WORK+517,WORK+560,WORK+904,WORK+947
-  FCB   0       ; CASE 0,6
-  FDB   0
-  FDB   WORK+646,WORK+1033,WORK+1420,WORK+1807
-  FDB   WORK+2194,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+1,WORK+44,WORK+87,WORK+130
-  FDB   WORK+173,WORK+216,WORK+302,WORK+345
-  FDB   WORK+689,WORK+732,WORK+1076,WORK+1119
-  FCB   0       ; CASE 0,7
-  FDB   0
-  FDB   WORK+689,WORK+1076,WORK+1463,WORK+1850
-  FDB   WORK+2237,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+1,WORK+44,WORK+87,WORK+130
-  FDB   WORK+173,WORK+216,WORK+259,WORK+345
-  FDB   WORK+646,WORK+732,WORK+1033,WORK+1119
-  FCB   0       ; CASE 0,8
-  FDB   0
-  FDB   WORK+732,WORK+1119,WORK+1506,WORK+1893
-  FDB   WORK+2280,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+1,WORK+44,WORK+87,WORK+130
-  FDB   WORK+173,WORK+216,WORK+259,WORK+302
-  FDB   WORK+646,WORK+689,WORK+1033,WORK+1076
-  FCB   0       ; CASE 1,0
-  FDB   0
-  FDB   WORK+1,WORK+775,WORK+1162,WORK+1549
-  FDB   WORK+1936,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+431,WORK+474,WORK+517,WORK+560
-  FDB   WORK+603,WORK+646,WORK+689,WORK+732
-  FDB   WORK+44,WORK+87,WORK+818,WORK+861
-  FCB   0       ; CASE 1,1
-  FDB   0
-  FDB   WORK+44,WORK+818,WORK+1205,WORK+1592
-  FDB   WORK+1979,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+388,WORK+474,WORK+517,WORK+560
-  FDB   WORK+603,WORK+646,WORK+689,WORK+732
-  FDB   WORK+1,WORK+87,WORK+775,WORK+861
-  FCB   0       ; CASE 1,2
-  FDB   0
-  FDB   WORK+87,WORK+861,WORK+1248,WORK+1635
-  FDB   WORK+2022,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+388,WORK+431,WORK+517,WORK+560
-  FDB   WORK+603,WORK+646,WORK+689,WORK+732
-  FDB   WORK+1,WORK+44,WORK+775,WORK+818
-  FCB   0       ; CASE 1,3
-  FDB   0
-  FDB   WORK+130,WORK+904,WORK+1291,WORK+1678
-  FDB   WORK+2065,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+388,WORK+431,WORK+474,WORK+560
-  FDB   WORK+603,WORK+646,WORK+689,WORK+732
-  FDB   WORK+173,WORK+216,WORK+947,WORK+990
-  FCB   0       ; CASE 1,4
-  FDB   0
-  FDB   WORK+173,WORK+947,WORK+1334,WORK+1721
-  FDB   WORK+2108,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+388,WORK+431,WORK+474,WORK+517
-  FDB   WORK+603,WORK+646,WORK+689,WORK+732
-  FDB   WORK+130,WORK+216,WORK+904,WORK+990
-  FCB   0       ; CASE 1,5
-  FDB   0
-  FDB   WORK+216,WORK+990,WORK+1377,WORK+1764
-  FDB   WORK+2151,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+388,WORK+431,WORK+474,WORK+517
-  FDB   WORK+560,WORK+646,WORK+689,WORK+732
-  FDB   WORK+130,WORK+173,WORK+904,WORK+947
-  FCB   0       ; CASE 1,6
-  FDB   0
-  FDB   WORK+259,WORK+1033,WORK+1420,WORK+1807
-  FDB   WORK+2194,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+388,WORK+431,WORK+474,WORK+517
-  FDB   WORK+560,WORK+603,WORK+689,WORK+732
-  FDB   WORK+302,WORK+345,WORK+1076,WORK+1119
-  FCB   0       ; CASE 1,7
-  FDB   0
-  FDB   WORK+302,WORK+1076,WORK+1463,WORK+1850
-  FDB   WORK+2237,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+388,WORK+431,WORK+474,WORK+517
-  FDB   WORK+560,WORK+603,WORK+646,WORK+732
-  FDB   WORK+259,WORK+345,WORK+1033,WORK+1119
-  FCB   0       ; CASE 1,8
-  FDB   0
-  FDB   WORK+345,WORK+1119,WORK+1506,WORK+1893
-  FDB   WORK+2280,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+388,WORK+431,WORK+474,WORK+517
-  FDB   WORK+560,WORK+603,WORK+646,WORK+689
-  FDB   WORK+259,WORK+302,WORK+1033,WORK+1076
-  FCB   0       ; CASE 2,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+1162,WORK+1549
-  FDB   WORK+1936,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+818,WORK+861,WORK+904,WORK+947
-  FDB   WORK+990,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+44,WORK+87,WORK+431,WORK+474
-  FCB   0       ; CASE 2,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+1205,WORK+1592
-  FDB   WORK+1979,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+775,WORK+861,WORK+904,WORK+947
-  FDB   WORK+990,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+1,WORK+87,WORK+388,WORK+474
-  FCB   0       ; CASE 2,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+1248,WORK+1635
-  FDB   WORK+2022,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+775,WORK+818,WORK+904,WORK+947
-  FDB   WORK+990,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+1,WORK+44,WORK+388,WORK+431
-  FCB   0       ; CASE 2,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+1291,WORK+1678
-  FDB   WORK+2065,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+775,WORK+818,WORK+861,WORK+947
-  FDB   WORK+990,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+173,WORK+216,WORK+560,WORK+603
-  FCB   0       ; CASE 2,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+1334,WORK+1721
-  FDB   WORK+2108,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+775,WORK+818,WORK+861,WORK+904
-  FDB   WORK+990,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+130,WORK+216,WORK+517,WORK+603
-  FCB   0       ; CASE 2,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+1377,WORK+1764
-  FDB   WORK+2151,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+775,WORK+818,WORK+861,WORK+904
-  FDB   WORK+947,WORK+1033,WORK+1076,WORK+1119
-  FDB   WORK+130,WORK+173,WORK+517,WORK+560
-  FCB   0       ; CASE 2,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1420,WORK+1807
-  FDB   WORK+2194,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+775,WORK+818,WORK+861,WORK+904
-  FDB   WORK+947,WORK+990,WORK+1076,WORK+1119
-  FDB   WORK+302,WORK+345,WORK+689,WORK+732
-  FCB   0       ; CASE 2,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1463,WORK+1850
-  FDB   WORK+2237,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+775,WORK+818,WORK+861,WORK+904
-  FDB   WORK+947,WORK+990,WORK+1033,WORK+1119
-  FDB   WORK+259,WORK+345,WORK+646,WORK+732
-  FCB   0       ; CASE 2,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1506,WORK+1893
-  FDB   WORK+2280,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+775,WORK+818,WORK+861,WORK+904
-  FDB   WORK+947,WORK+990,WORK+1033,WORK+1076
-  FDB   WORK+259,WORK+302,WORK+646,WORK+689
-  FCB   0       ; CASE 3,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1549
-  FDB   WORK+1936,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+1205,WORK+1248,WORK+1291,WORK+1334
-  FDB   WORK+1377,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1592,WORK+1635,WORK+1979,WORK+2022
-  FCB   0       ; CASE 3,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1592
-  FDB   WORK+1979,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+1162,WORK+1248,WORK+1291,WORK+1334
-  FDB   WORK+1377,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1549,WORK+1635,WORK+1936,WORK+2022
-  FCB   0       ; CASE 3,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1635
-  FDB   WORK+2022,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+1162,WORK+1205,WORK+1291,WORK+1334
-  FDB   WORK+1377,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1549,WORK+1592,WORK+1936,WORK+1979
-  FCB   0       ; CASE 3,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1678
-  FDB   WORK+2065,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1334
-  FDB   WORK+1377,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1721,WORK+1764,WORK+2108,WORK+2151
-  FCB   0       ; CASE 3,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1721
-  FDB   WORK+2108,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1291
-  FDB   WORK+1377,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1678,WORK+1764,WORK+2065,WORK+2151
-  FCB   0       ; CASE 3,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1764
-  FDB   WORK+2151,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1291
-  FDB   WORK+1334,WORK+1420,WORK+1463,WORK+1506
-  FDB   WORK+1678,WORK+1721,WORK+2065,WORK+2108
-  FCB   0       ; CASE 3,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1807
-  FDB   WORK+2194,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1291
-  FDB   WORK+1334,WORK+1377,WORK+1463,WORK+1506
-  FDB   WORK+1850,WORK+1893,WORK+2237,WORK+2280
-  FCB   0       ; CASE 3,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1850
-  FDB   WORK+2237,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1291
-  FDB   WORK+1334,WORK+1377,WORK+1420,WORK+1506
-  FDB   WORK+1807,WORK+1893,WORK+2194,WORK+2280
-  FCB   0       ; CASE 3,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1893
-  FDB   WORK+2280,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+1162,WORK+1205,WORK+1248,WORK+1291
-  FDB   WORK+1334,WORK+1377,WORK+1420,WORK+1463
-  FDB   WORK+1807,WORK+1850,WORK+2194,WORK+2237
-  FCB   0       ; CASE 4,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1162
-  FDB   WORK+1936,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+1592,WORK+1635,WORK+1678,WORK+1721
-  FDB   WORK+1764,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1205,WORK+1248,WORK+1979,WORK+2022
-  FCB   0       ; CASE 4,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1205
-  FDB   WORK+1979,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+1549,WORK+1635,WORK+1678,WORK+1721
-  FDB   WORK+1764,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1162,WORK+1248,WORK+1936,WORK+2022
-  FCB   0       ; CASE 4,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1248
-  FDB   WORK+2022,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+1549,WORK+1592,WORK+1678,WORK+1721
-  FDB   WORK+1764,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1162,WORK+1205,WORK+1936,WORK+1979
-  FCB   0       ; CASE 4,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1291
-  FDB   WORK+2065,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1721
-  FDB   WORK+1764,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1334,WORK+1377,WORK+2108,WORK+2151
-  FCB   0       ; CASE 4,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1334
-  FDB   WORK+2108,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1678
-  FDB   WORK+1764,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1291,WORK+1377,WORK+2065,WORK+2151
-  FCB   0       ; CASE 4,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1377
-  FDB   WORK+2151,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1678
-  FDB   WORK+1721,WORK+1807,WORK+1850,WORK+1893
-  FDB   WORK+1291,WORK+1334,WORK+2065,WORK+2108
-  FCB   0       ; CASE 4,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1420
-  FDB   WORK+2194,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1678
-  FDB   WORK+1721,WORK+1764,WORK+1850,WORK+1893
-  FDB   WORK+1463,WORK+1506,WORK+2237,WORK+2280
-  FCB   0       ; CASE 4,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1463
-  FDB   WORK+2237,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1678
-  FDB   WORK+1721,WORK+1764,WORK+1807,WORK+1893
-  FDB   WORK+1420,WORK+1506,WORK+2194,WORK+2280
-  FCB   0       ; CASE 4,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1506
-  FDB   WORK+2280,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+1549,WORK+1592,WORK+1635,WORK+1678
-  FDB   WORK+1721,WORK+1764,WORK+1807,WORK+1850
-  FDB   WORK+1420,WORK+1463,WORK+2194,WORK+2237
-  FCB   0       ; CASE 5,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1162
-  FDB   WORK+1549,WORK+2323,WORK+2710,WORK+3097
-  FDB   WORK+1979,WORK+2022,WORK+2065,WORK+2108
-  FDB   WORK+2151,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1205,WORK+1248,WORK+1592,WORK+1635
-  FCB   0       ; CASE 5,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1205
-  FDB   WORK+1592,WORK+2366,WORK+2753,WORK+3140
-  FDB   WORK+1936,WORK+2022,WORK+2065,WORK+2108
-  FDB   WORK+2151,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1162,WORK+1248,WORK+1549,WORK+1635
-  FCB   0       ; CASE 5,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1248
-  FDB   WORK+1635,WORK+2409,WORK+2796,WORK+3183
-  FDB   WORK+1936,WORK+1979,WORK+2065,WORK+2108
-  FDB   WORK+2151,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1162,WORK+1205,WORK+1549,WORK+1592
-  FCB   0       ; CASE 5,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1291
-  FDB   WORK+1678,WORK+2452,WORK+2839,WORK+3226
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2108
-  FDB   WORK+2151,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1334,WORK+1377,WORK+1721,WORK+1764
-  FCB   0       ; CASE 5,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1334
-  FDB   WORK+1721,WORK+2495,WORK+2882,WORK+3269
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2065
-  FDB   WORK+2151,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1291,WORK+1377,WORK+1678,WORK+1764
-  FCB   0       ; CASE 5,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1377
-  FDB   WORK+1764,WORK+2538,WORK+2925,WORK+3312
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2065
-  FDB   WORK+2108,WORK+2194,WORK+2237,WORK+2280
-  FDB   WORK+1291,WORK+1334,WORK+1678,WORK+1721
-  FCB   0       ; CASE 5,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1420
-  FDB   WORK+1807,WORK+2581,WORK+2968,WORK+3355
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2065
-  FDB   WORK+2108,WORK+2151,WORK+2237,WORK+2280
-  FDB   WORK+1463,WORK+1506,WORK+1850,WORK+1893
-  FCB   0       ; CASE 5,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1463
-  FDB   WORK+1850,WORK+2624,WORK+3011,WORK+3398
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2065
-  FDB   WORK+2108,WORK+2151,WORK+2194,WORK+2280
-  FDB   WORK+1420,WORK+1506,WORK+1807,WORK+1893
-  FCB   0       ; CASE 5,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1506
-  FDB   WORK+1893,WORK+2667,WORK+3054,WORK+3441
-  FDB   WORK+1936,WORK+1979,WORK+2022,WORK+2065
-  FDB   WORK+2108,WORK+2151,WORK+2194,WORK+2237
-  FDB   WORK+1420,WORK+1463,WORK+1807,WORK+1850
-  FCB   0       ; CASE 6,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1162
-  FDB   WORK+1549,WORK+1936,WORK+2710,WORK+3097
-  FDB   WORK+2366,WORK+2409,WORK+2452,WORK+2495
-  FDB   WORK+2538,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2753,WORK+2796,WORK+3140,WORK+3183
-  FCB   0       ; CASE 6,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1205
-  FDB   WORK+1592,WORK+1979,WORK+2753,WORK+3140
-  FDB   WORK+2323,WORK+2409,WORK+2452,WORK+2495
-  FDB   WORK+2538,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2710,WORK+2796,WORK+3097,WORK+3183
-  FCB   0       ; CASE 6,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1248
-  FDB   WORK+1635,WORK+2022,WORK+2796,WORK+3183
-  FDB   WORK+2323,WORK+2366,WORK+2452,WORK+2495
-  FDB   WORK+2538,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2710,WORK+2753,WORK+3097,WORK+3140
-  FCB   0       ; CASE 6,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1291
-  FDB   WORK+1678,WORK+2065,WORK+2839,WORK+3226
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2495
-  FDB   WORK+2538,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2882,WORK+2925,WORK+3269,WORK+3312
-  FCB   0       ; CASE 6,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1334
-  FDB   WORK+1721,WORK+2108,WORK+2882,WORK+3269
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2452
-  FDB   WORK+2538,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2839,WORK+2925,WORK+3226,WORK+3312
-  FCB   0       ; CASE 6,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1377
-  FDB   WORK+1764,WORK+2151,WORK+2925,WORK+3312
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2452
-  FDB   WORK+2495,WORK+2581,WORK+2624,WORK+2667
-  FDB   WORK+2839,WORK+2882,WORK+3226,WORK+3269
-  FCB   0       ; CASE 6,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1420
-  FDB   WORK+1807,WORK+2194,WORK+2968,WORK+3355
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2452
-  FDB   WORK+2495,WORK+2538,WORK+2624,WORK+2667
-  FDB   WORK+3011,WORK+3054,WORK+3398,WORK+3441
-  FCB   0       ; CASE 6,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1463
-  FDB   WORK+1850,WORK+2237,WORK+3011,WORK+3398
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2452
-  FDB   WORK+2495,WORK+2538,WORK+2581,WORK+2667
-  FDB   WORK+2968,WORK+3054,WORK+3355,WORK+3441
-  FCB   0       ; CASE 6,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1506
-  FDB   WORK+1893,WORK+2280,WORK+3054,WORK+3441
-  FDB   WORK+2323,WORK+2366,WORK+2409,WORK+2452
-  FDB   WORK+2495,WORK+2538,WORK+2581,WORK+2624
-  FDB   WORK+2968,WORK+3011,WORK+3355,WORK+3398
-  FCB   0       ; CASE 7,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1162
-  FDB   WORK+1549,WORK+1936,WORK+2323,WORK+3097
-  FDB   WORK+2753,WORK+2796,WORK+2839,WORK+2882
-  FDB   WORK+2925,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2366,WORK+2409,WORK+3140,WORK+3183
-  FCB   0       ; CASE 7,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1205
-  FDB   WORK+1592,WORK+1979,WORK+2366,WORK+3140
-  FDB   WORK+2710,WORK+2796,WORK+2839,WORK+2882
-  FDB   WORK+2925,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2323,WORK+2409,WORK+3097,WORK+3183
-  FCB   0       ; CASE 7,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1248
-  FDB   WORK+1635,WORK+2022,WORK+2409,WORK+3183
-  FDB   WORK+2710,WORK+2753,WORK+2839,WORK+2882
-  FDB   WORK+2925,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2323,WORK+2366,WORK+3097,WORK+3140
-  FCB   0       ; CASE 7,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1291
-  FDB   WORK+1678,WORK+2065,WORK+2452,WORK+3226
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2882
-  FDB   WORK+2925,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2495,WORK+2538,WORK+3269,WORK+3312
-  FCB   0       ; CASE 7,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1334
-  FDB   WORK+1721,WORK+2108,WORK+2495,WORK+3269
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2839
-  FDB   WORK+2925,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2452,WORK+2538,WORK+3226,WORK+3312
-  FCB   0       ; CASE 7,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1377
-  FDB   WORK+1764,WORK+2151,WORK+2538,WORK+3312
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2839
-  FDB   WORK+2882,WORK+2968,WORK+3011,WORK+3054
-  FDB   WORK+2452,WORK+2495,WORK+3226,WORK+3269
-  FCB   0       ; CASE 7,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1420
-  FDB   WORK+1807,WORK+2194,WORK+2581,WORK+3355
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2839
-  FDB   WORK+2882,WORK+2925,WORK+3011,WORK+3054
-  FDB   WORK+2624,WORK+2667,WORK+3398,WORK+3441
-  FCB   0       ; CASE 7,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1463
-  FDB   WORK+1850,WORK+2237,WORK+2624,WORK+3398
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2839
-  FDB   WORK+2882,WORK+2925,WORK+2968,WORK+3054
-  FDB   WORK+2581,WORK+2667,WORK+3355,WORK+3441
-  FCB   0       ; CASE 7,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1506
-  FDB   WORK+1893,WORK+2280,WORK+2667,WORK+3441
-  FDB   WORK+2710,WORK+2753,WORK+2796,WORK+2839
-  FDB   WORK+2882,WORK+2925,WORK+2968,WORK+3011
-  FDB   WORK+2581,WORK+2624,WORK+3355,WORK+3398
-  FCB   0       ; CASE 8,0
-  FDB   0
-  FDB   WORK+1,WORK+388,WORK+775,WORK+1162
-  FDB   WORK+1549,WORK+1936,WORK+2323,WORK+2710
-  FDB   WORK+3140,WORK+3183,WORK+3226,WORK+3269
-  FDB   WORK+3312,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2366,WORK+2409,WORK+2753,WORK+2796
-  FCB   0       ; CASE 8,1
-  FDB   0
-  FDB   WORK+44,WORK+431,WORK+818,WORK+1205
-  FDB   WORK+1592,WORK+1979,WORK+2366,WORK+2753
-  FDB   WORK+3097,WORK+3183,WORK+3226,WORK+3269
-  FDB   WORK+3312,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2323,WORK+2409,WORK+2710,WORK+2796
-  FCB   0       ; CASE 8,2
-  FDB   0
-  FDB   WORK+87,WORK+474,WORK+861,WORK+1248
-  FDB   WORK+1635,WORK+2022,WORK+2409,WORK+2796
-  FDB   WORK+3097,WORK+3140,WORK+3226,WORK+3269
-  FDB   WORK+3312,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2323,WORK+2366,WORK+2710,WORK+2753
-  FCB   0       ; CASE 8,3
-  FDB   0
-  FDB   WORK+130,WORK+517,WORK+904,WORK+1291
-  FDB   WORK+1678,WORK+2065,WORK+2452,WORK+2839
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3269
-  FDB   WORK+3312,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2495,WORK+2538,WORK+2882,WORK+2925
-  FCB   0       ; CASE 8,4
-  FDB   0
-  FDB   WORK+173,WORK+560,WORK+947,WORK+1334
-  FDB   WORK+1721,WORK+2108,WORK+2495,WORK+2882
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3226
-  FDB   WORK+3312,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2452,WORK+2538,WORK+2839,WORK+2925
-  FCB   0       ; CASE 8,5
-  FDB   0
-  FDB   WORK+216,WORK+603,WORK+990,WORK+1377
-  FDB   WORK+1764,WORK+2151,WORK+2538,WORK+2925
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3226
-  FDB   WORK+3269,WORK+3355,WORK+3398,WORK+3441
-  FDB   WORK+2452,WORK+2495,WORK+2839,WORK+2882
-  FCB   0       ; CASE 8,6
-  FDB   0
-  FDB   WORK+259,WORK+646,WORK+1033,WORK+1420
-  FDB   WORK+1807,WORK+2194,WORK+2581,WORK+2968
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3226
-  FDB   WORK+3269,WORK+3312,WORK+3398,WORK+3441
-  FDB   WORK+2624,WORK+2667,WORK+3011,WORK+3054
-  FCB   0       ; CASE 8,7
-  FDB   0
-  FDB   WORK+302,WORK+689,WORK+1076,WORK+1463
-  FDB   WORK+1850,WORK+2237,WORK+2624,WORK+3011
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3226
-  FDB   WORK+3269,WORK+3312,WORK+3355,WORK+3441
-  FDB   WORK+2581,WORK+2667,WORK+2968,WORK+3054
-  FCB   0       ; CASE 8,8
-  FDB   0
-  FDB   WORK+345,WORK+732,WORK+1119,WORK+1506
-  FDB   WORK+1893,WORK+2280,WORK+2667,WORK+3054
-  FDB   WORK+3097,WORK+3140,WORK+3183,WORK+3226
-  FDB   WORK+3269,WORK+3312,WORK+3355,WORK+3398
-  FDB   WORK+2581,WORK+2624,WORK+2968,WORK+3011
+  RMB   11,0    ; CASE 0,0
+  FDB   WORK+460,WORK+919,WORK+1378,WORK+1837
+  FDB   WORK+2296,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+52,WORK+103,WORK+154,WORK+205
+  FDB   WORK+256,WORK+307,WORK+358,WORK+409
+  FDB   WORK+511,WORK+562,WORK+970,WORK+1021
+  RMB   11,0    ; CASE 0,1
+  FDB   WORK+511,WORK+970,WORK+1429,WORK+1888
+  FDB   WORK+2347,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+1,WORK+103,WORK+154,WORK+205
+  FDB   WORK+256,WORK+307,WORK+358,WORK+409
+  FDB   WORK+460,WORK+562,WORK+919,WORK+1021
+  RMB   11,0    ; CASE 0,2
+  FDB   WORK+562,WORK+1021,WORK+1480,WORK+1939
+  FDB   WORK+2398,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+1,WORK+52,WORK+154,WORK+205
+  FDB   WORK+256,WORK+307,WORK+358,WORK+409
+  FDB   WORK+460,WORK+511,WORK+919,WORK+970
+  RMB   11,0    ; CASE 0,3
+  FDB   WORK+613,WORK+1072,WORK+1531,WORK+1990
+  FDB   WORK+2449,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+1,WORK+52,WORK+103,WORK+205
+  FDB   WORK+256,WORK+307,WORK+358,WORK+409
+  FDB   WORK+664,WORK+715,WORK+1123,WORK+1174
+  RMB   11,0    ; CASE 0,4
+  FDB   WORK+664,WORK+1123,WORK+1582,WORK+2041
+  FDB   WORK+2500,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+1,WORK+52,WORK+103,WORK+154
+  FDB   WORK+256,WORK+307,WORK+358,WORK+409
+  FDB   WORK+613,WORK+715,WORK+1072,WORK+1174
+  RMB   11,0    ; CASE 0,5
+  FDB   WORK+715,WORK+1174,WORK+1633,WORK+2092
+  FDB   WORK+2551,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+1,WORK+52,WORK+103,WORK+154
+  FDB   WORK+205,WORK+307,WORK+358,WORK+409
+  FDB   WORK+613,WORK+664,WORK+1072,WORK+1123
+  RMB   11,0    ; CASE 0,6
+  FDB   WORK+766,WORK+1225,WORK+1684,WORK+2143
+  FDB   WORK+2602,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+1,WORK+52,WORK+103,WORK+154
+  FDB   WORK+205,WORK+256,WORK+358,WORK+409
+  FDB   WORK+817,WORK+868,WORK+1276,WORK+1327
+  RMB   11,0    ; CASE 0,7
+  FDB   WORK+817,WORK+1276,WORK+1735,WORK+2194
+  FDB   WORK+2653,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+1,WORK+52,WORK+103,WORK+154
+  FDB   WORK+205,WORK+256,WORK+307,WORK+409
+  FDB   WORK+766,WORK+868,WORK+1225,WORK+1327
+  RMB   11,0    ; CASE 0,8
+  FDB   WORK+868,WORK+1327,WORK+1786,WORK+2245
+  FDB   WORK+2704,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+1,WORK+52,WORK+103,WORK+154
+  FDB   WORK+205,WORK+256,WORK+307,WORK+358
+  FDB   WORK+766,WORK+817,WORK+1225,WORK+1276
+  RMB   11,0    ; CASE 1,0
+  FDB   WORK+1,WORK+919,WORK+1378,WORK+1837
+  FDB   WORK+2296,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+511,WORK+562,WORK+613,WORK+664
+  FDB   WORK+715,WORK+766,WORK+817,WORK+868
+  FDB   WORK+52,WORK+103,WORK+970,WORK+1021
+  RMB   11,0    ; CASE 1,1
+  FDB   WORK+52,WORK+970,WORK+1429,WORK+1888
+  FDB   WORK+2347,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+460,WORK+562,WORK+613,WORK+664
+  FDB   WORK+715,WORK+766,WORK+817,WORK+868
+  FDB   WORK+1,WORK+103,WORK+919,WORK+1021
+  RMB   11,0    ; CASE 1,2
+  FDB   WORK+103,WORK+1021,WORK+1480,WORK+1939
+  FDB   WORK+2398,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+460,WORK+511,WORK+613,WORK+664
+  FDB   WORK+715,WORK+766,WORK+817,WORK+868
+  FDB   WORK+1,WORK+52,WORK+919,WORK+970
+  RMB   11,0    ; CASE 1,3
+  FDB   WORK+154,WORK+1072,WORK+1531,WORK+1990
+  FDB   WORK+2449,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+460,WORK+511,WORK+562,WORK+664
+  FDB   WORK+715,WORK+766,WORK+817,WORK+868
+  FDB   WORK+205,WORK+256,WORK+1123,WORK+1174
+  RMB   11,0    ; CASE 1,4
+  FDB   WORK+205,WORK+1123,WORK+1582,WORK+2041
+  FDB   WORK+2500,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+460,WORK+511,WORK+562,WORK+613
+  FDB   WORK+715,WORK+766,WORK+817,WORK+868
+  FDB   WORK+154,WORK+256,WORK+1072,WORK+1174
+  RMB   11,0    ; CASE 1,5
+  FDB   WORK+256,WORK+1174,WORK+1633,WORK+2092
+  FDB   WORK+2551,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+460,WORK+511,WORK+562,WORK+613
+  FDB   WORK+664,WORK+766,WORK+817,WORK+868
+  FDB   WORK+154,WORK+205,WORK+1072,WORK+1123
+  RMB   11,0    ; CASE 1,6
+  FDB   WORK+307,WORK+1225,WORK+1684,WORK+2143
+  FDB   WORK+2602,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+460,WORK+511,WORK+562,WORK+613
+  FDB   WORK+664,WORK+715,WORK+817,WORK+868
+  FDB   WORK+358,WORK+409,WORK+1276,WORK+1327
+  RMB   11,0    ; CASE 1,7
+  FDB   WORK+358,WORK+1276,WORK+1735,WORK+2194
+  FDB   WORK+2653,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+460,WORK+511,WORK+562,WORK+613
+  FDB   WORK+664,WORK+715,WORK+766,WORK+868
+  FDB   WORK+307,WORK+409,WORK+1225,WORK+1327
+  RMB   11,0    ; CASE 1,8
+  FDB   WORK+409,WORK+1327,WORK+1786,WORK+2245
+  FDB   WORK+2704,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+460,WORK+511,WORK+562,WORK+613
+  FDB   WORK+664,WORK+715,WORK+766,WORK+817
+  FDB   WORK+307,WORK+358,WORK+1225,WORK+1276
+  RMB   11,0    ; CASE 2,0
+  FDB   WORK+1,WORK+460,WORK+1378,WORK+1837
+  FDB   WORK+2296,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+970,WORK+1021,WORK+1072,WORK+1123
+  FDB   WORK+1174,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+52,WORK+103,WORK+511,WORK+562
+  RMB   11,0    ; CASE 2,1
+  FDB   WORK+52,WORK+511,WORK+1429,WORK+1888
+  FDB   WORK+2347,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+919,WORK+1021,WORK+1072,WORK+1123
+  FDB   WORK+1174,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+1,WORK+103,WORK+460,WORK+562
+  RMB   11,0    ; CASE 2,2
+  FDB   WORK+103,WORK+562,WORK+1480,WORK+1939
+  FDB   WORK+2398,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+919,WORK+970,WORK+1072,WORK+1123
+  FDB   WORK+1174,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+1,WORK+52,WORK+460,WORK+511
+  RMB   11,0    ; CASE 2,3
+  FDB   WORK+154,WORK+613,WORK+1531,WORK+1990
+  FDB   WORK+2449,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1123
+  FDB   WORK+1174,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+205,WORK+256,WORK+664,WORK+715
+  RMB   11,0    ; CASE 2,4
+  FDB   WORK+205,WORK+664,WORK+1582,WORK+2041
+  FDB   WORK+2500,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1072
+  FDB   WORK+1174,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+154,WORK+256,WORK+613,WORK+715
+  RMB   11,0    ; CASE 2,5
+  FDB   WORK+256,WORK+715,WORK+1633,WORK+2092
+  FDB   WORK+2551,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1072
+  FDB   WORK+1123,WORK+1225,WORK+1276,WORK+1327
+  FDB   WORK+154,WORK+205,WORK+613,WORK+664
+  RMB   11,0    ; CASE 2,6
+  FDB   WORK+307,WORK+766,WORK+1684,WORK+2143
+  FDB   WORK+2602,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1072
+  FDB   WORK+1123,WORK+1174,WORK+1276,WORK+1327
+  FDB   WORK+358,WORK+409,WORK+817,WORK+868
+  RMB   11,0    ; CASE 2,7
+  FDB   WORK+358,WORK+817,WORK+1735,WORK+2194
+  FDB   WORK+2653,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1072
+  FDB   WORK+1123,WORK+1174,WORK+1225,WORK+1327
+  FDB   WORK+307,WORK+409,WORK+766,WORK+868
+  RMB   11,0    ; CASE 2,8
+  FDB   WORK+409,WORK+868,WORK+1786,WORK+2245
+  FDB   WORK+2704,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+919,WORK+970,WORK+1021,WORK+1072
+  FDB   WORK+1123,WORK+1174,WORK+1225,WORK+1276
+  FDB   WORK+307,WORK+358,WORK+766,WORK+817
+  RMB   11,0    ; CASE 3,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1837
+  FDB   WORK+2296,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+1429,WORK+1480,WORK+1531,WORK+1582
+  FDB   WORK+1633,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+1888,WORK+1939,WORK+2347,WORK+2398
+  RMB   11,0    ; CASE 3,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1888
+  FDB   WORK+2347,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+1378,WORK+1480,WORK+1531,WORK+1582
+  FDB   WORK+1633,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+1837,WORK+1939,WORK+2296,WORK+2398
+  RMB   11,0    ; CASE 3,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1939
+  FDB   WORK+2398,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+1378,WORK+1429,WORK+1531,WORK+1582
+  FDB   WORK+1633,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+1837,WORK+1888,WORK+2296,WORK+2347
+  RMB   11,0    ; CASE 3,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1990
+  FDB   WORK+2449,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1582
+  FDB   WORK+1633,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+2041,WORK+2092,WORK+2500,WORK+2551
+  RMB   11,0    ; CASE 3,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+2041
+  FDB   WORK+2500,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1531
+  FDB   WORK+1633,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+1990,WORK+2092,WORK+2449,WORK+2551
+  RMB   11,0    ; CASE 3,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+2092
+  FDB   WORK+2551,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1531
+  FDB   WORK+1582,WORK+1684,WORK+1735,WORK+1786
+  FDB   WORK+1990,WORK+2041,WORK+2449,WORK+2500
+  RMB   11,0    ; CASE 3,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+2143
+  FDB   WORK+2602,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1531
+  FDB   WORK+1582,WORK+1633,WORK+1735,WORK+1786
+  FDB   WORK+2194,WORK+2245,WORK+2653,WORK+2704
+  RMB   11,0    ; CASE 3,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+2194
+  FDB   WORK+2653,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1531
+  FDB   WORK+1582,WORK+1633,WORK+1684,WORK+1786
+  FDB   WORK+2143,WORK+2245,WORK+2602,WORK+2704
+  RMB   11,0    ; CASE 3,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+2245
+  FDB   WORK+2704,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+1378,WORK+1429,WORK+1480,WORK+1531
+  FDB   WORK+1582,WORK+1633,WORK+1684,WORK+1735
+  FDB   WORK+2143,WORK+2194,WORK+2602,WORK+2653
+  RMB   11,0    ; CASE 4,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1378
+  FDB   WORK+2296,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+1888,WORK+1939,WORK+1990,WORK+2041
+  FDB   WORK+2092,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1429,WORK+1480,WORK+2347,WORK+2398
+  RMB   11,0    ; CASE 4,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1429
+  FDB   WORK+2347,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+1837,WORK+1939,WORK+1990,WORK+2041
+  FDB   WORK+2092,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1378,WORK+1480,WORK+2296,WORK+2398
+  RMB   11,0    ; CASE 4,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1480
+  FDB   WORK+2398,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+1837,WORK+1888,WORK+1990,WORK+2041
+  FDB   WORK+2092,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1378,WORK+1429,WORK+2296,WORK+2347
+  RMB   11,0    ; CASE 4,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1531
+  FDB   WORK+2449,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+2041
+  FDB   WORK+2092,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1582,WORK+1633,WORK+2500,WORK+2551
+  RMB   11,0    ; CASE 4,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+1582
+  FDB   WORK+2500,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+1990
+  FDB   WORK+2092,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1531,WORK+1633,WORK+2449,WORK+2551
+  RMB   11,0    ; CASE 4,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+1633
+  FDB   WORK+2551,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+1990
+  FDB   WORK+2041,WORK+2143,WORK+2194,WORK+2245
+  FDB   WORK+1531,WORK+1582,WORK+2449,WORK+2500
+  RMB   11,0    ; CASE 4,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+1684
+  FDB   WORK+2602,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+1990
+  FDB   WORK+2041,WORK+2092,WORK+2194,WORK+2245
+  FDB   WORK+1735,WORK+1786,WORK+2653,WORK+2704
+  RMB   11,0    ; CASE 4,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+1735
+  FDB   WORK+2653,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+1990
+  FDB   WORK+2041,WORK+2092,WORK+2143,WORK+2245
+  FDB   WORK+1684,WORK+1786,WORK+2602,WORK+2704
+  RMB   11,0    ; CASE 4,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+1786
+  FDB   WORK+2704,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+1837,WORK+1888,WORK+1939,WORK+1990
+  FDB   WORK+2041,WORK+2092,WORK+2143,WORK+2194
+  FDB   WORK+1684,WORK+1735,WORK+2602,WORK+2653
+  RMB   11,0    ; CASE 5,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1378
+  FDB   WORK+1837,WORK+2755,WORK+3214,WORK+3673
+  FDB   WORK+2347,WORK+2398,WORK+2449,WORK+2500
+  FDB   WORK+2551,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1429,WORK+1480,WORK+1888,WORK+1939
+  RMB   11,0    ; CASE 5,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1429
+  FDB   WORK+1888,WORK+2806,WORK+3265,WORK+3724
+  FDB   WORK+2296,WORK+2398,WORK+2449,WORK+2500
+  FDB   WORK+2551,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1378,WORK+1480,WORK+1837,WORK+1939
+  RMB   11,0    ; CASE 5,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1480
+  FDB   WORK+1939,WORK+2857,WORK+3316,WORK+3775
+  FDB   WORK+2296,WORK+2347,WORK+2449,WORK+2500
+  FDB   WORK+2551,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1378,WORK+1429,WORK+1837,WORK+1888
+  RMB   11,0    ; CASE 5,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1531
+  FDB   WORK+1990,WORK+2908,WORK+3367,WORK+3826
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2500
+  FDB   WORK+2551,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1582,WORK+1633,WORK+2041,WORK+2092
+  RMB   11,0    ; CASE 5,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+1582
+  FDB   WORK+2041,WORK+2959,WORK+3418,WORK+3877
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2449
+  FDB   WORK+2551,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1531,WORK+1633,WORK+1990,WORK+2092
+  RMB   11,0    ; CASE 5,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+1633
+  FDB   WORK+2092,WORK+3010,WORK+3469,WORK+3928
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2449
+  FDB   WORK+2500,WORK+2602,WORK+2653,WORK+2704
+  FDB   WORK+1531,WORK+1582,WORK+1990,WORK+2041
+  RMB   11,0    ; CASE 5,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+1684
+  FDB   WORK+2143,WORK+3061,WORK+3520,WORK+3979
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2449
+  FDB   WORK+2500,WORK+2551,WORK+2653,WORK+2704
+  FDB   WORK+1735,WORK+1786,WORK+2194,WORK+2245
+  RMB   11,0    ; CASE 5,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+1735
+  FDB   WORK+2194,WORK+3112,WORK+3571,WORK+4030
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2449
+  FDB   WORK+2500,WORK+2551,WORK+2602,WORK+2704
+  FDB   WORK+1684,WORK+1786,WORK+2143,WORK+2245
+  RMB   11,0    ; CASE 5,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+1786
+  FDB   WORK+2245,WORK+3163,WORK+3622,WORK+4081
+  FDB   WORK+2296,WORK+2347,WORK+2398,WORK+2449
+  FDB   WORK+2500,WORK+2551,WORK+2602,WORK+2653
+  FDB   WORK+1684,WORK+1735,WORK+2143,WORK+2194
+  RMB   11,0    ; CASE 6,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1378
+  FDB   WORK+1837,WORK+2296,WORK+3214,WORK+3673
+  FDB   WORK+2806,WORK+2857,WORK+2908,WORK+2959
+  FDB   WORK+3010,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3265,WORK+3316,WORK+3724,WORK+3775
+  RMB   11,0    ; CASE 6,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1429
+  FDB   WORK+1888,WORK+2347,WORK+3265,WORK+3724
+  FDB   WORK+2755,WORK+2857,WORK+2908,WORK+2959
+  FDB   WORK+3010,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3214,WORK+3316,WORK+3673,WORK+3775
+  RMB   11,0    ; CASE 6,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1480
+  FDB   WORK+1939,WORK+2398,WORK+3316,WORK+3775
+  FDB   WORK+2755,WORK+2806,WORK+2908,WORK+2959
+  FDB   WORK+3010,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3214,WORK+3265,WORK+3673,WORK+3724
+  RMB   11,0    ; CASE 6,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1531
+  FDB   WORK+1990,WORK+2449,WORK+3367,WORK+3826
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2959
+  FDB   WORK+3010,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3418,WORK+3469,WORK+3877,WORK+3928
+  RMB   11,0    ; CASE 6,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+1582
+  FDB   WORK+2041,WORK+2500,WORK+3418,WORK+3877
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2908
+  FDB   WORK+3010,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3367,WORK+3469,WORK+3826,WORK+3928
+  RMB   11,0    ; CASE 6,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+1633
+  FDB   WORK+2092,WORK+2551,WORK+3469,WORK+3928
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2908
+  FDB   WORK+2959,WORK+3061,WORK+3112,WORK+3163
+  FDB   WORK+3367,WORK+3418,WORK+3826,WORK+3877
+  RMB   11,0    ; CASE 6,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+1684
+  FDB   WORK+2143,WORK+2602,WORK+3520,WORK+3979
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2908
+  FDB   WORK+2959,WORK+3010,WORK+3112,WORK+3163
+  FDB   WORK+3571,WORK+3622,WORK+4030,WORK+4081
+  RMB   11,0    ; CASE 6,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+1735
+  FDB   WORK+2194,WORK+2653,WORK+3571,WORK+4030
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2908
+  FDB   WORK+2959,WORK+3010,WORK+3061,WORK+3163
+  FDB   WORK+3520,WORK+3622,WORK+3979,WORK+4081
+  RMB   11,0    ; CASE 6,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+1786
+  FDB   WORK+2245,WORK+2704,WORK+3622,WORK+4081
+  FDB   WORK+2755,WORK+2806,WORK+2857,WORK+2908
+  FDB   WORK+2959,WORK+3010,WORK+3061,WORK+3112
+  FDB   WORK+3520,WORK+3571,WORK+3979,WORK+4030
+  RMB   11,0    ; CASE 7,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1378
+  FDB   WORK+1837,WORK+2296,WORK+2755,WORK+3673
+  FDB   WORK+3265,WORK+3316,WORK+3367,WORK+3418
+  FDB   WORK+3469,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2806,WORK+2857,WORK+3724,WORK+3775
+  RMB   11,0    ; CASE 7,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1429
+  FDB   WORK+1888,WORK+2347,WORK+2806,WORK+3724
+  FDB   WORK+3214,WORK+3316,WORK+3367,WORK+3418
+  FDB   WORK+3469,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2755,WORK+2857,WORK+3673,WORK+3775
+  RMB   11,0    ; CASE 7,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1480
+  FDB   WORK+1939,WORK+2398,WORK+2857,WORK+3775
+  FDB   WORK+3214,WORK+3265,WORK+3367,WORK+3418
+  FDB   WORK+3469,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2755,WORK+2806,WORK+3673,WORK+3724
+  RMB   11,0    ; CASE 7,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1531
+  FDB   WORK+1990,WORK+2449,WORK+2908,WORK+3826
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3418
+  FDB   WORK+3469,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2959,WORK+3010,WORK+3877,WORK+3928
+  RMB   11,0    ; CASE 7,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+1582
+  FDB   WORK+2041,WORK+2500,WORK+2959,WORK+3877
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3367
+  FDB   WORK+3469,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2908,WORK+3010,WORK+3826,WORK+3928
+  RMB   11,0    ; CASE 7,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+1633
+  FDB   WORK+2092,WORK+2551,WORK+3010,WORK+3928
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3367
+  FDB   WORK+3418,WORK+3520,WORK+3571,WORK+3622
+  FDB   WORK+2908,WORK+2959,WORK+3826,WORK+3877
+  RMB   11,0    ; CASE 7,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+1684
+  FDB   WORK+2143,WORK+2602,WORK+3061,WORK+3979
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3367
+  FDB   WORK+3418,WORK+3469,WORK+3571,WORK+3622
+  FDB   WORK+3112,WORK+3163,WORK+4030,WORK+4081
+  RMB   11,0    ; CASE 7,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+1735
+  FDB   WORK+2194,WORK+2653,WORK+3112,WORK+4030
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3367
+  FDB   WORK+3418,WORK+3469,WORK+3520,WORK+3622
+  FDB   WORK+3061,WORK+3163,WORK+3979,WORK+4081
+  RMB   11,0    ; CASE 7,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+1786
+  FDB   WORK+2245,WORK+2704,WORK+3163,WORK+4081
+  FDB   WORK+3214,WORK+3265,WORK+3316,WORK+3367
+  FDB   WORK+3418,WORK+3469,WORK+3520,WORK+3571
+  FDB   WORK+3061,WORK+3112,WORK+3979,WORK+4030
+  RMB   11,0    ; CASE 8,0
+  FDB   WORK+1,WORK+460,WORK+919,WORK+1378
+  FDB   WORK+1837,WORK+2296,WORK+2755,WORK+3214
+  FDB   WORK+3724,WORK+3775,WORK+3826,WORK+3877
+  FDB   WORK+3928,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2806,WORK+2857,WORK+3265,WORK+3316
+  RMB   11,0    ; CASE 8,1
+  FDB   WORK+52,WORK+511,WORK+970,WORK+1429
+  FDB   WORK+1888,WORK+2347,WORK+2806,WORK+3265
+  FDB   WORK+3673,WORK+3775,WORK+3826,WORK+3877
+  FDB   WORK+3928,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2755,WORK+2857,WORK+3214,WORK+3316
+  RMB   11,0    ; CASE 8,2
+  FDB   WORK+103,WORK+562,WORK+1021,WORK+1480
+  FDB   WORK+1939,WORK+2398,WORK+2857,WORK+3316
+  FDB   WORK+3673,WORK+3724,WORK+3826,WORK+3877
+  FDB   WORK+3928,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2755,WORK+2806,WORK+3214,WORK+3265
+  RMB   11,0    ; CASE 8,3
+  FDB   WORK+154,WORK+613,WORK+1072,WORK+1531
+  FDB   WORK+1990,WORK+2449,WORK+2908,WORK+3367
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3877
+  FDB   WORK+3928,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2959,WORK+3010,WORK+3418,WORK+3469
+  RMB   11,0    ; CASE 8,4
+  FDB   WORK+205,WORK+664,WORK+1123,WORK+1582
+  FDB   WORK+2041,WORK+2500,WORK+2959,WORK+3418
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3826
+  FDB   WORK+3928,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2908,WORK+3010,WORK+3367,WORK+3469
+  RMB   11,0    ; CASE 8,5
+  FDB   WORK+256,WORK+715,WORK+1174,WORK+1633
+  FDB   WORK+2092,WORK+2551,WORK+3010,WORK+3469
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3826
+  FDB   WORK+3877,WORK+3979,WORK+4030,WORK+4081
+  FDB   WORK+2908,WORK+2959,WORK+3367,WORK+3418
+  RMB   11,0    ; CASE 8,6
+  FDB   WORK+307,WORK+766,WORK+1225,WORK+1684
+  FDB   WORK+2143,WORK+2602,WORK+3061,WORK+3520
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3826
+  FDB   WORK+3877,WORK+3928,WORK+4030,WORK+4081
+  FDB   WORK+3112,WORK+3163,WORK+3571,WORK+3622
+  RMB   11,0    ; CASE 8,7
+  FDB   WORK+358,WORK+817,WORK+1276,WORK+1735
+  FDB   WORK+2194,WORK+2653,WORK+3112,WORK+3571
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3826
+  FDB   WORK+3877,WORK+3928,WORK+3979,WORK+4081
+  FDB   WORK+3061,WORK+3163,WORK+3520,WORK+3622
+  RMB   11,0    ; CASE 8,8
+  FDB   WORK+409,WORK+868,WORK+1327,WORK+1786
+  FDB   WORK+2245,WORK+2704,WORK+3163,WORK+3622
+  FDB   WORK+3673,WORK+3724,WORK+3775,WORK+3826
+  FDB   WORK+3877,WORK+3928,WORK+3979,WORK+4030
+  FDB   WORK+3061,WORK+3112,WORK+3520,WORK+3571
   FDB   -1      ; sentinel
- 
+
 ***************************************
 * Notre propre pile car celle en place
 * n'est peut-etre pas assez grosse.
 ***************************************
 STACKEND
   BRN   STACKEND
-  RMB   81*5+64+2048,0
+  RMB   81*5+64*2,0
 STACKTOP
 ***************************************
 * Quelques infos
@@ -1670,5 +1651,104 @@ STACKTOP
   ECHO  Taille Algo  = &RND-SOLVE
   ECHO  Taille Work  = &STACKEND-WORK
   ECHO  Taille Stack = &STACKTOP-STACKEND bytes
-  
+
   END   INI
+
+/
+ (* structure de donnee *)
+ WORK : ARRAY 1..81 OF CASE 
+
+ CASE = RECORD
+         chiffre     : BYTE; (* chiffre present dans la case *)
+         nbzero      : BYTE (* nombre de utilises[x]==0 *)
+         utilises    : ARRAY 1..9 OF BYTE; (* chiffre utilises par les cases de la meme ligne/colone/bloc *)
+         contraintes : ARRAY 1..20 of BYTE (* indices precalcules des autres cases de la même ligne/colone/bloc *)
+      END
+
+ (* PLACE LE CHIFFRE "A" (0..9) DANS LA CASE "U" *)
+ (* TOUT EN MAINTENANT la coherence de la structure *)
+ PROCEDURE PUTDIGIT(A,U)
+    LOCAL PROCEDURE CLRDGT(U)
+        B = WORK[U].chiffre
+        IF B!=0 then
+            WORK[U].chiffre=0
+            FOR i=1..20 DO
+                j = WORK[U].contraintes[i]
+                DEC WORK[j].utilises[B]
+                IF WORK[j].utilises[B]==0 then
+                    INC WORK[j].nbzero
+                END
+            END
+        END
+    END
+    LOCAL PROCEDURE PUTDGT(A,U)
+        WORK[U].chiffre = A
+        FOR i=1..20 DO
+            j = WORK[u].contraintes[i]
+            IF WORK[j].utilises[A]==0 then
+                DEC WORK[j].nbzero
+            END
+            INC WORK[j].utilises[A]
+        END
+    END
+    (* === *)
+    IF A==0 THEN
+        CLRDIGIT(U)
+    ELSE
+        IF WORK[u].chiffre!=0 THEN
+            CLRDGIT(U)
+        END
+        PUTDGT(A,U)
+    END
+ END
+
+ (* POINT D'ENTREE DE LA RESOLUTION *)
+ FUNCTION SOLVE(SUDOKU : ARRAY 1..81 OF BYTE)
+    FOR i=1..81 DO
+        WORK[i].nbzero = 9
+        FOR j=1..9 DO
+            WORK[i].utilises[j] = 0
+        END
+    END
+    FOR i=1..81 DO
+        PUTDIGIT(SUDOKU[i], i)
+    END
+    RETURN RECURSE()
+ END
+
+ (* RECHERCHE RECURSIVEMENT UNE SOLUTION *)
+ FUNCTION BOOLEAN RECURSE()
+    LOCAL cpy : ARRAY 1..9 of BIT (* s'optimise dans un bitmask sur 8 bits si on est malin *)
+    LOCAL i : BYTE (* espace d'etat conserve' d'un appel a` l'autre = cpy + i = 2 octets seulement *)
+
+    max = 10
+    idx = 0
+    FOR i=1..81 DO
+        IF WORK[i].nbzero<max THEN
+            max = WORK[i].nbzero
+            idx = i
+        END
+    END
+    IF max==10 THEN
+        (* GRILLE PLEINE ! TERMINE *)
+        AFFICHE_SUDOKU()
+        RETURN TRUE
+    END
+
+    FOR i=1..9 DO
+        cpy[i] = WORK[idx].utilises[i]==0  (* copie locale pour recursion *)
+    END
+    FOR i=1..9 DO
+        IF cpy[i]==0 THEN       (* chiffre 'i' pas utilise *)
+            PUTDIGIT(i, idx)    (* on place 'i' dans la case "U" *)
+            ok = RECURSE()
+            PUTDIGIT(0, idx)
+            IF ok THEN
+                RETURN TRUE
+            END
+        END
+    END
+    (* ON A TOUT EPUISE SANS TROUVER *)
+    RETURN FALSE
+ END
+/
