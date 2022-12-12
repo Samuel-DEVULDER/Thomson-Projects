@@ -16,6 +16,9 @@ for i in */*; do test -d "$i" && git ls-files --error-unmatch "$i" >/dev/null 2>
 * [2014/forever15-TopOPop](2014/forever15-TopOPop)
 * [2014/forever15-WRBP](2014/forever15-WRBP)
 * [2015/PIrat](2015/PIrat)
+* [2015/forever-2015-thomcat](2015/forever-2015-thomcat)
+* [2015/langton](2015/langton)
+* [2015/sindots](2015/sindots)
 * [2016/def1bit](2016/def1bit)
 * [2016/quatropic](2016/quatropic)
 * [2016/sowebuzz](2016/sowebuzz)
@@ -24,4 +27,3 @@ for i in */*; do test -d "$i" && git ls-files --error-unmatch "$i" >/dev/null 2>
 * [2019/fpu](2019/fpu)
 * [2022/ZPU](2022/ZPU)
 * [exobin/exomizer2](exobin/exomizer2)
-
