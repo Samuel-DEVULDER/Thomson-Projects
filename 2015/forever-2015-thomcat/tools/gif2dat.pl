@@ -72,7 +72,7 @@ die "Can't find period" unless $per;
 print STDERR "len=$len per=$per\n";
 
 # save
-$img->Write('tst.gif');
+#$img->Write('tst.gif');
 
 # generate data
 $col = $bg eq "white" ?  7 : 0;
@@ -99,7 +99,8 @@ for my $y (0..199) {
 
 push(@data, ($per*40)>>8, ($per*40)&255);
 
-open(OUT,'>anim.dat');
+open(OUT,'>'.$ARGV[1]) || die "$ARGV[1]";
+
 print OUT pack('C*', 0, int((1+$#data)/256), (1+$#data)&255, 0, 0);
 print OUT pack('C*', @data);
 print OUT pack('C*', 255, 0, 0, 0, 0);

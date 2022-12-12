@@ -287,7 +287,7 @@ static void convert(char *infile, char *outfile, int hexaddr) {
     if(hexaddr == HEXADDR_AUTO) {
         hexaddr = bin->min - decomp_size;
         if(!((VIDEO<=hexaddr && hexaddr+decomp_size<=VIDEO+0x1F40) ||
-                 (PAGE0<=hexaddr && hexaddr+decomp_size<=S_ROM))) 
+                 (PAGE0+0x200<=hexaddr && hexaddr+decomp_size<=S_ROM))) 
         hexaddr = VIDEO+0x1f40 - decomp_size;
         while(hexaddr>=VIDEO &&
              ((hexaddr+0x44+OFFSET)>>8) != ((hexaddr+0x89+OFFSET)>>8)) --hexaddr;

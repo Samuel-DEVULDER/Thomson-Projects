@@ -6,6 +6,7 @@ K7=$(DISK:.sap=.k7)
 ASM=$(wildcard *.ass)
 BIN=$(ASM:%.ass=build/%.BIN)
 EXO=$(ASM:%.ass=build/%.EXO)
+ANIM=imgs/strange.giphy.gif
 
 ifeq ($(OS),Windows_NT)
 EXE=.exe
@@ -37,9 +38,12 @@ build/%.BIN: %.ass build build/%.dat
 	
 build/%.EXO: build/%.BIN
 	$(EXOBIN) -x "$<"
-	
+
 build/%.dat: %.dat
 	cp "$<" "$@"
+
+build/anim.dat: $(ANIM)
+	perl tools/gif2dat.pl "$<" "$@"
 	
 $(SAPFS): 
 	cd $(dir $@) && make "CC=$(CC) -Dlinux" sapfs
@@ -68,6 +72,7 @@ fill_sapdir: compile sapdir
 	-cp bas/*.BA*	sapdir  2>/dev/null	
 	-cp build/*.ASM sapdir  2>/dev/null	
 	-cp build/*.BIN sapdir 2>/dev/null
+	-cp	build/anim.dat sapdir  2>/dev/null	
 	
 test: all $(DISK)
 	cp $(DISK) $(TEODIR)/disk.sap
