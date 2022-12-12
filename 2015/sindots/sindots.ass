@@ -1,0 +1,164 @@
+(main)SINDOTS
+***************************************
+* Sindots by sam
+* 
+* inspired from sindots by g0blinish
+*
+* Date:   May 2015
+***************************************
+
+       org    $8000
+
+DELTA  set    8
+
+       setdp  *<-8
+
+* initialisation de pleins de registres en une fois       
+ini    ldu    #regs
+       pulu   dp,x,y
+
+* extinction ecran, curseur etc
+*      ldu    #txt
+initxt ldb    ,u+
+       jsr    $E803
+       bne    initxt
+       
+* memoire forme (deja en place)
+*       inc    $E7C3
+
+* palette en niveau de vert       
+*      ldx    #$E7DA
+       stb    1,x
+inipal stb    ,x
+       stb    ,x
+       addb   #16
+       bne    inipal 
+       
+* mask des puissances de deux (ici C=1 U=mask)
+*      leay   ,u
+inimsk rorb
+       stb    ,y+
+       bne    inimsk
+
+* Preval sin tab (ICI B=0 y=mask+9=sintab-128)
+inisin mul
+       sta    ,y+
+       nega
+       sta    127,y
+inis1  ldd    #$FF00
+       addd   #$FE02
+       std    <inis1+1
+       bne    inisin
+
+* anim  (ici U=mask Y=sintab D=$0000)
+anim   bsr    dr_pts
+       suba   #DELTA
+       addb   #DELTA
+       
+       bsr    dr_pts
+       adda   #DELTA+1
+       subb   #DELTA+1
+       
+       jsr    $E809
+       bcc    anim
+
+* RESET
+*      fcb    $3E
+       jmp    [$FFFE]
+       
+* affiche la serie de point a/b
+dr_pts pshs   d
+       std    <no_dr+1
+       bra    dr_p2
+
+dr_p1  ldd    #0000
+       adda   #7
+       subb   #3
+dr_p2  std    <dr_p1+1
+       lda    a,y
+       adda   b,y
+       adda   #100
+       blt    no_dr
+       cmpa   #200
+       bhs    no_dr
+       
+       ldb    #40
+       mul
+       adda   #$40
+       tfr    d,x
+       
+       ldd    <no_dr+1
+       lda    a,y
+       adda   b,y
+* overflow impossible car les sinus vont de -63 à 63
+*       bvs    no_dr
+       tfr    a,b
+   
+       asrb
+       asrb
+       asrb
+       addb   #20
+       abx
+       
+       anda   #7
+       lda    a,u
+       
+coul   ldb    #0     
+enable andb   #$FF
+       bne    dr_p4
+       
+* effacement
+eff    coma
+       anda   ,x
+       bra    dr_p5
+       
+* affichage
+dr_p4  lsrb
+       andb   #%01111000
+       eorb   #%11000000
+       dec    $E7C3
+       stb    ,x
+       inc    $E7C3
+       ora    ,x
+dr_p5  sta    ,x
+       
+no_dr  ldd    #0000
+       decb
+       suba   #7
+       std    <no_dr+1
+
+       inc    <coul+1
+       bne    dr_p1
+
+* a l'etape suivante on affiche ou on efface
+       com    <enable+1
+       
+       puls   d,pc
+
+regs   fcb    *<-8
+       fdb    $E7DA
+       fdb    mask
+       
+txt    fcb    $1B,$50
+       fcb    $1B,$60
+       fcb    $14,12
+*      fcc    /PULS/
+*      fcc    /$B0/
+*      fcc    /cBo/
+*      fcc    /176/
+       fcc    /QB?/
+
+       fcb    0
+
+* masque d'affichage
+mask   rmb    8
+
+* zero
+zero   rmb    1
+
+* table sinus
+       rmb    128
+sintab rmb    128
+	   end    ini
+
+	

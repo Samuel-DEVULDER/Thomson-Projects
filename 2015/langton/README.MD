@@ -1,0 +1,23 @@
+Fourmie de Langton pour toutes les machines Thomson.
+
+https://forum.system-cfg.com/viewtopic.php?f=12&t=6822
+
+```
+10 CLEAR,&H7FFF
+30 READ A$:IF LEN(A$)=4 THEN A=VAL("&H"+A$):GOTO 30
+40 IF A$="**" THEN EXEC A ELSE POKE A,VAL("&H"+A$):A=A+1:GOTO 30
+50 DATA 8000
+60 DATA 34,7E,8E,A7,C0,CE,1F,40,A6,C4
+70 DATA 63,C4,A1,C4,26,06,8E,E7,C3,CE
+80 DATA 5F,40,A7,C4,33,C9,F0,74,A6,84
+90 DATA 8A,01,A7,84,8E,3C,28,CC,80,00
+100 DATA A7,E2,A8,C4,A7,C4,A6,E0,A5,C4
+110 DATA 26,02,5C,81,5A,C4,03,27,1D,C1
+120 DATA 01,27,0C,C1,02,27,10,48,26,15
+130 DATA 49,33,5F,20,10,44,26,0D,46,33
+140 DATA 41,20,08,33,C8,D8,20,03,33,C8
+150 DATA 28,30,1F,26,C9,35,FE
+160 DATA 8000,**
+```
+
+![](https://forum.system-cfg.com/download/file.php?id=4557)

@@ -1,0 +1,80 @@
+(main)LANGTON
+*************************
+* Fourmi de Langton pour
+* Thomson.
+* (c) Samuel Devulder
+*     Dec 2015
+*************************
+
+        org     $8000
+
+* point d'entrée
+
+INI     pshs    d,x,y,u,dp
+
+* param MO5
+        ldx     #$A7C0
+        ldu     #8000
+
+* adaptation TO7        
+        lda     ,u
+        com     ,u
+        cmpa    ,u
+        bne     MO5
+        ldx     #$E7C3
+        ldu     #$5F40
+MO5     sta     ,u
+
+* ecran: memoire forme
+        lda     ,x
+        ora     #1
+        sta     ,x
+
+* U=position fourmi
+*   (milieu écran)
+        leau    -3980,u
+
+* A = mask pixel fourmi
+* B = direction     
+        LDD     #$8000
+
+* compteur cycles avant
+* sortie ecran     
+        ldx     #15400
+        
+LOOP    sta     ,-s
+        eora    ,u
+        sta     ,u
+        lda     ,s+
+        bita    ,u
+        bne     NOIR
+* droite
+        incb
+* un cmpa qui evite un saut
+        fcb     $81
+NOIR    decb        
+        andb    #3
+        beq     up
+        cmpb    #1
+        beq     right
+        cmpb    #2
+        beq     down
+left    lsla
+        bne     NEXT
+        rola
+        leau    -1,u
+        bra     NEXT
+right   lsra
+        bne     NEXT
+        rora
+        leau    1,u
+        bra     NEXT
+down    leau    -40,u
+        bra     NEXT
+up      leau    40,u
+NEXT    leax    -1,x
+        bne     LOOP
+
+        puls    d,x,y,u,dp,pc
+        
+        end     INI

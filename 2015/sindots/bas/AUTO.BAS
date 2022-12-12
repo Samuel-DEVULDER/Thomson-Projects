@@ -1,0 +1,2 @@
+
+10 LOADM "SINDOTS.BIN",,R
