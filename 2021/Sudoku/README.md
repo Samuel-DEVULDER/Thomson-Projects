@@ -1,1 +1,1 @@
-A Sudoku solver for the 6809.
+A Sudoku solver/generator for the 6809.
