@@ -2,9 +2,10 @@
 
 
 SHRTC SET   1     ; retarde la detection des contradiction (plus rapide)
+NOMIN SET   0     ; ne recherche pas la case minimale (plus lent)
 GRID  SET   17    ; Grille par defaut
 
-GENOP SET   0     ; generation (1) ou juste resolution (0)
+GENOP SET   1     ; generation (1) ou juste resolution (0)
 GENST SET   1     ; 0=Dans la generation vid la 1ere case dispo, 1=La case avec le plus 
 
 DEBUG SET   0     ; debug la resolution
@@ -76,8 +77,6 @@ INI
   RORB              ; MIN/4
   LSRA
   RORB              ; MIN/8
-  ADCB  #0
-  ADCA  #0          ; arrondi
   LEAU  D,X         ; U=MAX
   EXG   U,X         ; remets U<=X
   BRA   INI1        ; goto generation
@@ -139,8 +138,8 @@ INI3
   JSR   PUTS        ; retour ligne
   FCB   13,0
 
-  JSR   TMRON       ; demarrage chrono
   JSR   TOWORK      ; passage en espace de travail
+  JSR   TMRON       ; demarrage chrono
   LDU   #CPYSOL
   JSR   SOLVE       ; resolution avec retenue de la solution
   JSR   TMROFF      ; fin chrono
@@ -578,7 +577,8 @@ BSTCNT
   BGE   SOLV3     ; non => case suivante
   STA   <BSTCNT+1 ; on sauve le nouveau nb de choix,
   BNE   SOLV2     ; infaisable ? oui => termine
-  CLRA
+SOLNONE
+  CLRA            ; PAS DE SOL C=0
   PULS  B,U,PC    ; retour A=0, C=0
 SOLV2
   STU   <BSTCEL+1 ; sauve la case actuelle
@@ -589,7 +589,9 @@ SOLV2
 SOLV3
   LEAU  ,X
   LDX   ,U
+  IFEQ  NOMIN
   BNE   SOLV1
+  ENDC
 
 ***************************************
 * on a fini de regarder toutes les
@@ -640,13 +642,13 @@ BSTCEL
   BNE   SOLV5     ;
   LDA   #9        ; oui => on l'essaye
   BSR   SOLTRY
-  BCS   SOLRET1   ; arrete si C=1
+  BCS   SOLRET    ; arrete si C=1
 SOLV5
   LDX   #FIRSTBITSET
   ABX             ; autres chiffres (dans B)
   ABX
   LDA   ,X        ; chiffre dans B ?
-  BEQ   SOLRET0   ; non => termine avec C=0
+  BEQ   SOLRET    ; non => termine avec C=0
   EORB  1,X       ; oui => efface chiffre dans masque
   BSR   SOLTRY    ; essaye ce chiffre
   BCC   SOLV5     ; continue autre chiffre si C=0
@@ -654,12 +656,7 @@ SOLV5
 ***************************************
 * Sort de la recherche avec A=0 C=0/1
 ***************************************
-SOLRET1
-  LDA   #1        ; termine ce niveau avec
-  LSRA            ; A=0 et C=1 (==on cherche pas plus)
-  FCB   $C6       ; LDB #nn
-SOLRET0
-  CLRA            ; termine ce niveau avec A=0 et C=0
+SOLRET
 * detache de USED
   LDX   ,U
   STX   <USED
@@ -891,15 +888,12 @@ GEN0
 
 GEN1  
   CLR   GEN3+1
-  LDU   #RNDWRK
+  LDU   #USED
 GEN2
-  LDX   ,U++
+  LEAX  ,U
+  LDU   ,U
   BEQ   GEN4
-  LDA   ,X        ; case vide ?
-  BEQ   GEN2      ; OUI => boucle
-  BITA  #16
-  BNE   GEN2
-  LDA   -1,X
+  LDA   3,U
 GEN3
   CMPA  #0        ; meilleure ?
   BLT   GEN2      ; non => case suivante
@@ -909,28 +903,45 @@ GEN3
   BRA   GEN2
   ENDC
 GEN4
-  LDU   #0
+  LDX   #0
   LDA   GEN3+1
   BEQ   GEN0
-
+  
+* detache
+  LDU   ,X
+  LDD   ,U
+  STD   ,X
+* attache a free
+  LDX   <FREE
+  STX   ,U
+  STU   <FREE
+  
   IFNE DBGEN
   JSR   DBGPRT
   ENDC  
+
   
-  LDB   ,U
-  CLRA
+  LDB   2,U
   JSR   <CLRDGT
   INCA            ; B=1
-  STA   TWOSOL+1  ; regarde si sudoku resultant
+  STA   TWOSOL+1  ; regarde si sudoku resultant a exactement 1 sol
   LDX   #0
   STX   TMRCPT    ; efface temps resolution
-  JSR   DOSOLV    ; a exactement 1 sol
+  JSR   <SOLV0    ; 
   LDA   TWOSOL+1  ; 
   BEQ   GENTIM    ; oui => compare temps
   TFR   B,A
   JSR   <PUTDGT   ; non => restore chiffre
-  ORA   #16
-  STA   ,U        ; fige case
+* retire de la liste free
+  LDX   #FREE
+SOLREST
+  CMPU  ,X
+  BEQ   SOLREST2
+  LDX   ,X
+  BRA   SOLREST
+SOLREST2
+  LDU   ,U
+  STU   ,X
   BRA   GEN1      ; essaye une nouvelle case
 GENTIM
   LDD   #0        ; recup temps resolution
@@ -967,37 +978,35 @@ GENS2
   CMPB  #'0
   BNE   GENS2
 
-  JSR   TOWORK
+  JSR   TOWORK  
   LDU   #CPYSOL   ; on resout le sudoku
   JSR   SOLVE     ; (toujours faisable)
   JMP   TOWORK    ; retour dans work
   
 ***************************************
-* Trouve un ordre de parcours des
-* cases de WORK aleatoire
+* Permute les "USED"
 ***************************************
 SHUFFLE
-  LDX   #RNDWRK
-  LDU   #WORK+1
+  LEAS  -82*2,S
+  LEAX  ,S
+  PSHS  X
+  LDU   #USED
 SHUFF1
-  STU   ,X++        ; on rempli RNDWRK
-  LEAU  51,U        ; avec toutes les
-  LDA   ,U          ; adresses de cases
-  BPL   SHUFF1
-  CLR   ,X          ; sentinel a NULL
-  CLR   1,X
-  
+  LDU   ,U
+  STU   ,X++ 
+  BNE   SHUFF1
+  LEAX  -2,X
 * melange par algo Fisher-Yates
-* retour X=RNDWORK
 SHUFF2
   TFR   X,D         ; calcul taille
-  SUBD  #RNDWRK     ; tableau
+  SUBD  ,S          ; tableau
+  BEQ   SHUFF3
   LSRB
   PSHS  B
   JSR   <RND
   PULS  A
   MUL
-  LDU   #RNDWRK
+  LDU   ,S
   LEAU  A,U         ; en deux fois car 
   LEAU  A,U         ; A est signe
   LDD   ,U          
@@ -1006,11 +1015,20 @@ SHUFF2
   STD   ,U          ; avec case "X"
   PULS  D           
   STD   ,X
-  CMPX  #RNDWRK     ; fini ?
-  BNE   SHUFF2      ; non => on boucle
+  BRA   SHUFF2
+* on recrit tout dans USED
+SHUFF3
+  LDU   #USED
+  LDX   ,S
+SHUFF4
+  LDD   ,X++
+  STD   ,U
+  TFR   D,U
+  BNE   SHUFF4
+  LEAS  2+82*2,S
   RTS
-  ENDC
-
+  
+  
   SETDP 255
 
 ****************************************
