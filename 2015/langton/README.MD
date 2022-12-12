@@ -1,4 +1,4 @@
-#Fourmi de Langton pour toutes les machines Thomson.
+Fourmi de Langton pour toutes les machines Thomson.
 
 https://forum.system-cfg.com/viewtopic.php?f=12&t=6822
 
