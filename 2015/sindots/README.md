@@ -1,4 +1,4 @@
-#Sindots in 176 bytes.
+Sindots in 176 bytes.
 
 Idea from: https://www.pouet.net/prod.php?which=65599
 
