@@ -1,0 +1,2 @@
+
+10 LOADM "SUDOKU.BIN",,R
