@@ -25,5 +25,7 @@ for i in */*; do test -d "$i" && git ls-files --error-unmatch "$i" >/dev/null 2>
 * [2017/forever-2017-deMODed](2017/forever-2017-deMODed)
 * [2019/forever-2019](2019/forever-2019)
 * [2019/fpu](2019/fpu)
+* [2021/Sudoku](2021/Sudoku)
 * [2022/ZPU](2022/ZPU)
 * [exobin/exomizer2](exobin/exomizer2)
+
