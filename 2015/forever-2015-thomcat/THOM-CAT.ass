@@ -1,0 +1,600 @@
+(main)THOM-CAT
+***************************************
+* Compo pour la Forever Party 2015.
+*
+* Titre:   THOM-CAT
+* Idee:    intro compatible TO/MO
+*          + animation (inspire par
+*            http://goo.gl/dVT4j8)
+*          + bruitage
+*          + scrolltext
+* Categ.:  Intro (995octets)
+* Auteur:  __sam__ (Samuel Devulder)
+* Date:    Mars 2015
+***************************************
+        org     $7400
+
+CATLEN  equ     116     hauteur du chat
+
+***************************************
+* Point d'entree
+***************************************
+init    ldu     #data
+        pulu    cc,a,b,dp,x,y,s
+
+***************************************
+* Test MO5 ?
+***************************************
+*       ldy     ,x
+*       com     ,x
+*       cmpy    ,x
+*       beq     TO7
+
+* Version plus petite et qui economise
+* un registre.
+        clr     ,x
+        tst     ,x
+        bne     TO7
+
+* Init architecture MO (une partie des
+* registres est pre-initialise par le
+* pulu ci-dessus).
+MO5     tfr     b,dp    dp = regs HW
+        sta     sound1+1  bit buzzer
+        bra     finTOMO
+
+* Init architecture TO (dp pre-init
+* par le pulu pour pointer sur page
+* regs HW).
+TO7     ldx     #swito7 emulation MO
+        stx     ,y
+        ldx     #$5F40  fin ecran
+finTOMO set     *
+
+
+***************************************
+* Affichage image fond
+***************************************
+* Encodage:
+* 0xxxxxxx ==> caractere normal
+* 1NNNNCCC ==> fond=C, REPET=N
+*
+* A l'entree a=1 si on vient de 
+* l'init ou est de la forme
+* 01111xxx si on sort de l'overflow
+* "bvs img1".
+*
+* Donc dans les deux cas le coma 
+* produit 10000xxx qui fera un overflow
+* au suba #8 si on ne modifie pas la
+* valeur de a. Cad qu'on aura affiche
+* qu'une seule lettre sauf si on est
+* tombe sur un code COMBO.
+img1    coma
+        ldb     ,u+
+        beq     eximg
+        bgt     img2
+        ldb     #27
+        call    2
+        ldb     -1,u
+        lda     -1,u
+        andb    #7
+        addb    #$50
+img2    call    2
+        ldb     #32
+        suba    #8
+        bvs     img1
+        bra     img2
+eximg   set     *
+
+
+***************************************
+* Affichage image entrelacée
+***************************************
+* memoire forme (deja en place)
+*       call    6
+
+* Encodage:
+*   bNNNNNNN = bit b repeté N fois.
+        leax    >-33*40-1,x
+image1  ldb     ,u+
+        andb    #127
+image2  tst     -1,u
+        bpl     image3
+        sta     ,-s
+        ora     ,x
+        sta     ,x
+        lda     ,s+
+image3  lsla
+        bne     image4
+        inca
+        leax    -1,x
+image4  decb
+        bne     image2
+        cmpu    #scroll
+        bne     image1
+
+
+***************************************
+* Init routine de scroll
+***************************************
+*       ldu     #scroll (deja bon)
+SCR_SZ  set     ((33*2)+4)*16+1
+b0      ldd     #$A610
+        std     ,u++
+        lda     #$49
+        sta     ,u+
+        ldd     #$690F
+b1      std     ,u++
+        decb
+        andb    #$1f
+        cmpb    #$0F
+        bne     b1
+        ldd     #$3088
+        std     ,u++
+        ldd     #$2839
+        std     ,u+       ; <=trop fort! le ",u+"
+        cmpu    #scroll+SCR_SZ-1
+        blo     b0
+
+
+***************************************
+* Mise a jour offsets ecran
+* en entree x=debut image
+* en sortie y=debut ecran
+***************************************
+*       tfr     x,d
+*       clrb
+*       anda    #$40
+*       tfr     d,y
+
+* plus court:
+        leay    >-$7F7,x
+
+
+***************************************
+* Lissage texte
+***************************************
+        leau    >320*2,y
+        bsr     lissag
+        leau    >320*22,y
+        bsr     lissag
+
+
+***************************************
+* Boucle principale
+***************************************
+        ldd     #40     debut offs anim
+boucle  bsr     anitxt
+        bsr     anim
+        bcc     boucle
+
+
+***************************************
+* Sortie=reset
+***************************************
+        jmp     [$FFFE]
+
+
+***************************************
+* Lissage ecran sur 2*40 carateres
+* u = ptr zone ecran
+* /!\ on utilise la pile comme buffer.
+* (mais il y a de la place)
+***************************************
+lissag  pshs    x,y,d
+        ldx     #320*2
+        leay    ,x
+lissa1  ldd     -1,u
+        lsra
+        rorb
+        stb     ,-s
+        ldd     ,u
+        lslb
+        rola
+        ora     ,s
+        sta     ,s
+        lda     -40,u
+        eora    40,u
+        anda    ,s
+        ora     ,u+
+        sta     ,s
+        leax    -1,x
+        bne     lissa1
+lissa2  lda     ,s+
+        sta     ,-u
+        leay    -1,y
+        bne     lissa2
+        puls    d,x,y,pc
+
+***************************************
+* Attente retour ecran
+***************************************
+w8vbl   tst     <$E7
+        bpl     w8vbl
+w8vb1   tst     <$E7
+        bmi     w8vb1
+        rts
+
+
+***************************************
+* Animation texte: scrolling 1x en
+* haut et 2x en bas.
+***************************************
+anitxt  call    6       forme
+        pshs    b,x
+        ldb     #4
+anitx1  bsr     w8vbl   attente vbl
+        leax    >40*16+20,y
+        jsr     scroll
+        bsr     anitx2
+        decb
+        bne     anitx1
+        puls    b,x,pc
+
+* facon compacte d'appeler scroll 2x
+anitx2  bsr     anitx3
+anitx3  leax    320*22+20,y
+        jmp     scroll
+
+
+***************************************
+* Animation chat + son toutes les 4imgs
+* d = offset animation (40,80,120,160)
+* Retour carry si touche enfoncee.
+***************************************
+anim    call    4       fond
+        subb    #40
+        bne     anim1
+
+* reset pointeur image + son
+        bsr     sound
+        ldb     #40*4
+
+* affichage lignes noir/blanc
+anim1   set     *
+*       bsr     w8vbl
+        pshs    d,x,y,u
+        leay    ,x      y = debut image
+
+anim2   leau    d,y
+
+        ldx     <-80,y   ciel
+        bsr     ligne
+        ldx     <-128,y  noir
+        bsr     ligne
+
+        addd    #40*4
+        cmpd    #CATLEN*40+40
+* plus court mais deborde
+*       cmpa    #(CATLEN*40+40)<-8
+        bls     anim2
+
+* Flag C=1 si appui touche
+        call    12      * test clavier
+        puls    d,x,y,u,pc
+
+
+***************************************
+* Empile 40 octets depuis u avec le
+* contenu de x. Cela sert pour afficher
+* des lignes de couleur ciel ou de
+* de couleur chat.
+*
+* La routine pourrait être plus courte
+* en ne deroulant pas la boucle, mais
+* ce serait plus lent.
+***************************************
+ligne   pshs    y
+        leay    ,x
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        pshu    x,y
+        puls    y,pc
+
+***************************************
+* Joue un son (bruit) depuis le buzzer.
+*
+* On utilise le contenu de la ram ecran
+* comme donnee. Ca sonne bien.
+***************************************
+sound   pshs    d,x
+* la valeur qui traine en ce point est
+* suffisante
+*       ldb     #128
+sound0  lda     ,x+
+*       anda    #1
+*       bne     sound2
+        rora
+        bcs     sound2
+        lda     <$C1
+sound1  eora    #8      #1 sur archi MO
+        sta     <$C1
+sound2  decb
+        bne     sound0
+        puls    d,x,pc
+
+
+***************************************
+* Emulation api minimale MO5 sur TO7
+***************************************
+swito7  ldx     10,s
+        lda     ,x+
+        stx     10,s
+        cmpa    #2
+        beq     putc
+        cmpa    #4
+        beq     frm0
+        cmpa    #6
+        beq     frm1
+
+***************************************
+* Lecture rapide clavier
+***************************************
+*ktst   lda     #254
+*       anda    ,s
+*       jsr     $E809
+*       adca    #0
+*       sta     ,s
+*       rti
+* Moins precis, mais plus compact.
+* c'est suffisant:
+        jsr     $E809
+        tfr     cc,a
+        sta     ,s
+        rti
+
+***************************************
+* Ecriture caractere
+***************************************
+* Effectue les conversions MO -> TO
+* pour:
+*   double taille: $73 -> $4F
+*   text seul:     $75 -> $68
+*   scroll lent:   $79 -> $6E
+putc    cmpb    #$73
+        bne     putc1
+        ldb     #$4F
+putc1   cmpb    #$75
+        bne     putc2
+        ldb     #$68
+putc2   cmpb    #$79
+        bne     putc3
+        ldb     #$6E
+putc3   jsr     $E803
+        rti
+
+***************************************
+* Memoire ecran couleur
+***************************************
+frm0    lda     #254
+        anda    <$C3
+        sta     <$C3
+        rti
+
+***************************************
+* Memoire ecran forme
+***************************************
+frm1    lda     #1
+        ora     <$C3
+        sta     <$C3
+        rti
+
+***************************************
+* Donnees
+***************************************
+data    set     *
+
+* init des regs pour le point d'entree
+        fcb     $50     (cc)IRQ+FIRQ
+        fcb     $01     (A) bit son MO
+        fcb     $A7     (B) page hw MO
+        fcb     $E7     (DP)page hw TO
+        fdb     $1F40   (X) fin ecr MO
+        fdb     $602F   (Y) routine SWI
+        fdb     init    (S) pile+1
+
+* Image fond en code ANSI
+*       fcb     $14     pas de curseur
+*       fcb     $1B,$46 forme: blanc
+*       fcb     $1B,$57 fond:  blanc
+*       fcb     $1B,$67 tour:  blanc
+*       fcb     12,10   cls, nl
+*       fcb     $1B,$40 forme: noir
+*       fcb     $1B,$4F taille double
+*       FCB     $1B,$4E
+*       FCB     $1B,$4D
+*       fcc     /  /
+*       fcc     /-0< Thom-Cat >0-/
+*       fcc     /  /
+*       fcc     /  /
+*       fcc     /  (c) Puls 2015 /
+*       fcc     /  /
+*       fcb     0       fin chaine
+
+FORM    equ     $40     forme
+FOND    equ     $50     fond
+TOUR    equ     $60     tour
+BLANK   equ     $08     blanc repete
+COMBO   equ     $80
+
+        fcb     27,FORM+6       fond cyan
+        fcb     12              cls
+        fcb     27,FORM+0       forme: noir
+* ligne 1
+        fcb     COMBO+6+BLANK*2
+        fcb     COMBO+7+BLANK*4
+        fcb     COMBO+6+BLANK*15
+        fcb     COMBO+6+BLANK*7
+        fcb     COMBO+3+BLANK*2
+        fcb     COMBO+6+BLANK*1
+        fcb     COMBO+3+BLANK*5
+        fcb     COMBO+6+BLANK*1
+        fcb     COMBO+3+BLANK*2
+        fcb     COMBO+6+BLANK*2
+* ligne 2
+        fcb     COMBO+7+BLANK*6
+        fcb     COMBO+6+BLANK*6
+        fcb     COMBO+7+BLANK*3
+        fcb     COMBO+6+BLANK*1
+        fcb     COMBO+7+BLANK*3
+        fcb     COMBO+6+BLANK*11
+        fcb     COMBO+3+BLANK*5
+        fcb     COMBO+6+BLANK*5
+* ligne 3
+        fcb     COMBO+7+BLANK*6
+        fcb     COMBO+6+BLANK*5
+        fcb     COMBO+7+BLANK*10
+        fcb     COMBO+6+BLANK*10
+        fcb     COMBO+3+BLANK*3
+        fcb     COMBO+6+BLANK*8
+* ligne 4
+        fcb     COMBO+7+BLANK*3
+        fcb     COMBO+6+BLANK*6
+        fcb     COMBO+7+BLANK*11
+        fcb     COMBO+6+BLANK*7
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*5
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*3
+* ligne 5
+        fcb     COMBO+6+BLANK*13
+        fcb     COMBO+7+BLANK*10
+        fcb     COMBO+6+BLANK*6
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*3
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*3
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*3
+* ligne 6
+        fcb     COMBO+6+BLANK*15
+        fcb     COMBO+7+BLANK*5
+        fcb     COMBO+6+BLANK*12
+        fcb     COMBO+3+BLANK*1
+        fcb     COMBO+6+BLANK*5
+* en bas
+        fcb     $1F,$40+22,$41  locate 1,22
+        fcb     $1B,$73         double taille
+        fcb     COMBO+2+BLANK*15
+        fcb     COMBO+2+BLANK*15
+        fcb     $18             clear line
+
+
+* texte
+        fcb     $1B,$75         text seul
+        fcb     $1B,$79         scroll lent
+
+        fcb     $1f,$40+6,$40+6 locate 6,6
+        fcc     /THOMCAT/
+*       fcb     9
+        fcc     / /
+        fcc     /(c)/
+*       fcb     9
+        fcc     /PULS/
+        fcb     $1f,$40+24,$40+10
+        fcb     10,10           scroll haut
+        fcc     /FOREVER 2015/
+        fcb     10
+        fcb     0
+
+* image du chat
+        fdb     $7f51,$8e00,$0000
+        fdb     $007f,$6fa1,$0000
+        fdb     $0000,$7f6d,$9600
+        fdb     $0000,$2b91,$4086
+        fdb     $006c,$9400,$7f19
+        fdb     $9900,$7f8e,$388b
+        fdb     $006d,$9300,$6d8b
+        fdb     $239d,$007c,$8b0a
+        fdb     $b500,$5fa5,$0065
+        fdb     $902d,$9900,$788b
+        fdb     $09b2,$0054,$b400
+        fdb     $608f,$3a95,$0075
+        fdb     $8b0d,$aa7f,$638b
+        fdb     $64bb,$005b,$8e06
+        fdb     $8a1a,$8d0e,$987f
+        fdb     $3585,$7f33,$8c14
+        fdb     $a47f,$5e8f,$5cc2
+        fdb     $7e88,$7f52,$8e02
+        fdb     $911c,$bb7f,$288b
+        fdb     $7f32,$8d1a,$9f7f
+        fdb     $598b,$57cc,$14a7
+        fdb     $418d,$7f4b,$a227
+        fdb     $bb7f,$208b,$7f34
+        fdb     $8e16,$a47f,$558a
+        fdb     $25fc,$0fab,$478a
+        fdb     $7f37,$b236,$b77f
+        fdb     $1b8a,$7f33,$930f
+        fdb     $a97f,$5390,$13fd
+        fdb     $14a6,$4a89,$0188
+        fdb     $7f2d,$b748,$b07f
+        fdb     $1789,$7f27,$a307
+        fdb     $ad7f,$5299,$05ff
+        fdb     $8111,$9461,$8b03
+        fdb     $937f,$0dc3,$148c
+        fdb     $40a5,$1190,$6e8a
+        fdb     $7f1f,$e064,$9754
+        fdb     $ff9e,$0c94,$688b
+        fdb     $059b,$1eb6,$14d5
+        fdb     $1691,$44df,$2d99
+        fdb     $0b8c,$2f88,$318b
+        fdb     $26e7,$4eab,$52ff
+        fdb     $9f06,$9370,$ffe3
+        fdb     $1594,$48ec,$16b9
+        fdb     $298c,$2f9c,$15f4
+        fdb     $3ab2,$56ff,$b277
+        fdb     $ffdc,$1596,$4cf7
+        fdb     $03c1,$228f,$32ff
+        fdb     $af29,$9e70,$ffaf
+        fdb     $7f02,$ffd2,$1497
+        fdb     $2f8c,$12ff,$c01d
+        fdb     $8f39,$ffb1,$1f97
+        fdb     $7bff,$ad7f,$0fff
+        fdb     $c412,$9831,$ffe1
+        fdb     $1890,$43ff,$af16
+        fdb     $945e,$9808,$ffae
+        fdb     $758b,$1cff,$b708
+        fdb     $9f3a,$ffd2,$208f
+        fdb     $4bff,$b00e,$9163
+        fdb     $ffc7,$7b80,$46ff
+        fdb     $cd1b,$8f52,$ffc9
+        fdb     $68ff,$c27f,$fff7
+        fdb     $51ff,$cc16,$8f5d
+        fdb     $ffbe,$72ff,$b97f
+        fdb     $0aff,$e75f,$ffc9
+        fdb     $0f91,$69ff,$b07b
+        fdb     $de20,$aa7f,$1bff
+        fdb     $d674,$ffc3,$0893
+        fdb     $6d8a,$0181,$0b90
+        fdb     $04ff,$7f02,$d37f
+        fdb     $6fff,$a17f,$2fff
+        fdb     $d474,$8530,$ef7f
+        fdb     $0ac5,$7f7b,$e47f
+        fdb     $6b94,$51e6,$7f3e
+        fdb     $de7f,$15a8,$0015
+        fdb     $d17f,$7887,$67d6
+        fdb     $7f54,$cc7f,$1a94
+        fdb     $002d,$bf00,$7bc1
+        fdb     $7f6a,$be7f,$1f85
+        fdb     $003a,$8a00,$007f
+        fdb     $67ac,$007f,$6685
+        fdb     $0000,$7f76,$947f
+        fcb     $18
+
+***************************************
+* Routine de scroll d'une ligne de
+* deux caracteres sur l'ecran.
+***************************************
+scroll  set     *
+        rmb     SCR_SZ
+finscr  set     *
+
+        end     init

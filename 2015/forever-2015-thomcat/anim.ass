@@ -1,0 +1,171 @@
+(main)ANIM
+	
+	org	$7400
+	
+init	orcc	#$50	pas d'interrupt
+	
+	ldx	#$1F40
+	lda	,x
+	com	,x
+	cmpa	,x	test mo5?
+	bne	MO5	
+	
+* init architecture TO
+TO7	ldx	#swito7
+	stx	$602F
+	ldd	#$40E7
+	bra	cont
+
+* init architecture MO	
+MO5	ldd	#$00A7
+
+cont	tfr	b,dp
+	sta	boucl2+1
+	clrb
+	tfr	d,x	u pointe sur ecran
+
+* effacement ecran + couleur tour
+	ldu	#data
+init1	call	2
+	ldb	,u+
+	bne	init1
+	
+* memoire couleur
+*	call	4
+	
+* récupération couleur fond (b=0 en ce point)
+	eorb	,x	on favorise la repetition de code
+	stb	,-s	pour exomizer
+	stb	,-s
+	stb	,-s
+	stb	,-s
+	stb	,-s
+	ldb	#7	noir<->blanc
+	eorb	,x
+	stb	,-s
+	stb	,-s
+	stb	,-s
+	stb	,-s
+	stb	,-s
+
+* memoire forme
+	call	6
+	
+* affichage image
+init2	ldb	,u+
+	stb	,x+
+	cmpu	#fin-2
+	bne	init2		
+	
+* memoire couleur
+	call	4
+	
+* periode
+	pulu	d
+	pshs	d
+
+boucle	subd	#40
+	bne	boucl1
+	ldd	,s
+
+boucl1	pshs	dp,d
+
+	
+	ldx	#3*20000/8+200
+boucl5	leax	-1,x
+	bne	boucl5
+
+* attente retour ecran	
+boucl3	tst	<$E7
+	bpl	boucl3
+boucl4	tst	<$E7
+	bmi	boucl4
+	
+boucl2	ora	#$40	ptr ecran => TO
+
+	leau	5,s
+	pulu	dp,x,y
+	pshs	dp,x,y
+	pulu	dp,x,y
+	pshs	dp,x,y
+	
+* ligne invisible
+	tfr	d,u
+	puls	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+* ligne visible
+	puls	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	pshu	dp,x,y
+	
+	anda	#$3F	ptr ecran => MO5
+	addd	3,s
+	cmpd	#$1F40
+	blo	boucl2
+		
+* sortie sur appui touche
+	call	12	* B trashé!!!
+	puls	dp,d		
+	bcc	boucle
+	
+* reset
+	jmp	[$FFFE]
+
+* emulation api MO5 sur TO7
+swito7	ldx	10,s
+	lda	,x+
+	stx	10,s
+	suba	#2	* 2
+	beq	putc
+	suba	#2	* 4
+	beq	frm0
+	suba	#2	* 6
+	beq	frm1
+	
+* lecture rapide clavier
+*ktst	lda	#254
+*	anda	,s
+*	jsr	$E809
+*	adca	#0
+*	sta	,s
+*	rti
+ktst	jsr	$E809
+	tfr	cc,a
+	sta	,s
+	rti
+	
+* ecriture caractere
+putc	jsr	$E803
+	rti
+	
+* memoire ecran couleur
+frm0	lda	#254
+	anda	<$C3
+	sta	<$C3
+	rti
+	
+* memoire ecran forme
+frm1	lda	#1
+	ora	<$C3
+	sta	<$C3
+	rti
+	
+data	
+	incbin	anim.dat
+
+fin	set	*
+
+	end	init

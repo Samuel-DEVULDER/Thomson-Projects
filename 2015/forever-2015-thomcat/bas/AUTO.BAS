@@ -1,0 +1,2 @@
+
+10 LOADM "THOM-CAT.BIN",,R

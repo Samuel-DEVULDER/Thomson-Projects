@@ -1,0 +1,48 @@
+Titre:      THOM-CAT
+Catégorie:  Intro
+Taille:     995 octets sur disque (985 en mémoire).
+
+Caractérisitiques:   
+            - multi-machine (TO/MO).
+            - animation (inspiré par http://goo.gl/dVT4j8).
+            - bruitage.
+            - lisseur de fontes.
+            - scroller deux vitesses.
+
+Groupe:     PULS (http://www.pulsdemos.com)
+Auteur:     Samuel Devulder (alias __sam__, sam)
+Contact:    samuel.devulder@gmail.com
+
+Machine(s): Thomson MO5, MO6, TO7, TO7/70, TO8, TO9, TO9+
+            (6809e @ 1Mhz) sans extensions.
+
+Format:     Fichier binaire standard Thomson, K7 TO, K7 MO et fichiers WAV.
+
+            Se lance avec
+                  LOADM "THOM-CAT",,R
+            à partir de la cassette ou d'une diskette sur toutes les
+            machines TO ou MO.
+
+            Pour plus de facilité, un fichier AUTO.BAT est présent sur la 
+            disquette. Il contient l'instruction LOADM ci-dessus et n'entre
+            pas dans la taille de l'intro.
+	    
+Compression:
+            Aucune :) L'animation du chat et l'image de fond sont encodées
+            dans un format ad-hoc très compact.
+
+Remarques:  1) Appuyer sur une touche pour revenir au menu de démarrage de
+               la machine.
+            2) Merci à Monsieur Muybridge pour nous avoir laissé son chat
+               comme modèle.
+                       http://fr.wikipedia.org/wiki/Eadweard_Muybridge
+            3) L'animation est basée sur le même principe que celui utilisé
+               par brusspup dans  http://goo.gl/dVT4j8.
+            4) Les architectures TO et MO sont incompatibles au niveau de
+               leur ROM et de certains registres matériels. Néanmoins, cette 
+               intro peut marcher sur les deux types de machines. C'est peut-
+               être une première dans la (très courte) histoire des intros 
+               sur les machines Thomson.
+            5) Le code source est fourni dans le fichier ZIP.
+            6) Cette intro a été testée sur de vrais TO8D et MO6. Les tests
+               sur les autres machines ont été faits sur émulateur.
