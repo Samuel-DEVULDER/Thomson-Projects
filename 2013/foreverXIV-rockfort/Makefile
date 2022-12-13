@@ -14,8 +14,7 @@ EXOBIN=../../exobin/exobin.buggy$(EXE)
 
 TEODIR=../../TEO_WIN_187_BETA3_20220907/
 
-ASM=$(wildcard *.ass.in)
-ASM:=$(ASM:%.in=%)
+ASM=$(wildcard *.ass)
 BIN=$(ASM:%.ass=build/%.BIN)
 
 all: compile fill_sapdir
@@ -30,12 +29,14 @@ list:	compile
 
 clean: 
 	rm -rf build sapdir  $(DISK)
-	
-build/%.BIN: %.ass		
+
+build:
 	test -d build || mkdir -p build
+	
+build/%.BIN: build/%.ass build		
 	cd build && ../$(C6809) -c -am -oOP ../$< `echo ../$@ | tr a-z A-Z` 
 	
-%.ass: %.ass.in TEXTE.ASM 
+build/%.ass: %.ass build TEXTE.ASM
 	perl -e 'while(<>) {if(/@TEXT.ASM@/) {open FILE,"TEXTE.ASM"; print <FILE>; close FILE;} else {print;}}' $< > $@
 
 build/%.EXO: build/%.BIN
