@@ -1,0 +1,988 @@
+(main)ROCKFORT
+***************************************
+* Compo pour la ForEver Party 14
+* Theme: Elvis Lives!
+*
+* Titre:   ROQUEFORT (ou ROCKFORT)
+* Idee:    startfield rock&roll
+*          + son
+*          + scrolltext
+* Categ.:  Intro (1024octets)
+* Auteur:  Samuel Devulder
+* Optims:  Préhisto, Samuel Devulder
+* Date:    Mars 2013
+***************************************
+	
+*       org    $9000-$A5B
+*      org    $7000-$A4B ; TO7
+       org    $9000-$A4B
+       org	$8000
+*	org	$8000-$B9E
+
+DBG    set    0    ; debug
+
+COLBLU set    1    ; etoiles bleues	
+W8VBL  set    0    ; attente VBL
+DPCODE set    1    ; utilise DP dans player
+ 
+WIDTH  set    220  ; jusqu'a 240
+HEIGHT set    128  ; jusqu'a 200
+NPTS   set    96   ; nb de pts
+
+***************************************
+* boucle:
+*      REPEAT
+*      ....
+*      WHILE  condition
+***************************************
+REPEAT macro
+loop   set    *
+       endm
+WHILE  macro
+       b\0    loop
+       endm
+	
+***************************************
+* variable dans code auto-modifiable
+*
+*      VAR1   opcode,val,label ;8 bits
+*      VAR2   opcode,val,label ;16 bits
+***************************************
+VAR1   macro
+       \0     #\1
+\2     set    *-1
+       endm
+VAR2   macro
+       \0     #\1
+\2     set    *-2
+       endm
+       
+***************************************
+* Point d'entree
+***************************************
+ini    set    *
+       leas   <*,PCR
+       setdp  $E7
+       ldd    #$80E7
+       tfr    b,dp
+***************************************
+* Ecran noir, curseur off, RAMA
+***************************************
+*       jsr    $E800
+       ldx    #dat_scr
+       REPEAT
+       ldb    ,x+
+       jsr    $E803   ; PUTC
+       WHILE  ne
+
+***************************************
+* Init de m_plt
+***************************************
+* X pointe sur m_plt, B=0 A=$80
+*       lda    #128
+b3     sta    ,x+
+       rora
+       bcs    *-1
+       decb
+       bne    b3
+       
+***************************************
+* Generation do scrolleur
+***************************************
+* X contient deja la bonne valeur
+*      ldx    #scroll
+SCR_SZ set    ((33*2)+3)*16+1
+b0     ldd    #$6410
+b1     std    ,x++
+       lda    #$69
+       decb
+       andb   #$1f
+       cmpb   #$10
+       bne    b1
+       std    ,x++
+* tant pis pour la vitesse: on gagne 4 octets
+*      ldb    #$84
+*      stb    -33,x
+       ldd    #$3088
+       std    ,x++
+       ldd    #$2839
+       std    ,x+	; <=trop fort! le ",x+"
+       cmpx   #scroll+SCR_SZ-1
+       blo    b0 
+***************************************
+* Couleur dans le scrolleur
+***************************************
+       lsla		; A=80
+       clrb
+*      ldd    #$7840
+*      ldd    #$5020
+       ldx    #$4000
+       dec    <PRC
+b4     pshs   d
+       lsrb
+       eorb   1,s
+       andb   #%00111000
+       beq    b5
+       orb    #%11000000
+       REPEAT
+       stb    ,x+
+       deca
+       WHILE  ne
+b5     puls   d
+       addb   #%00001000
+       cmpx   #$5F40
+       blo    b4
+       inc    <PRC
+ 
+***************************************
+* Initialise la gestion du son.
+* D pointe sur la musique
+***************************************
+*      orcc   #$50
+       
+*      ldd    #12499   ; init timer
+*      std    TMSB
+*      lda    #$42
+*      sta    TCR
+  
+  
+*      ldd    #15625 ; 120BPM (1875000/120)
+*      std    TckTime
+*      std    TckTRef
+    
+* Pour le TO8: force le port B en sortie
+       ldd    #$043F
+       clr    <CRB
+       stb    <PRB
+       sta    <CRB
+       stb    <PRB     ; volume full
+
+       ldd    #SndIntr ; intr timer
+       std    TIMEPT
+
+       lda    #32
+*       ora    STATUS
+       sta    STATUS
+
+       sta    $6073   ; buzz clavier: off
+
+       andcc  #255-$50 ; int. on
+
+bouc   set    *
+***************************************
+* Attente VBL + SCROLL
+***************************************
+       ifne   W8VBL
+       REPEAT
+       lda    <$E7E7
+       WHILE  pl
+       REPEAT
+       lda    <$E7E7
+       WHILE  mi
+       endc
+       ldx    #$4000+19+40*8
+       jsr    scroll
+
+       ifne   1
+       ldx    #$4000+19+40*8*21
+       jsr    scroll
+       else
+       ldu   #$4000+40*(8+2)+4
+       REPEAT
+       pulu  d,x,y
+       leau  40*8*20,u
+       pshu  d,x,y
+       leau  6-40*8*20,u
+       cmpu  #$4000+40*(8+2)+4+92*6
+       WHILE ne
+       endc
+***************************************
+* deplace et affiche tous les pixels
+***************************************
+* en entree U=tabdeb a cause des PUTC
+* ci-dessus.
+       ldu    #tabdeb
+       REPEAT
+***************************************
+* Effacement du point pointe par Y.
+***************************************
+       leay   ,u
+       bsr    u_plt
+       coma
+       anda   ,x
+       sta    ,x
+       bsr    move
+***************************************
+* Affiche du point pointe par Y.
+* avec la couleur COL.
+***************************************
+       bsr    u_plt
+       ora    ,x	! forme
+       sta    ,x
+       ifeq   COLBLU
+       VAR1   lda,%11000000,COL
+       adda   #8
+       bcc    af_pl1
+       lda    #%11001000
+       else
+       VAR1   lda,%11100000,COL
+       asra
+       bita   #%00000100
+       beq    af_pl1
+       lda    #%11100000
+       endc
+af_pl1 sta    COL
+       dec    <PRC
+       sta    ,x
+       inc    <PRC
+       cmpu   #tabfin
+       WHILE ne
+***************************************
+* Deplacement particule 
+***************************************
+       ldu    #TRJ
+       dec    ,u+	
+       bne    mv_tgt	; vie epuisee?
+       leau   8,u	; U=R_TRJ
+       bsr    rnd	; => nouvelle
+       sta    -11,u	;    traj.
+       bsr    rnd
+       sta    -7,u
+       bsr    rnd
+       sta    -7,u
+       leau   -8-6,u
+mv_tgt bsr    phys
+***************************************
+* Test clavier
+***************************************	
+       jsr    $E809	; KTEST
+       bcc    bouc
+***************************************
+* SWI est transparent pour le basic.
+* On passe donc sur le code de 
+* choix d'un nouveau point. L'impact
+* devrait etre negligeable.
+***************************************
+*      swi		! rts 
+*      fcb    $3E       ! mal supporte par les emulateurs
+       jmp    [$FFFE]
+***************************************
+* Genere un nombre pseudo aleatoire sur
+* 8 bit. C'est une version modifiee
+* du multiply with carry. La periode
+* de la sequence est 31870. Compact
+* et rapide, que demander de plus?
+*
+* en entree:
+*    U=pointe sur (max,offset)
+* en sortie: 
+*    A=un nombre random entre offset 
+*      et offset+max-1
+*    B=ecrase
+*    U=U+2
+***************************************
+rnd	ldd	#$03F9
+	mul
+	addd	#0
+	sta	*-1
+	stb	rnd+1
+	lda	,u+
+	mul
+	adda	,u+
+	rts
+***************************************
+* Calcul coord video pour les coord
+* pointees par Y. En retour X
+* contient l'adresse video, et A le
+* masque point
+***************************************
+OFF_X	set	(320-WIDTH)/16
+OFF_Y	set	(200-HEIGHT-8)/2
+
+u_plt	ldd	,y
+	ldx	#m_plt+128
+	lda	a,x
+	sta	u_plt1
+	lda	#40
+	mul
+	addd	#$4000+OFF_X+OFF_Y*40
+	tfr	d,x
+	ldb	,y
+	lsrb
+	lsrb
+	lsrb
+	abx
+	VAR1	lda,0,u_plt1
+	rts
+***************************************
+* deplace une coord.
+*
+* Entree:
+*   U=adresse coordonee (X, Y)
+*   X=addresse (TGT_X,MAX_X,
+*               TGT_Y,MAX_Y)
+* Sortie:
+*   U += 2
+*   X = ecrase
+*   coord = coord + (coord - TGT)/16
+*   Si sortie ecran, un nouveau point
+*   est cree
+***************************************
+move	ldx	#PX
+	bsr	move1
+move1	ldb	,u	; X
+	subb	,x+	; X-TGT
+	rorb
+	asrb
+	asrb
+	asrb		; (X-TGT)/16
+	addb	,u+	; X+(X-TGT)/16
+	cmpb	,x+	
+	bhi	new_pt	; sortie ecran?
+	stb	-1,u
+	rts
+new_pt	pshs	u
+	ldu	#R_X
+	bsr	rnd
+	sta	,y
+	bsr	rnd
+	sta	1,y
+	puls	u,pc	
+***************************************
+* Mise a jour de la position de la 
+* target via la loi physique.
+*
+* entree : U pointe sur la struct
+*          physique:
+*          fcb	POS,MAX
+*	   rmb	2
+*          fcb	VIT,ACC
+* sortie : POS, VIT mis a jour
+*          U=U+2, B ecrase
+***************************************
+phys	bsr	phys0
+phys0	ldb	4,u	
+	asrb
+	asrb
+	asrb
+	addb	,u+	; POS += VIT/8
+	cmpb	,u+
+	bls	phys1	; POS in 0..MAX
+	clr	2,u
+	neg	3,u	; a voir 
+	ldb	-2,u
+phys1	stb	-2,u
+	ldb	2,u
+	addb	3,u
+	bvs	phys2
+	stb	2,u
+phys2	rts
+
+***************************************
+* Donnees
+***************************************
+RND	macro
+R_\0	fcb	\2	; max
+	fcb	\1	; offset
+	endm
+
+* constantes rnd points
+	RND	X,0,WIDTH-1
+	RND	Y,0,HEIGHT-1
+
+* constantes de trajectoire
+	ifeq    COLBLU
+TRJ	fcb	82	; Vie particule	(synchronise avec zik)
+	else
+TRJ	fcb	118	; 96 Vie particule	(synchronise avec zik)
+	endc
+PX	fcb	WIDTH/2	; position X
+	fcb	WIDTH-1	; max X
+PY	fcb	HEIGHT/2 ; position Y
+	fcb	HEIGHT-1 ; max Y
+VX	fcb	0
+AX	fcb	0
+VY	fcb	0
+AY	fcb	0
+	
+* constante rnd trajectoire
+	RND	TRJ,50,200
+	RND	AX,-5,10
+	RND	AY,-5,10
+		
+	includ	PLAY.ASM
+	
+Song	set	*
+	includ  SONG.ASM
+
+* constantes pour l'init ecran
+dat_scr
+	ifne	1
+       fcb    $1b,$40,$1b,$50,$1b,$60
+       fcb    $14,$0c,$0e,$20,$37,$31
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$62,$6b,$20
+       fcb    $20,$29,$68,$28,$30,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $28,$24,$34,$26,$20,$20
+       fcb    $3a,$30,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$60
+       fcb    $65,$20,$20,$6a,$20,$65
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$36,$22,$34
+       fcb    $20,$0a,$0a,$0a,$0a,$0a
+       fcb    $0a,$0a,$0a,$0a,$0a,$0a
+       fcb    $0a,$0a,$0a,$0a,$0a,$20
+       fcb    $37,$31,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$62
+       fcb    $6b,$20,$20,$29,$68,$28
+       fcb    $30,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$28,$24,$34,$26
+       fcb    $20,$20,$3a,$30,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$60,$65,$20,$20,$6a
+       fcb    $20,$65,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$20
+       fcb    $20,$20,$20,$20,$20,$36
+       fcb    $22,$34,$0f,$1f,$40,$4c
+       fcb    $77,$77,$77,$2e,$70,$75
+       fcb    $6c,$73,$64,$65,$6d,$6f
+       fcb    $73,$2e,$63,$6f,$6d,$1f
+       fcb    $42,$45,$1b,$4d,$45,$4c
+       fcb    $56,$49,$53,$20,$4c,$49
+       fcb    $56,$45,$53,$21,$20,$3e
+       fcb    $72,$6f,$63,$6b,$3c,$20
+       fcb    $46,$6f,$72,$65,$76,$65
+       fcb    $72,$20,$31,$34,$20,$1f
+       fcb    $56,$45,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$2f,$5c
+       fcb    $2f,$5c,$2f,$5c,$31,$30
+       fcb    $32,$31,$62
+	fcb	0
+	else
+	fcb	$14	; cursor off
+	fcb	$1B,$60	; tour=0
+	fcb	$1B,$50	; fond=0
+	fcb	12	; cls
+	fcb	$1F,$42,$45
+        fcb     $1B,$4D ; dbl haut
+	fcc     /ELVIS LIVES! >Ro/
+	fcc     /ck< Forever 14  /
+* 	fcc     /ELVIS LIVES! For/
+*	fcc     /ever'14         /
+	fcb     $1B,$4C
+
+	fcb     11,11
+	fcc     , @,
+	fcb     10,8,8
+	fcc     ,/#>,
+	fcb     10,8,8
+	fcc     ,:,
+	fcb     10,8,8
+	fcc     ,/ \,
+
+	fcb     $1E
+	fcc     ,\@,
+	fcb     10,8
+	fcc     ,#-,
+	fcb     10,8,8
+	fcc     ,:,
+	fcb     10,13
+	fcc     ,/ >,
+	fcb	$1F,$40,$40+12
+	fcc     /www.pulsdemos.com/
+	
+	fcb	0	
+	endc
+
+****************************************
+* /!\ important m_plt juste apres le
+*     texte
+****************************************	
+m_plt   set     *
+*       RPT32   M_PLT
+        rmb     256
+
+scroll	rmb	SCR_SZ
+
+        ifeq    COLBLU
+* un nb multiple de 7
+tabdeb	rmb	2*((NPTS+6)/7)*7
+        else
+* un nb multiple de 3
+tabdeb	rmb	2*((NPTS+2)/3)*3
+	endc
+tabfin	set	*
+
+	end	ini
+
+(include)PLAY.ASM
+***************************************
+* MusicPlayer Asynchone.
+****************************************
+
+STATUS equ    $6019
+TIMEPT equ    $6027
+
+* 6848
+CRC    equ    $E7C1  ; ctrl port C
+DDRC   equ    $E7C2  ; sens port C
+PRC    equ    $E7C3  ; data port C
+
+TCR    equ    $E7C5  ; reg cont timer
+TMSB   equ    $E7C6  ; compteur timer
+
+* 6821 musique et jeux
+PRA    equ    $E7CC  ; data port A
+PRB    equ    $E7CD  ; data port B
+CRA    equ    $E7CE  ; ctrl port A
+CRB    equ    $E7CF  ; ctrl port B
+    
+* code:
+* 0xxx xxxx Note
+* 10xx xxxx Duree
+* 1100 0000 BPM
+* 110x xxxx Stac
+* 111x xxxx Restart
+
+cEnd   equ    %11111111
+cBPM   equ    %11000000
+STAC_  equ    %11000000
+STAC   equ    STAC_+8
+    
+***************************************
+* Interruption timer
+***************************************  
+
+       ifne   DBG
+SEMA   fcb    1
+       endc
+
+       setdp  $E7
+
+SndIntr set   *
+* le moniteur du TO8 force b3=0 en
+* $E7C1 a chaque fois que $60DC
+* tombe a zero (il est decremente
+* a chaque interruption). On lui
+* donne donc une valeur != 1.
+* Ici a l'entree de l'interrupt
+* A contient $6019 qui ne peut
+* etre nul.
+       sta    $60DC   ; un truc!=1
+       
+       ifne   DBG
+       dec    SEMA
+       bne    EndIntr
+       lda    #7
+       eora   <$E7DD
+       anda   #7
+       sta    <$E7DD  
+       endc
+       
+       VAR1   lda,8,SndMsk
+       eora   <CRC    ; creneau
+       sta    <CRC
+
+       ifne   DPCODE
+* passage en direct page pour les commandes
+       setdp  *<-8
+       lda    #*<-8
+       tfr    a,dp
+       endc
+       
+* decompte du temps tick
+       VAR2   ldd,0,TckTime
+       VAR2   subd,1,PerIntr
+       bcs    TickTO
+       std    TckTime
+EndIntr set   *
+       ifne   DBG
+       inc    SEMA
+       lda    #7
+       eora   $E7DD
+       anda   #7
+       sta    $E7DD  
+       endc
+       lda    TMSB   ; clear TCO       
+       rti
+  
+* time-out du tick
+TickTO set    *
+       VAR2   addd,15625,TckTRef
+       std    TckTime ; corrige overflow
+  
+* decompte du compteur de duree note
+       ifne   DPCODE
+       dec    <NoteTck
+       else
+       dec    NoteTck
+       endc
+       VAR1   lda,1,NoteTck
+       beq    NewCmd
+       VAR1   cmpa,1,MuteTck
+       bne    EndIntr
+       clr    SndMsk
+       bra    EndIntr
+  
+* nouvelle commande/note
+NewCmd set    *
+       VAR2   ldu,Song,SongPtr
+NxtCmd ldb    ,u+     ; A = 0
+       lslb
+       bcs    CmdLen
+**************************************
+* (0)xxx xxxx 0 Note
+**************************************
+       bne    FrqNZ
+       ldx    TckTRef
+       bra    Frq6846
+FrqNZ  andb   #$1E
+       ldx    #tPeriod-2
+       ldd    b,x     ; x = count+1
+       sta    ,-s
+       lda    -1,u
+       bra    shift
+       REPEAT
+       lsr    ,s
+       rorb
+shift  suba   #16
+       WHILE  ge
+       lda    ,s+
+       tfr    d,x
+       ldb    #8
+* ecriture dans le timer
+Frq6846 stb   SndMsk
+       VAR2   ldd,0,NoteMute
+       sta    NoteTck ; ticks pour note
+       stb    MuteTck ; ticks pour stacc
+       stx    PerIntr
+       leax   -1,x
+       stu    SongPtr
+       lda    #$42
+       stx    TMSB
+       sta    TCR
+       bra    EndIntr
+**************************************
+* 1)0xx xxxx 0 Duree
+**************************************
+CmdLen bmi    CmdBPM
+       ldx    #numTcks
+       lsrb
+       lda    b,x
+       ldb    b,x
+       std    NoteMute
+       bra    NxtCmd
+**************************************
+* BPM = nb de noires par minute 
+* 1 noire = 32*ticks
+* 32*BPM = nb de ticks par minute
+* 60 000 000/(32*BPM) = periode du tick
+* 1 875 000/BPM = periode du tick
+**************************************
+* 11)00 0000 00 BPM
+**************************************
+CmdBPM lslb
+       bne    CmdSTAC
+       pulu   d       ;ldd    ,u++
+       std    TckTime
+       std    TckTRef
+       bra    NxtCmd
+**************************************
+* 11)0x xxxx 00 STACCATO
+**************************************
+CmdSTAC bmi   CmdEnd
+       lslb
+       lslb
+       lda    NoteMute
+       mul
+       sta    NoteMute+1
+       bra    NxtCmd
+************************************** 
+* 11)1x xxxx 00 Restart
+**************************************
+CmdEnd 
+       ldu    #Song  ; autre chose: reset
+       bra    NxtCmd
+ 
+* Speed (10xx xxxx)
+TICKsi set    %10000000
+TICKS  macro
+\1     equ    TICKsi
+TICKsi set    TICKsi+1      
+       fcb    \0
+       endm
+
+* le tick est à 1/32 de noire
+numTcks set   *
+	ifne	1
+*        TICKS %10000000,s1    ; ronde
+*        TICKS %11000000,s1d   ; .
+*        TICKS %11100000,s1dd  ; ..
+        TICKS %11110000,s1ddd ; ...
+        TICKS %01000000,s2    ; blanc
+        TICKS %01100000,s2d   ; .
+*        TICKS %01110000,s2dd  ; ..
+*        TICKS %01111000,s2ddd ; ...
+        TICKS %00100000,s4    ; noire
+        TICKS %00110000,s4d   ; .
+*        TICKS %00111000,s4dd  ; ..
+*        TICKS %00111100,s4ddd ; ...
+        TICKS %00010000,s8    ; croche
+        TICKS %00011000,s8d   ; .
+*        TICKS %00011100,s8dd  ; ..
+*        TICKS %00011110,s8ddd ; ...
+        TICKS %00001000,s16   ; 2croch
+*        TICKS %00001100,s16d  ; .
+*        TICKS %00001110,s16dd ; ..
+*        TICKS %00001111,s16ddd
+*        TICKS %00000100,s32   ; 4croch
+*        TICKS %00000110,s32d  ; .
+*        TICKS %00000111,s32dd ; ..
+*        TICKS %00000010,s64   ; 8croc
+*        TICKS %00000011,s64d  ; .
+*        TICKS %00000001,s128  ; 16croc
+	else
+        TICKS %10000000,s1    ; ronde
+        TICKS %11000000,s1d   ; .
+        TICKS %11100000,s1dd  ; ..
+        TICKS %11110000,s1ddd ; ...
+        TICKS %01000000,s2    ; blanc
+        TICKS %01100000,s2d   ; .
+        TICKS %01110000,s2dd  ; ..
+        TICKS %01111000,s2ddd ; ...
+        TICKS %00100000,s4    ; noire
+        TICKS %00110000,s4d   ; .
+        TICKS %00111000,s4dd  ; ..
+        TICKS %00111100,s4ddd ; ...
+        TICKS %00010000,s8    ; croche
+        TICKS %00011000,s8d   ; .
+        TICKS %00011100,s8dd  ; ..
+        TICKS %00011110,s8ddd ; ...
+        TICKS %00001000,s16   ; 2croch
+        TICKS %00001100,s16d  ; .
+        TICKS %00001110,s16dd ; ..
+        TICKS %00001111,s16ddd
+        TICKS %00000100,s32   ; 4croch
+        TICKS %00000110,s32d  ; .
+        TICKS %00000111,s32dd ; ..
+        TICKS %00000010,s64   ; 8croc
+        TICKS %00000011,s64d  ; .
+        TICKS %00000001,s128  ; 16croc
+	endc
+  
+* Demi periode pour l'octave 0. Echelle
+* temperee.
+nP     equ    $0000   ; pause
+tPeriod	
+       fdb    30581   ; do
+       fdb    28860   ; do#
+       fdb    27240   ; re
+       fdb    25713   ; re#
+       fdb    24271   ; mi
+       fdb    22909   ; fa
+       fdb    21621   ; fa#
+       fdb    20408   ; sol
+       fdb    19264   ; sol#
+       fdb    18181   ; la
+       fdb    17161   ; la#
+       fdb    16196   ; si
+
+OCTAVE macro  
+nC\0   equ    16*\0+1
+nCs\0  equ    16*\0+2
+nD\0   equ    16*\0+3
+nDs\0  equ    16*\0+4
+nE\0   equ    16*\0+5
+nF\0   equ    16*\0+6
+nFs\0  equ    16*\0+7
+nG\0   equ    16*\0+8
+nGs\0  equ    16*\0+9
+nA\0   equ    16*\0+10
+nAs\0  equ    16*\0+11
+nB\0   equ    16*\0+12
+       endm
+
+       OCTAVE 0
+       OCTAVE 1
+       OCTAVE 2
+       OCTAVE 3
+       OCTAVE 4
+       OCTAVE 5
+       OCTAVE 6
+       OCTAVE 7    
+
+(include)SONG.ASM
+
+
+        fcb     cBPM,$26,$f5
+*        fcb     cForI+8
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+        fcb     s8,nE5,s4d,nP
+*        fcb     cNxtI
+*        fcb     cForI+4
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+        fcb     s2,nE4,s8,nE5,nP,s4d
+        fcb     nFs5,nP,s8,nE5,nP,s4d
+        fcb     nE5,nP,s8,nE5,s4d,nP,s8
+        fcb     nE4,nG5,nE5,nD5,nE5,nB4
+        fcb     nA4,nG4,nE4,s4d,nP,s8
+        fcb     nE5,nP,s4d,nFs5,nP,s8
+        fcb     nE5,nP,s4d,nE5,nP,s8
+        fcb     nE5,s16,nGs3,nGs2,s8,nP
+        fcb     nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3
+*        fcb     cNxtI
+        fcb     s8,nE4,nB2,s4,nAs4,s8
+        fcb     nE5,s4d,nE4,nB4,s8,nAs4
+        fcb     nE5,nAs4,s2,nB4,s4,nAs4
+        fcb     s8,nE5,s4d,nE4,nB4,s8
+        fcb     nA4,nE5,nA4,s2,nB4,s2d
+        fcb     nG5,s4d,nA4,s8,nG3,nE5
+        fcb     nG3,s2,nA4,s4d,nG5,nFs5
+        fcb     nA4,s8,nG3,nE5,nG3,s2d
+        fcb     nA4,s8,nE4,nE5,nE4,s4d
+        fcb     nB4,nA4,s8,nE5,s4d,nB4
+        fcb     nA4,s8,nE4,nE5,nE4,s4d
+        fcb     nB4,nA4,s8,nE5,nB4
+        fcb     s1ddd,nG5,s8,nG5,s1ddd
+        fcb     nFs5,s8,nFs5,s4,nE4,s16
+        fcb     nFs4,s8d,nE4,s8,nE5,nP
+        fcb     s4d,nFs5,nP,s8,nE5,nP
+        fcb     s4d,nE5,nP,s8,nE5,s4d
+        fcb     nP,s8,nE4,nG5,nE5,nD5
+        fcb     nE5,nB4,nA4,nG4,nE4,s4d
+        fcb     nP,s8,nE5,nP,s4d,nFs5
+        fcb     nP,s8,nE5,nP,s4d,nE5,nP
+        fcb     s8,nE5,s16,nGs3,nGs2,s8
+        fcb     nP,nB3,nE4,nA3,nB3,nAs3
+        fcb     nE5,s4d,nB3,s8,nE4,nB2
+*        fcb     cForI+2
+        fcb     s4,nAs4,s8,nE5,s4d,nE4
+        fcb     nB4,s8,nAs4,nE5,nAs4,s2
+        fcb     nB4
+        fcb     s4,nAs4,s8,nE5,s4d,nE4
+        fcb     nB4,s8,nAs4,nE5,nAs4,s2
+        fcb     nB4
+*        fcb     cNxtI
+        fcb     s2d,nG5,s4d,nAs4,s8,nG3
+        fcb     nE5,nG3,s2,nAs4,s4d,nG5
+        fcb     nFs5,nA4,s8,nGs3,nE5
+        fcb     nGs3,s2d,nA4,s8,nE4,nE5
+        fcb     nE4,s4d,nB4,nA4,s8,nE5
+        fcb     s4d,nB4,nA4,s8,nE4,nE5
+        fcb     nE4,s4d,nB4,nA4,s8,nE5
+        fcb     nB4,s1ddd,nG5,s8,nG5
+        fcb     s1ddd,nFs5,s8,nFs5
+*        fcb     cForI+4
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3
+*        fcb     cNxtI
+*        fcb     cForI+2
+        fcb     nA3,nG4,nFs4,nE4,nFs4
+        fcb     nC4,nE5,nE4,s4,nD4,s8
+        fcb     nE4,s4,nDs4,s8,nE4,nE5
+        fcb     nE4
+        fcb     nA3,nG4,nFs4,nE4,nFs4
+        fcb     nC4,nE5,nE4,s4,nD4,s8
+        fcb     nE4,s4,nDs4,s8,nE4,nE5
+        fcb     nE4
+*        fcb     cNxtI
+        fcb     nE3,nD4,nE4,nB3,nCs4
+        fcb     nG3,nE5,nB3,s4,nA3,s8
+        fcb     nE4,s4,nAs3,s8,nB3,nE5
+        fcb     nB3,nE3,nD4,nE4,nB3
+        fcb     nCs4,nA3,nE5,s4d,nD4,s8
+        fcb     nE4,s4d,nD4,s8,nE5,nB3
+        fcb     s4,nP,STAC_+8,nE4,nE4
+        fcb     s8,nE5,nE4,s4,nP,s4d
+        fcb     nFs5,s8,nP,nE5,s4d,nP
+        fcb     nE5,s8,nP,nE5,s4d,nP
+        fcb     STAC_+10,nE4,s8,nG5,nE5
+        fcb     nD5,s4,nB4,s8,nA4,nG4
+        fcb     nE4,s4d,nP,s8,nE5
+*	fcb	s1ddd,nE4
+        fcb     cEnd
+* 390 octets

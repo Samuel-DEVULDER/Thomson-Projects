@@ -1,0 +1,2 @@
+
+30 LOADM "PiMiTV.EXO",,R
