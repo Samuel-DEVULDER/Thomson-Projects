@@ -9,6 +9,7 @@ CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) 
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
 HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
+TEO_BUGFX   SET   1
 
 ***************************************
 * System equates
@@ -144,6 +145,8 @@ FINDMAX
    LDD   #FIRST_PAGE-1
 FINDMAX1
    INCB
+   CMPB  #$20
+   BEQ   FINDMAX3
    STB   LGA5
    STB   ,X
 FINDMAX2
@@ -175,6 +178,7 @@ CHKSIG
 PRINTMAX
    PSHS  D
    JSR   PUTSTR
+   FCB   12
    FCC   /Found/
    FCB   128+32
    LDB   LAST_PAGE
@@ -1287,26 +1291,45 @@ opSTOREB
 
 opLESSTHAN
    LDD   2,U
+   IFEQ  TEO_BUGFX
    SUBD  6,U
+   ELSE
+   SUBB  7,U
+   SBCA  6,U
+   ENDC
    LDD   ,U
    LEAU  4,U         ; fixup stack
    SBCB  1,U
    SBCA  ,U
+   IFEQ  TEO_BUGFX
    BLT   outTRUE
+   ELSE
+   BMI   outTRUE
+   ENDC
    BRA   outFALSE
 
 opLESSTHANOREQUAL
    LDD   2,U
+   IFEQ  TEO_BUGFX
    SUBD  6,U
+   ELSE
+   SUBB  7,U
+   SBCA  6,U
+   ENDC
    STD   6,U
    LDD   ,U
    LEAU  4,U
-   SBCA  1,U
-   SBCB  ,U
+   SBCB  1,U
+   SBCA  ,U
+   IFEQ  TEO_BUGFX
    BLT   outTRUE
    BGT   outFALSE
-   ORA   2,U
-   ORA   3,U
+   ELSE
+   BMI   outTRUE
+   BHI   outFALSE
+   ENDC
+   ORB   2,U
+   ORB   3,U
    BNE   outFALSE
    BRA   outTRUE
 

@@ -32,7 +32,8 @@ build/%.BIN: %.ass
 	cd build && ../$(C6809) -c -bh -am -oOP ../$< `echo $*.BIN|tr a-z A-Z`
 
 $(DISK): $(BIN) fill_sapdir
-	$(SAPFS) -c $@
+	# $(SAPFS) -c $@
+	cp empty_disk/bootbk.sap "$@"
 	$(SAPFS) -a $@ build/sapdir/*
 
 $(SAPFS):
@@ -47,7 +48,8 @@ fill_sapdir: compile
 	for e in ASM BIN bin; do \
 		cp build/*.$$e build/sapdir; \
 	done
+	mv build/sapdir/ZPU.BIN build/sapdir/AUTO.BIN
 
-w:	$(DISK)
+test:	$(DISK)
 	cp $(DISK) $(TEODIR)/disk.sap
 	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.sap
