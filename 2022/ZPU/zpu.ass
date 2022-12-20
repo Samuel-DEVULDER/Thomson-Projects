@@ -9,7 +9,7 @@ CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) 
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
 HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
-TEO_BUGFX   SET   1
+TEO_BUGFX   SET   1           : fxes SBCA/B setting V flag where it sould'nt
 
 ***************************************
 * System equates
@@ -1291,12 +1291,7 @@ opSTOREB
 
 opLESSTHAN
    LDD   2,U
-   IFEQ  TEO_BUGFX
    SUBD  6,U
-   ELSE
-   SUBB  7,U
-   SBCA  6,U
-   ENDC
    LDD   ,U
    LEAU  4,U         ; fixup stack
    SBCB  1,U
@@ -1310,12 +1305,7 @@ opLESSTHAN
 
 opLESSTHANOREQUAL
    LDD   2,U
-   IFEQ  TEO_BUGFX
    SUBD  6,U
-   ELSE
-   SUBB  7,U
-   SBCA  6,U
-   ENDC
    STD   6,U
    LDD   ,U
    LEAU  4,U
