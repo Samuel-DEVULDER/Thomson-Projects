@@ -8,7 +8,7 @@ LPR         SET   0           ; also output result to printer on parallel port
 CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) ?
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
-HOST_SPACE  SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
+STK_SPACE   SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
 TEO_BUGFX   SET   1           : fxes SBCA/B setting V flag where it sould'nt
 
 ***************************************
@@ -576,10 +576,10 @@ FETCH_INSTRUCTION MACRO
 * B=xxxxxxx0 (value*2)
 opIM
    ASRB              ; left align signed value
+   LDX   #0          ; [3] clear high word
    SEX               ; [2] extends sign to A ($00 or $FF)
-   PSHU  D           ; [7] push lower word
-   STA   ,-U         ; [6] push high byte (sign)
-   STA   ,-U         ; [6] push high byte (sign)
+   LEAX  A,X         ; [5] extends sign to X
+   PSHU  D,X         ; [9] push lower word
    FETCH_INSTRUCTION
    BPL   chkPC       ; next is opIM ? no ==> process next
    * BRA   opIM_nxt        instruction (B already fetched)
@@ -588,17 +588,17 @@ opIM
 * B=xxxxxxx0 (value*2)
 opIM_nxt
    LSLB
-   LSR   ,U          ; rotate TOS 7 bits left and add B/2 at the bottom
-   LDA   1,U
-   RORA
-   STA   ,U          ; byte 0 is byte 1 rotated right once
-   LDA   2,U
-   RORA
-   STA   1,U         ; byte 1 is byte 2 rotated right once
+   LSR   2,U          ; rotate TOS 7 bits left and add B/2 at the bottom
    LDA   3,U
+   RORA
+   STA   2,U          ; byte 0 is byte 1 rotated right once
+   LDA   ,U
+   RORA
+   STA   3,U         ; byte 1 is byte 2 rotated right once
+   LDA   1,U
    RORA              ; byte 2 is byte 3 rotated right once
    RORB              ; push bit back to value
-   STD   2,U         ; write lower word
+   STD   ,U          ; write lower word
    FETCH_INSTRUCTION
    BMI   opIM_nxt    ; opIM? yes => just increment PC
    BRA   chkPC       ; next instruction (B already fetched)
@@ -613,19 +613,17 @@ getAddrL
 
 * make page and X points to the address in TOS (stack unmodified)
 getAddr
-   * LDD   ,U
-   * SUBD  #HOST_SPACE
-   * BNE   getAddrMapped
-   LDB   ,U          ; speedup: if nul then adress is mapped
+   LDA   2,U         ; speedup: if nul then adress is mapped
    BEQ   getAddrMapped
-   LDX   2,U
+   LDX   ,U
    RTS
 getAddrMapped
-   LDD   2,U         ; load lower part of the address
+   LDD   ,U          ; load lower part of the address
    ANDA  #$3F        ; clear high bits
    ADDA  #$A0        ; make it point to $A000...$DFFF
    TFR   D,X         ; X updated
-   LDD   1,U         ; load 16kb page section of address
+   LDA   3,U
+   LDB   ,U          ; load 16kb page section of address
 
 * updates page when neeeded
 * D=high bytes of the 24bits address
@@ -710,25 +708,25 @@ sampledTMR
 * B=0xxxxx00 (4*x)
 opSTORESP_x
    LEAX  B,U         ; X point to dest (bit7 already 0)
-   PULU  D           ; load high word
-   STD   ,X          ; store high word
    PULU  D           ; load low word
-   STD   2,X         ; store low word
+   STD   ,X          ; store low word
+   PULU  D           ; load high word
+   STD   2,X         ; store high word
    BRA   fetch       ; next instruction
-
+   
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
 opADDSP_x
    LSLB              ; B ~ 4*x
    ANDB  #%00111100  ; make 4*x postitive
    LEAX  B,U         ; X point to source
-   LDD   2,X         ; load low word of source
-   ADDD  2,U         ; add low word of TOS
-   STD   2,U         ; store result to TOS (lower word)
-   LDD   ,X          ; load high word of source<<
-   ADCB  1,U         ; add with carry the TOS (high word)
-   ADCA  ,U          ; second byte
-   STD   ,U          ; store result to TOS (high word)
+   LDD   ,X          ; load low word of source
+   ADDD  ,U          ; add low word of TOS
+   STD   ,U          ; store result to TOS (lower word)
+   LDD   2,X         ; load high word of source<<
+   ADCB  3,U         ; add with carry the TOS (high word)
+   ADCA  2,U         ; second byte
+   STD   2,U         ; store result to TOS (high word)
    BRA   fetch       ; next instruction
 
 opUNKNOWN
@@ -741,89 +739,73 @@ opBREAKPT
 
 * Pushes stack address
 opPUSHSP
-   LDD   #HOST_SPACE ; stack address is $01FF:9xxx
-   LEAX  ,U          ; this should be mapped to
-   PSHU  D,X         ; BANk 0, $Dxxx
+   LDX   #STK_SPACE  ; stack address is $01FF:9xxx
+   TFR   U,D
+   PSHU  D,X
    BRA   fetch
 
 opPUSHSPADD
-   LDD   2,U
+   LDD   ,U
    LSLD
    LSLD
    LEAX  D,U
-   STX   2,U
-   LDD   #HOST_SPACE ; stack address is $01FF:9xxx
-   STD   ,U          ; BANk 0, $Dxxx
+   STX   ,U
+   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
+   STD   2,U         ; BANk 0, $Dxxx
    JMP   <fetch
 
 ***************************************
 * ARITHMETIC
 ***************************************
 
-opADD
-*    PULU  D           ; adds TOS with NOS (43 avg cycles)
-*    ADDD  2,U
-*    STD   2,U
-*    PULU  D
-*    ADDD  2,U
-*    STD   2,U
-*    BCC   opADD1
-*    INC   1,U
-*    BNE   opADD1
-*    INC   ,U
-* opADD1
-*    JMP   <fetch
-   LEAU  4,U         ; adds TOS with NOS (44 cycles)
-   LDD   2,U         ; load lower word of NOS
-   ADDD  -2,U        ; adds lower word of TOS
-   STD   2,U         ; store result to NOS lower part
-   LDD   ,U          ; load NOS top word
-   ADCB  -3,U        ; adds TOS top word
-   ADCA  -4,U        ; with carry
-   STD   ,U          ; store uppdr world result
-   JMP   <fetch      ; next intruction
-
 opSUB
-   LEAU  4,U         ; add TOS with NOS
-   LDD   2,U         ; load lower word of NOS
-   SUBD  -2,U        ; adds lower word of TOS
-   STD   2,U         ; store result to NOS lower part
-   LDD   ,U          ; load NOS top word
-   SBCB  -3,U        ; adds TOS top word
-   SBCA  -4,U        ; with carry
-   STD   ,U          ; store uppdr world result
+   LEAX  ,U
+   JSR   neg_x
+
+opADD
+   PULU  D,X
+   ADDD  ,U
+   STD   ,U
+   TFR   X,D
+   ADCB  3,U
+   ADCA  2,U
+   STD   2,U
    JMP   <fetch      ; next intruction
 
 opMULT
    LDD   #0          ; clear upper word
-   STD   -4,U        ; 0123
-   LDA   3,U         ; 4567
-   LDB   7,U
-   MUL               ; compute byte #4
-   STD   -2,U        ; 3+7
-   LEAX  -3,U
-   LDD   #$0108      ; compute byte #3
-   BSR   MULT1       ; 2+7
-   BSR   MULT1       ; 3+6
-   LEAX  -4,U
-   LDD   #$0008      ; compute byte #2
-   BSR   MULT2       ; 1+7
-   BSR   MULT2       ; 2+6
-   BSR   MULT2       ; 3+5
-   LDD   #$FF08      ; compute byte #1
+   STD   -4,U        ; 2301
+   LDA   1,U         ; 6745
+   LDB   5,U         ; compute byte #4
+   MUL               ; 3+7
+   STD   -2,U        
+   LEAX  -3,U        ; compute byte #3
+   LDD   #$0005      ; 2+7
+   BSR   MULT1      
+   LDD   #$0104      ; 3+6
+   BSR   MULT1       
+   LEAX  -4,U        ; compute byte #2
+   LDD   #$0305      ; 1+7
+   BSR   MULT2       
+   LDD   #$0004      ; 2+6
+   BSR   MULT2
+   LDD   #$0107      ; 3+5
+   BSR   MULT2
+   LDD   #$0205      ; compute byte #1
    BSR   MULT3       ; 0+7
+   LDD   #$0304
    BSR   MULT3       ; 1+6
+   LDD   #$0007
    BSR   MULT3       ; 2+5
+   LDD   #$0106
    BSR   MULT3       ; 3+4
    LEAU  4,U         ; copy result to TOS
    LDD   ,X
-   STD   ,U
-   LDD   2,X
    STD   2,U
+   LDD   2,X
+   STD   ,U
    JMP   <fetch
 MULT1
-   ADDD  #255        ; A++ B--
-   PSHS  D
    LDA   A,U
    BEQ   MULT0
    LDB   B,U
@@ -834,10 +816,8 @@ MULT1
    BCC   MULT0
    INC   -1,X
 MULT0
-   PULS  D,PC
+   RTS
 MULT2
-   ADDD  #255        ; A++ B--
-   PSHS  D
    LDA   A,U
    BEQ   MULT0
    LDB   B,U
@@ -845,10 +825,8 @@ MULT2
    MUL
    ADDD  ,X
    STD   ,X
-   PULS  D,PC
+   RTS
 MULT3
-   ADDD  #255        ; A++ B--
-   PSHS  D
    LDA   A,U
    BEQ   MULT0
    LDB   B,U
@@ -856,27 +834,28 @@ MULT3
    MUL
    ADDB  ,X
    STB   ,X
-   PULS  D,PC
+   RTS
 
 opMULT16X16
    LDD   #0          ; clear upper word
-   STD   -4,U        ; 0123
-   LDA   3,U         ; 4567
-   LDB   7,U
+   STD   -4,U        ; 2301
+   LDA   1,U         ; 6745
+   LDB   5,U
    MUL               ; compute byte #4
    STD   -2,U        ; 3+7
    LEAX  -3,U
-   LDD   #$0108      ; compute byte #3
+   LDD   #$0005      ; compute byte #3
    BSR   MULT1       ; 2+7
-   BSR   MULT1       ; 3+6
+   LDD   #$0104      ; 3+6
+   BSR   MULT1       
    LEAX  -4,U
-   LDD   #$0008      ; compute byte #2
+   LDD   #$0004      ; compute byte #2
    BSR   MULT2       ; 2+6
    LEAU  4,U         ; copy result to TOS
    LDD   ,X
-   STD   ,U
-   LDD   2,X
    STD   2,U
+   LDD   2,X
+   STD   ,U
    JMP   <fetch
 
 opNEG
@@ -885,41 +864,41 @@ opNEG
    JMP   <fetch
 neg_x
    LDD   #0
-   SUBD  2,X
-   STD   2,X
+   SUBD  ,X
+   STD   ,X
    LDD   #0
    BCC   neg_x1
    LDD   #-1
 neg_x1
-   SUBD  ,X
-   STD   ,X
+   SUBD  2,X
+   STD   2,X
    RTS
 
 opDIV
    CLR   ,-S            ; clear sign bit
    LEAX  ,U
-   LDB   ,X
+   LDB   2,X
    BPL   opDIV1
    COM   ,S             ; negate sign
    BSR   neg_x          ; negate dividend
 opDIV1
    LEAX  4,U
-   LDB   ,X
+   LDB   2,X
    BPL   opDIV2
    COM   ,S             ; negate sign
    BSR   neg_x          ; negate divisor
 opDIV2
    BSR   UDIV32
    LEAX  4,U
-   LDD   ,U
-   COMA
-   COMB
-   STD   ,X
    LDD   2,U
    COMA
    COMB
-opDIV4
    STD   2,X
+   LDD   ,U
+   COMA
+   COMB
+opDIV4
+   STD   ,X
    LEAU  ,X             ; fix stack
    LDB   ,S+            ; test sign
    BPL   opDIV3         ; positive => no chg
@@ -929,20 +908,20 @@ opDIV3
 
 opMOD
    LEAX  ,U
-   LDB   ,X
+   LDB   2,X
    STB   ,-S            ; store sign
    BPL   opMOD1
    BSR   neg_x          ; negate dividend
 opMOD1
    LEAX  4,U
-   LDB   ,X
+   LDB   2,X
    BPL   opMOD2
    BSR   neg_x          ; negate divisor
 opMOD2
    BSR   UDIV32
    LEAX  4,U
    LDD   -4,U
-   STD   ,X
+   STD   2,X
    LDD   -2,U
    BRA   opDIV4
 
@@ -953,21 +932,21 @@ UDIV32
    STD   -2,U
    LDX   #32
 UDIV32_1
-   ROL   3,U            ; N = N<<1
-   ROL   2,U
-   ROL   1,U
-   ROL   ,U             ; carry = N(i)
+   ROL   1,U            ; N = N<<1
+   ROL   ,U
+   ROL   3,U
+   ROL   2,U            ; carry = N(i)
    LDD   -2,U
    ROLB                 ; inject N(i)
    ROLA
    STD   -2,U
    ROL   -3,U
    ROL   -4,U           ; R = {R<<1 | N(i)}
-   SUBD  6,U            ; R-D (low)
+   SUBD  4,U            ; R-D (low)
    STD   -6,U           ; save temp
    LDD   -4,U
-   SBCB  5,U
-   SBCA  4,U            ; R-D (high)
+   SBCB  7,U
+   SBCA  6,U            ; R-D (high)
    BCS   UDIV32_2       ; R-D<0 ? yes => no chg
    STD   -4,U           ; R = R-D (high)
    LDD   -6,U           ; retrieve temp
@@ -975,10 +954,10 @@ UDIV32_1
 UDIV32_2
    LEAX  -1,X
    BNE   UDIV32_1
-   ROL   3,U            ; inject last comparison bit
-   ROL   2,U
-   ROL   1,U
+   ROL   1,U            ; inject last comparison bit
    ROL   ,U
+   ROL   3,U
+   ROL   2,U
    RTS
 
 ***************************************
@@ -986,40 +965,33 @@ UDIV32_2
 ***************************************
 
 opAND
-   LDD   ,U          ; bitwise "and" of TOS with NOS
-   LEAU  4,U
-   BEQ   opAND1
+   PULU  D,X         ; bitwise "and" of TOS with NOS
    ANDA  ,U
    ANDB  1,U
-opAND1
    STD   ,U
-   LDD   -2,U
+   TFR   X,D
    ANDA  2,U
    ANDB  3,U
    STD   2,U
    JMP   <fetch
 
 opOR
-   LDD   ,U          ; bitwise "or" of TOS with NOS
-   LEAU  4,U
-   BEQ   opOR1
+   PULU  D,X         ; bitwise "or" of TOS with NOS
    ORA   ,U
    ORB   1,U
    STD   ,U
-opOR1
-   LDD   -2,U
+   TFR   X,D
    ORA   2,U
    ORB   3,U
    STD   2,U
    JMP   <fetch
 
 opXOR
-   LDD   ,U          ; bitwise "or" of TOS with NOS
-   LEAU  4,U
+   PULU  D,X         ; bitwise "xor" of TOS with NOS
    EORA  ,U
    EORB  1,U
    STD   ,U
-   LDD   -2,U
+   TFR   X,D
    EORA  2,U
    EORB  3,U
    STD   2,U
@@ -1055,11 +1027,11 @@ flip2
 opFLIP
    LDA   ,U          ; flips the bits of the TOS
    LDB   3,U
-   BSR   flip2
+   BSR   flip2       ; 1/2
    STA   ,U
    STB   3,U
-   LDD   1,U
-   BSR   flip2
+   LDD   1,U         
+   BSR   flip2       ; 0/3
    STD   1,U
    JMP   <fetch
 
@@ -1107,7 +1079,7 @@ opSWAP
    IFEQ  CYCLE_TIMER
 timer_latch_phi
 * phi expects running at 64Mhz, so multiply our microsecond timer by 64
-   LDB   3,U
+   LDB   1,U
    CMPB  #$14        ; phi ?
    BNE   timer_latch_phi3
    LDB   #6
@@ -1151,7 +1123,7 @@ uart_read
    CLRA
    BRA   opLOADIO_end
 uart_write
-   LDB   7,U         ; prints a character
+   LDB   5,U         ; prints a character
    JSR   PUTC
    IFNE  LPR
    IFEQ  TRACE
@@ -1161,7 +1133,7 @@ uart_write
    BRA   opSTOREIO_end
 
 timer_latch
-   LDB   7,U
+   LDB   5,U
    BITB  #2
    BEQ   opSTOREIO_end
    PSHS  U,CC        ; latches the current timer value
@@ -1182,7 +1154,7 @@ timer_latch
 
 opLOADIO
    LDX   #0
-   LDD   2,U
+   LDD   ,U
 * phi board
    CMPD  #$000C
    BEQ   uart_rdy
@@ -1205,14 +1177,14 @@ opLOADIO
    BEQ   timer_mhz
 * default
 uart_rdy
-   LDD   #256        ; tell uar is rady to send
+   LDD   #256        ; tell uart is rady to send
 opLOADIO_end
-   STX   ,U
-   STD   2,U
+   STX   2,U
+   STD   ,U
    JMP   <fetch
 
 opSTOREIO
-   LDD   2,U
+   LDD   ,U
 * phi board
    CMPD  #$000C
    BEQ   uart_write
@@ -1228,20 +1200,31 @@ opSTOREIO_end
    JMP   <fetch
 
 opLOAD
-   LDA   ,U          ; chk IO range
-   CMPA  #IO_SPACE/256
-   BCC   opLOADIO    ; yes => io-specific
-   JSR   <getAddrL   ; convert adress
+   LDA   2,U         ; chk IO range
+   CMPA  #STK_SPACE/256
+   BMI   opLOADnorm
+   BHI   opLOADIO    ; yes => io-specific
+opLOADstk
+   JSR   <getAddrL   ; load from stack
    LDD   ,X          ; load high word
    STD   ,U          ; store in TOS
    LDD   2,X         ; load lower word
    STD   2,U         ; store in TOS
+   JMP   <updatePC   ; resync PC page and execute next instruction   
+opLOADnorm
+   JSR   <getAddrL   ; convert adress
+   LDD   ,X          ; load high word
+   STD   2,U         ; store in TOS
+   LDD   2,X         ; load lower word
+   STD   ,U          ; store in TOS
    JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
-   LDA   ,U          ; chk IO range
-   CMPA  #IO_SPACE/256
-   BCC   opSTOREIO   ; yes => io-specific code
+   LDA   2,U         ; chk IO range
+   CMPA  #STK_SPACE/256
+   BMI   opSTOREnorm
+   BHI   opSTOREIO   ; yes => io-specific code
+opSTOREstk
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
    STD   ,X
@@ -1249,38 +1232,54 @@ opSTORE
    STD   2,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
+opSTOREnorm
+   JSR   <getAddrL   ; convert TOS to address & set page
+   LDD   6,U
+   STD   ,X
+   LDD   4,U
+   STD   2,X
+   LEAU  8,U         ; fixup stack
+   JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
 opPOPSP
-   * PULU  D,X         ; change SP with the value of TOS
-   * LEAU  ,X          ; presumably we just keep the lower part of the address
-   LDU   2,U
+   LDU   ,U
    JMP   <fetch
+   
+getAddrStk  
+   LDA   2,U         ; chk IO range
+   CMPA  #STK_SPACE/256
+   BMI   getAddrStk2
+   LDA   1,U
+   EORA  #2
+   STA   1,U
+getAddrStk2
+   JMP   getAddr
 
 opLOADH
-   JSR   <getAddr    ; loads 16 bits
+   BSR   getAddrStk  ; loads 16 bits
    LDD   ,X
 outUnsigned
-   STD   2,U
-   LDD   #0
    STD   ,U
+   LDD   #0
+   STD   2,U
    JMP   <updatePC
 
 opSTOREH
-   JSR   <getAddr    ; stores 16 bits
-   LDD   6,U
+   BSR   getAddrStk  ; stores 16 bits
+   LDD   4,U
    STD   ,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC
 
 opLOADB
-   JSR   <getAddr    ; loads 8 bits
+   BSR   getAddrStk  ; loads 8 bits
    CLRA
    LDB   ,X
    BRA   outUnsigned
 
 opSTOREB
-   JSR   <getAddr    ; stores 8 bits
-   LDB   7,U
+   BSR   getAddrStk  ; stores 8 bits
+   LDB   5,U
    STB   ,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC
@@ -1290,12 +1289,12 @@ opSTOREB
 ***************************************
 
 opLESSTHAN
-   LDD   2,U
-   SUBD  6,U
    LDD   ,U
    LEAU  4,U         ; fixup stack
-   SBCB  1,U
-   SBCA  ,U
+   SUBD  ,U
+   LDD   -2,U
+   SBCB  3,U
+   SBCA  2,U
    IFEQ  TEO_BUGFX
    BLT   outTRUE
    ELSE
@@ -1304,13 +1303,13 @@ opLESSTHAN
    BRA   outFALSE
 
 opLESSTHANOREQUAL
-   LDD   2,U
-   SUBD  6,U
-   STD   6,U
    LDD   ,U
    LEAU  4,U
-   SBCB  1,U
-   SBCA  ,U
+   SUBD  ,U
+   STD   ,U
+   LDD   -2,U
+   SBCB  3,U
+   SBCA  2,U
    IFEQ  TEO_BUGFX
    BLT   outTRUE
    BGT   outFALSE
@@ -1318,19 +1317,17 @@ opLESSTHANOREQUAL
    BMI   outTRUE
    BHI   outFALSE
    ENDC
-   ORB   2,U
-   ORB   3,U
+   ORB   ,U
+   ORB   1,U
    BNE   outFALSE
    BRA   outTRUE
 
 opULESSTHAN
-   LDD   ,U
-   LEAU  4,U
-   SUBD  ,U
+   PULU D,X
+   CMPX  2,U
    BLO   outTRUE
    BHI   outFALSE
-   LDD   -2,U
-   SUBD  2,U
+   SUBD  ,U
    BLO   outTRUE
 outFALSE
    LDD   #0          ; writes 0 on top of stack
@@ -1339,38 +1336,32 @@ outFALSE
    JMP   <fetch
 
 opULESSTHANOREQUAL
-   LDD   ,U
-   LEAU  4,U
-   SUBD  ,U
+   PULU D,X
+   CMPX  2,U
    BHI   outFALSE
    BLO   outTRUE
-   LDD   -2,U
-   SUBD  2,U
+   SUBD  ,U
    BHI   outFALSE
 outTRUE
    LDD   #0          ; write 1 on top of stack
-   STD   ,U
-   INCB
    STD   2,U
+   INCB
+   STD   ,U
    JMP   <fetch
 
 opEQ
-   LDD   ,U
-   LEAU  4,U
-   SUBD  ,U
+   PULU D,X
+   CMPX  2,U
    BNE   outFALSE
-   LDD   -2,U
-   SUBD  2,U
+   SUBD  ,U
    BNE   outFALSE
    BRA   outTRUE
 
 opNEQ
-   LDD   ,U
-   LEAU  4,U
-   SUBD  ,U
+   PULU D,X
+   CMPX  2,U
    BNE   outTRUE
-   LDD   -2,U
-   SUBD  2,U
+   SUBD  ,U
    BNE   outTRUE
    BRA   outFALSE
 
@@ -1380,195 +1371,204 @@ opNEQ
 
 LSHIFTRIGHT MACRO
    LSRD
-   ROR   2,U
-   ROR   3,U
+   ROR   ,U
+   ROR   1,U
    ENDM
 
 opLSHIFTRIGHT
    LEAU  4,U
-   LDD   ,U
+   LDD   2,U
    BEQ   opLSHIFTRIGHT_
-   LSR  -1,U
+   LSR  -3,U
    BCC   opLSHIFTRIGHT2
    LSHIFTRIGHT
 opLSHIFTRIGHT2
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT4
    LSHIFTRIGHT
    LSHIFTRIGHT
 opLSHIFTRIGHT4
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT8
    LSHIFTRIGHT
    LSHIFTRIGHT
    LSHIFTRIGHT
    LSHIFTRIGHT
 opLSHIFTRIGHT8
-   STD   ,U
-   LSR   -1,U
-   BCC   opLSHIFTRIGHT16
-   LDD   1,U
    STD   2,U
-   CLRA
+   LSR   -3,U
+   BCC   opLSHIFTRIGHT16
+*   abcd --> 0abc  swapped  cdab --> bc0a
+   LDA   3,U
    LDB   ,U
    STD   ,U
-opLSHIFTRIGHT16
-   LSR   -1,U
-   BCC   opLSHIFTRIGHT32
-   LDD   ,U
+   CLRA
+   LDB   2,U
    STD   2,U
-   LDD   #0
+opLSHIFTRIGHT16
+   LSR   -3,U
+   BCC   opLSHIFTRIGHT32
+*  abcd --> 00ab  swapped cdab --> ab00
+   LDD   2,U
    STD   ,U
+   LDD   #0
+   STD   2,U
 opLSHIFTRIGHT32
    JMP   <fetch
 
 opLSHIFTRIGHT_
-   LDD   2,U
-   LSR  -1,U
+   LDD   ,U
+   LSR  -3,U
    BCC   opLSHIFTRIGHT_2
    LSRD
 opLSHIFTRIGHT_2
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT_4
    LSRD
    LSRD
 opLSHIFTRIGHT_4
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT_8
    LSRD
    LSRD
    LSRD
    LSRD
 opLSHIFTRIGHT_8
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT_16
    TFR   A,B
    CLRA
 opLSHIFTRIGHT_16
-   LSR   -1,U
+   LSR   -3,U
    BCC   opLSHIFTRIGHT_32
    LDD   #0
 opLSHIFTRIGHT_32
-   STD   2,U
+   STD   ,U
    JMP   <fetch
 
 ASHIFTLEFT MACRO
    LSLD
-   ROL   1,U
-   ROL   ,U
+   ROL   3,U
+   ROL   2,U
    ENDM
 
 opASHIFTLEFT
    LEAU  4,U
-   LDD   2,U
+   LDD   ,U
    BEQ   opASHIFTLEFT_
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT2
    ASHIFTLEFT
 opASHIFTLEFT2
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT4
    ASHIFTLEFT
    ASHIFTLEFT
 opASHIFTLEFT4
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT8
    ASHIFTLEFT
    ASHIFTLEFT
    ASHIFTLEFT
    ASHIFTLEFT
 opASHIFTLEFT8
-   STD   2,U
-   LSR  -1,U
+   STD   ,U
+   LSR   -3,U
    BCC   opASHIFTLEFT16
-   LDD   1,U
-   STD   ,U
+* abcd --> bcd0 swapped cdab --> d0bc
    LDA   3,U
+   LDB   ,U
+   STD   2,U
+   LDA   1,U
    CLRB
-   STD   2,U
-opASHIFTLEFT16
-   LSR  -1,U
-   BCC   opASHIFTLEFT32
-   LDD   2,U
    STD   ,U
-   LDD   #0
+opASHIFTLEFT16
+   LSR   -3,U
+   BCC   opASHIFTLEFT32
+* abcd --> cd00 swapped cdab --> 00cd   
+   LDD   ,U
    STD   2,U
+   LDD   #0
+   STD   ,U
 opASHIFTLEFT32
    JMP   <fetch
 
 opASHIFTLEFT_
-   LDD   ,U
-   LSR  -1,U
+   LDD   2,U
+   LSR   -3,U
    BCC   opASHIFTLEFT_2
    LSLD
 opASHIFTLEFT_2
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT_4
    LSLD
    LSLD
 opASHIFTLEFT_4
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT_8
    LSLD
    LSLD
    LSLD
    LSLD
 opASHIFTLEFT_8
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT_16
    TFR   B,A
    CLRB
 opASHIFTLEFT_16
-   LSR  -1,U
+   LSR   -3,U
    BCC   opASHIFTLEFT_32
    LDD   #0
 opASHIFTLEFT_32
-   STD   ,U
+   STD   2,U
    JMP   <fetch
 
 ASHIFTRIGHT MACRO
    ASRD
-   ROR   2,U
-   ROR   3,U
+   ROR   ,U
+   ROR   1,U
    ENDM
 
 opASHIFTRIGHT
    LEAU  4,U
-   LDD   ,U
-   LSR  -1,U
+   LDD   2,U
+   LSR   -3,U
    BCC   opASHIFTRIGHT2
    ASHIFTRIGHT
 opASHIFTRIGHT2
-   LSR   -1,U
+   LSR   -3,U
    BCC   opASHIFTRIGHT4
    ASHIFTRIGHT
    ASHIFTRIGHT
 opASHIFTRIGHT4
-   LSR   -1,U
+   LSR   -3,U
    BCC   opASHIFTRIGHT8
    ASHIFTRIGHT
    ASHIFTRIGHT
    ASHIFTRIGHT
    ASHIFTRIGHT
 opASHIFTRIGHT8
-   STD   ,U
-   LSR   -1,U
+   STD   2,U
+   LSR   -3,U
    BCC   opASHIFTRIGHT16
-   LDD   1,U
-   STD   2,U
+* abcd --> xabc  swapped cdab --> bcxa
+   LDA   3,U
    LDB   ,U
-   SEX
    STD   ,U
-opASHIFTRIGHT16
-   LSR   -1,U
-   BCC   opASHIFTRIGHT32
-   LDX   #0
-   LDD   ,U
+   LDB   2,U
+   SEX
    STD   2,U
+opASHIFTRIGHT16
+   LSR   -3,U
+   BCC   opASHIFTRIGHT32
+* abcd --> xxab swapped cdab --> abxx
+   LDX   #0
+   LDD   2,U
+   STD   ,U
    BPL   opASHIFTRIGHT16x
    LDX   #-1
 opASHIFTRIGHT16x
-   STX   ,U
+   STX   2,U
 opASHIFTRIGHT32
    JMP   <fetch
 
@@ -1583,39 +1583,40 @@ opEMULATE_x
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
    LSLD              ; D=0000 00xx xxx0 0000=x*32
-   TFR   D,X
-   LDD   #0
+   LDX   #0
    PSHU  D,X
    * BRA   opCALL
 
 opCALL
-   LDD   1,U
+   LDA   3,U
+   LDB   ,U
    ANDB  #$C0        ; clear lower bit
    TFR   D,X         ; saves PC_PG
 
-   LDD   2,U         ; fix lower bits
+   LDD   ,U          ; fix lower bits
    ANDA  #$3F
    ADDA  #$A0
    EXG   Y,D         ; update PC_REG
 
    SUBA  #$A0        ; clear upper bits of old PC
    ADDA  <PC_PG+1    ; add page lower bits
-   STD   2,U         ; store lower word of PC
+   STD   ,U          ; store lower word of PC
    LDB   <PC_PG      , load pages upper bits
    CLRA              ; PC is 24 bits
-   STD   ,U          ; store upper word of PC
+   STD   2,U         ; store upper word of PC
 
    STX   <PC_PG      ; update PC page
    JMP   <updatePC
 
 opPOPPC
-   LDD   2,U         ; lower word of PC
+   LDD   ,U          ; lower word of PC
    ANDA  #$3F        ; map 16k address to $A000...$DFFF
    ADDA  #$A0
    TFR   D,Y         ; update pc reg
-   LDD   1,U         ; load page field
+   LDA   3,U
+   LDB   ,U          ; load page field
    ANDB  #$C0        ; align 16k
-   STD   <PC_PG      ; upodate high word of PC
+   STD   <PC_PG      ; update high word of PC
    LEAU  4,U         ; fixup stack
    JMP   <updatePC_D ; update page etc
 
@@ -1627,7 +1628,7 @@ doBRANCH
    STD   2,U
    * fall through
 opPOPPCREL
-   bsr   addPCREL
+   BSR   addPCREL
    BRA   opPOPPC
 
 addPCREL
@@ -1635,12 +1636,12 @@ addPCREL
    SUBA  #$A0
    ADDA  <PC_PG+1
    SUBD  #1
-   ADDD  2,U
-   STD   2,U
-   LDD   ,U
+   ADDD  ,U
+   STD   ,U
+   LDD   2,U
    ADCB  <PC_PG
    CLRA              ; 24 bits
-   STD   ,U
+   STD   2,U
    RTS
 
 opCALLPCREL
@@ -1648,31 +1649,34 @@ opCALLPCREL
    BRA   opCALL
 
 opEQBRANCH
-   LDD   6,U
-   BNE   noBRANCH
    LDD   4,U
+   BNE   noBRANCH
+   LDD   6,U
    BEQ   doBRANCH
 noBRANCH
    LEAU  8,U
    JMP   <fetch
 
 opNEQBRANCH
-   LDD   6,U
-   BNE   doBRANCH
    LDD   4,U
+   BNE   doBRANCH
+   LDD   6,U
    BNE   doBRANCH
    BRA   noBRANCH
 
 opPUSHPC
+   CLRA               ; 24 bits
+   LDB   <PC_PG
+   TFR   D,X
+   
    TFR   Y,D
    SUBA  #$A0
    ADDA  <PC_PG+1
    SUBD  #1
-   PSHS  D
-   LDB   <PC_PG
-   SBCB  #0
-   CLRA              ; 24 bits
-   PSHS  D
+   BCC   opPUSHPC2
+   LEAX  -1,X
+opPUSHPC2
+   PSHU  D,X
    JMP   <fetch
 
 ***************************************
@@ -1816,7 +1820,7 @@ printPC
 
 printSTACK
    CMPX  #$A000
-   LBLO   HEX32
+   BLO   HEX32swap
    JSR   PUTSTR
    COLOR 4
    IFNE  LPR
@@ -1828,6 +1832,14 @@ printSTACK
    COLOR 128+COLOR_STACK
    RTS
 
+HEX32swap
+   LEAX  2,X
+   JSR   HEX16
+   LEAX  -4,X
+   JSR   HEX16
+   LEAX  2,X
+   RTS
+   
 printASM
    PSHS  X,U
    LDU   #asmTbl           ; find the #B th entry in table
