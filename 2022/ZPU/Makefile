@@ -53,3 +53,8 @@ fill_sapdir: compile
 test:	$(DISK)
 	cp $(DISK) $(TEODIR)/disk.sap
 	cd $(TEODIR) && ./teo_win32_allegro.exe -r -0 disk.sap
+
+stat: ../../dcmoto-printer.txt
+	perl < $< -e '%a=(); while(<>) {chomp;$$a{substr($$_, 110)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
+	
+
