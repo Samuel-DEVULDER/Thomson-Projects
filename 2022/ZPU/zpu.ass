@@ -1,7 +1,7 @@
 (main)zpu
    ORG   $7000
 
-STACK_SWAP  SET   1           ; swap words on stack (produces faster implem for some opcodes)
+STACK_SWAP  SET   0           ; swap words on stack (produces faster implem for some opcodes)
 SAFE        SET   0           ; force long addressing for long ops (slower)
 TRACE       SET   0           ; traces executed instructions
 LPR         SET   0           ; also output result to printer on parallel port
@@ -794,8 +794,64 @@ opSTORESP_x
    PULU  D           ; load high word
    STD   2,X         ; store high word
    BRA   fetch       ; next instruction
+
+opLOADSP_0
+   LDD   ,U
+   LDX   2,U
+   PSHU  D,X
+   BRA   fetch
+
+opLOADSP_1
+   LDD   4,U
+   LDX   6,U
+   PSHU  D,X
+   BRA   fetch
+
+opLOADSP_2
+   LDD   8,U
+   LDX   10,U
+   PSHU  D,X
+   BRA   fetch
+
+opLOADSP_3
+   LDD   12,U
+   LDX   14,U
+   PSHU  D,X
+   JMP   <fetch
+
+opSTORESP_0
+   LEAU  4,U
+   JMP   <fetch
+
+opSTORESP_1
+   PULU  D,X
+   STD   ,U
+   STX   2,U
+   JMP   <fetch
+
+opSTORESP_2
+   PULU  D,X
+   STD   4,U
+   STX   6,U
+   JMP   <fetch
+
+opSTORESP_3
+   PULU  D,X
+   STD   8,U
+   STX   10,U
+   JMP   <fetch
+
+opSTORESP_4
+   PULU  D,X
+   STD   12,U
+   STX   14,U
+   JMP   <fetch
    
-   
+opSTORESP_5
+   PULU  D,X
+   STD   16,U
+   STX   18,U
+   JMP   <fetch
 
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
@@ -810,8 +866,8 @@ opADDSP_x
    BU ADCB,1         ; add with carry the TOS (high word)
    BU ADCA,0         ; second byte
    BU STD,0          ; store result to TOS (high word)
-   BRA   fetch       ; next instruction
-
+   jmp   <fetch      ; next instruction
+   
 opUNKNOWN
 
 opBREAKPT
@@ -830,7 +886,7 @@ opPUSHSP
    TFR   U,D
   ENDC
    PSHU  D,X
-   BRA   fetch
+   JMP   <fetch
 
 opPUSHSPADD
    BU LDD,2
@@ -1849,12 +1905,12 @@ opPUSHPC2
    FDB   opSTORESP_x          ; 77 %0100 1101
    FDB   opSTORESP_x          ; 78 %0100 1110
    FDB   opSTORESP_x          ; 79 %0100 1111
-   FDB   opSTORESP_x          ; 80 %0101 0000
-   FDB   opSTORESP_x          ; 81 %0101 0001
-   FDB   opSTORESP_x          ; 82 %0101 0010
-   FDB   opSTORESP_x          ; 83 %0101 0011
-   FDB   opSTORESP_x          ; 84 %0101 0100
-   FDB   opSTORESP_x          ; 85 %0101 0101
+   FDB   opSTORESP_0          ; 80 %0101 0000
+   FDB   opSTORESP_1          ; 81 %0101 0001
+   FDB   opSTORESP_2          ; 82 %0101 0010
+   FDB   opSTORESP_3          ; 83 %0101 0011
+   FDB   opSTORESP_4          ; 84 %0101 0100
+   FDB   opSTORESP_5          ; 85 %0101 0101
    FDB   opSTORESP_x          ; 86 %0101 0110
    FDB   opSTORESP_x          ; 87 %0101 0111
    FDB   opSTORESP_x          ; 88 %0101 1000
@@ -1882,10 +1938,10 @@ opPUSHPC2
    FDB   opLOADSP_x           ;109 %0110 1101
    FDB   opLOADSP_x           ;110 %0110 1110
    FDB   opLOADSP_x           ;111 %0110 1111
-   FDB   opLOADSP_x           ;112 %0111 0000
-   FDB   opLOADSP_x           ;113 %0111 0001
-   FDB   opLOADSP_x           ;114 %0111 0010
-   FDB   opLOADSP_x           ;115 %0111 0011
+   FDB   opLOADSP_0           ;112 %0111 0000
+   FDB   opLOADSP_1           ;113 %0111 0001
+   FDB   opLOADSP_2           ;114 %0111 0010
+   FDB   opLOADSP_3           ;115 %0111 0011
    FDB   opLOADSP_x           ;116 %0111 0100
    FDB   opLOADSP_x           ;117 %0111 0101
    FDB   opLOADSP_x           ;118 %0111 0110
