@@ -676,6 +676,7 @@ donePage
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
+   LSLB
    ASRB              ; left align signed value
    SEX               ; [2] extends sign to A ($00 or $FF)
   IFEQ B0-0
@@ -689,14 +690,14 @@ opIM
   ENDC
    FETCH_INSTRUCTION
    BPL   chkPC       ; next is opIM ? no ==> process next
-   
+
 opIM2
    LSLB
    BU LDA,3
-   ASRA 
+   ASRA
    RORB
    BU STD,2
-   
+
    FETCH_INSTRUCTION
    BPL   chkPC       ; next is opIM ? no ==> process next
 
@@ -709,7 +710,7 @@ opIM3
    RORA
    RORB
    BU STD,2
-   
+
    FETCH_INSTRUCTION
    BPL   chkPC       ; next is opIM ? no ==> process next
 
@@ -731,7 +732,7 @@ opIM_wrap
    FETCH_INSTRUCTION
    BMI   opIM_wrap   ; opIM? yes => just increment PC
    BRA   chkPC       ; next instruction (B already fetched)
-   
+
 * restore the page back to the instruction page
 updatePC
    LDD  #PC_PG       ; load instruction page
@@ -747,6 +748,7 @@ chkPC
   IFNE  CYCLE_TIMER
    JSR   TIMERINTER
   ENDC
+   BMI   opIM        ; opcode=1xxxxxxx ? yes => immediate value
 romSentinel
    CMPB  #$4D        ; speed up: if next byte is different
    BNE   decode      ; from the one on $E000 we are safe to decode
@@ -761,7 +763,6 @@ romSentinel
    PULS  B           ; restore opcode
 decode
    LSLB              ; decode the opcode
-   BCS   opIM        ; opcode=1xxxxxxx ? yes => immediate value
    BMI   opLDSTSP_x  ; opcode=01xxxxxx ? yes => LDsp_x or STsp_x
    LDX   #opTable
    JMP   [B,X]       ; jump to instruction
