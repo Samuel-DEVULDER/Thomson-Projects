@@ -1,11 +1,11 @@
 (main)zpu
    ORG   $7000
 
+STACK_SWAP  SET   1           ; swap words on stack (produces faster implem for some opcodes)
 SAFE        SET   0           ; force long addressing for long ops (slower)
 TRACE       SET   0           ; traces executed instructions
 LPR         SET   0           ; also output result to printer on parallel port
 CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) ?
-STACK_SWAP  SET   0           ; swap words on stack (produces faster implem for some opcodes)
 
 FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 STACK_SIZE  SET   2048        ; size of stack
@@ -632,43 +632,6 @@ FETCH_INSTRUCTION MACRO
    LDB   ,Y+         ; fetch next instruction code
    ENDM
 
-* loads a 7 bit immediate value
-* B=xxxxxxx0 (value*2)
-opIM
-   ASRB              ; left align signed value
-   SEX               ; [2] extends sign to A ($00 or $FF)
-  IFEQ B0-0
-   PSHU  D
-   STA   ,-U
-   STA   ,-U
-  ELSE
-   LDX   #0          ; [3] clear high word
-   LEAX  A,X         ; [5] extends sign to X
-   PSHU  D,X         ; [9] push lower word
-  ENDC
-   FETCH_INSTRUCTION
-   BPL   chkPC       ; next is opIM ? no ==> process next
-   * BRA   opIM_nxt        instruction (B already fetched)
-
-* loads a continuated immediate value
-* B=xxxxxxx0 (value*2)
-opIM_nxt
-   LSLB
-   BU LSR,0          ; rotate TOS 7 bits left and add B/2 at the bottom
-   BU LDA,1
-   RORA
-   BU STA,0          ; byte 0 is byte 1 rotated right once
-   BU LDA,2
-   RORA
-   BU STA,1          ; byte 1 is byte 2 rotated right once
-   BU LDA,3
-   RORA              ; byte 2 is byte 3 rotated right once
-   RORB              ; push bit back to value
-   BU STD,2          ; write lower word
-   FETCH_INSTRUCTION
-   BMI   opIM_nxt    ; opIM? yes => just increment PC
-   BRA   chkPC       ; next instruction (B already fetched)
-
 * SAFE version of getAddr for long values
 getAddrL
    IFNE  SAFE
@@ -710,6 +673,65 @@ chgBANK
 donePage
    RTS               ; done
 
+* loads a 7 bit immediate value
+* B=xxxxxxx0 (value*2)
+opIM
+   ASRB              ; left align signed value
+   SEX               ; [2] extends sign to A ($00 or $FF)
+  IFEQ B0-0
+   PSHU  D           ; [7]
+   STA   ,-U         ; [6]
+   STA   ,-U         ; [6]
+  ELSE
+   LDX   #0          ; [3] clear high word
+   LEAX  A,X         ; [5] extends sign to X
+   PSHU  D,X         ; [9] push lower word
+  ENDC
+   FETCH_INSTRUCTION
+   BPL   chkPC       ; next is opIM ? no ==> process next
+   
+opIM2
+   LSLB
+   BU LDA,3
+   ASRA 
+   RORB
+   BU STD,2
+   
+   FETCH_INSTRUCTION
+   BPL   chkPC       ; next is opIM ? no ==> process next
+
+opIM3
+   LSLB
+   BU LDA,2
+   ASRA
+   BU STA,1
+   BU LDA,3
+   RORA
+   RORB
+   BU STD,2
+   
+   FETCH_INSTRUCTION
+   BPL   chkPC       ; next is opIM ? no ==> process next
+
+* loads a continuated immediate value
+* B=xxxxxxx0 (value*2)
+opIM_wrap
+   LSLB
+   BU LSR,0          ; rotate TOS 7 bits left and add B/2 at the bottom
+   BU LDA,1
+   RORA
+   BU STA,0          ; byte 0 is byte 1 rotated right once
+   BU LDA,2
+   RORA
+   BU STA,1          ; byte 1 is byte 2 rotated right once
+   BU LDA,3
+   RORA              ; byte 2 is byte 3 rotated right once
+   RORB              ; push bit back to value
+   BU STD,2          ; write lower word
+   FETCH_INSTRUCTION
+   BMI   opIM_wrap   ; opIM? yes => just increment PC
+   BRA   chkPC       ; next instruction (B already fetched)
+   
 * restore the page back to the instruction page
 updatePC
    LDD  #PC_PG       ; load instruction page
