@@ -867,7 +867,42 @@ opADDSP_x
    BU ADCA,0         ; second byte
    BU STD,0          ; store result to TOS (high word)
    jmp   <fetch      ; next instruction
+
+opADDSP_0
+   BU LSL,3
+   BU ROL,2
+   BU ROL,1
+   BU ROL,0
+   jmp   <fetch      ; next instruction
    
+opADDSP_ MACRO
+opADDSP_\0
+   BU LDD,2          ; load low word of source
+   BU ADDD,2+4*\0    ; add low word of TOS
+   BU STD,2          ; store result to TOS (lower word)
+   BU LDD,0          ; load high word of source<<
+   BU ADCB,1+4*\0    ; add with carry the TOS (high word)
+   BU ADCA,0+4*\0    ; second byte
+   BU STD,0          ; store result to TOS (high word)
+   jmp   <fetch      ; next instruction
+   ENDM
+
+   opADDSP_  1
+   opADDSP_  2
+   opADDSP_  3
+   opADDSP_  4
+   opADDSP_  5
+   opADDSP_  6
+   opADDSP_  7
+   * opADDSP_  8
+   * opADDSP_  9
+   * opADDSP_  11
+   * opADDSP_  12
+   * opADDSP_  13
+   * opADDSP_  10
+   * opADDSP_  14
+   * opADDSP_  15
+
 opUNKNOWN
 
 opBREAKPT
@@ -1973,14 +2008,14 @@ opTable
    FDB   opUNKNOWN            ; 14 %0000 1110
    FDB   opUNKNOWN            ; 15 %0000 1111
 
-   FDB   opADDSP_x            ; 16 %0001 0000
-   FDB   opADDSP_x            ; 17 %0001 0001
-   FDB   opADDSP_x            ; 18 %0001 0010
-   FDB   opADDSP_x            ; 19 %0001 0011
-   FDB   opADDSP_x            ; 20 %0001 0100
-   FDB   opADDSP_x            ; 21 %0001 0101
-   FDB   opADDSP_x            ; 22 %0001 0110
-   FDB   opADDSP_x            ; 23 %0001 0111
+   FDB   opADDSP_0            ; 16 %0001 0000
+   FDB   opADDSP_1            ; 17 %0001 0001
+   FDB   opADDSP_2            ; 18 %0001 0010
+   FDB   opADDSP_3            ; 19 %0001 0011
+   FDB   opADDSP_4            ; 20 %0001 0100
+   FDB   opADDSP_5            ; 21 %0001 0101
+   FDB   opADDSP_6            ; 22 %0001 0110
+   FDB   opADDSP_7            ; 23 %0001 0111
    FDB   opADDSP_x            ; 24 %0001 1000
    FDB   opADDSP_x            ; 25 %0001 1001
    FDB   opADDSP_x            ; 26 %0001 1010
