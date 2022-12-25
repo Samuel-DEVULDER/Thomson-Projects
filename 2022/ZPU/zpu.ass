@@ -11,7 +11,6 @@ FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 STACK_SIZE  SET   2048        ; size of stack
 IO_SPACE    SET   $0800       ; address above IO_SPACE:00000 are IO related (value chosen for Phi board)
 STK_SPACE   SET   IO_SPACE-1  ; high word of unmapped zone (make sure it is below IO_SPACE)
-TEO_BUGFX   SET   1           : fxes SBCA/B setting V flag where it sould'nt
 
 ***************************************
 * System equates
@@ -673,6 +672,12 @@ chgBANK
 donePage
    RTS               ; done
 
+  IFNE  CYCLE_TIMER
+chkPC2 SET chkPC
+  ELSE
+chkPC2 SET romSentinel
+  ENDC
+
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
@@ -688,8 +693,9 @@ opIM
    LEAX  A,X         ; [5] extends sign to X
    PSHU  D,X         ; [9] push lower word
   ENDC
+opIM1
    FETCH_INSTRUCTION
-   BPL   chkPC       ; next is opIM ? no ==> process next
+   BPL   chkPC2      ; next is opIM ? no ==> process next
 
 opIM2
    LSLB
@@ -699,7 +705,7 @@ opIM2
    BU STD,2
 
    FETCH_INSTRUCTION
-   BPL   chkPC       ; next is opIM ? no ==> process next
+   BPL   chkPC2      ; next is opIM ? no ==> process next
 
 opIM3
    LSLB
@@ -712,7 +718,7 @@ opIM3
    BU STD,2
 
    FETCH_INSTRUCTION
-   BPL   chkPC       ; next is opIM ? no ==> process next
+   BPL   chkPC2      ; next is opIM ? no ==> process next
 
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
@@ -730,8 +736,8 @@ opIM_wrap
    RORB              ; push bit back to value
    BU STD,2          ; write lower word
    FETCH_INSTRUCTION
-   BMI   opIM_wrap   ; opIM? yes => just increment PC
-   BRA   chkPC       ; next instruction (B already fetched)
+   BPL   chkPC2      ; next instruction (B already fetched)
+   BRA   opIM_wrap   ; opIM? yes => just increment PC
 
 * restore the page back to the instruction page
 updatePC
@@ -787,7 +793,7 @@ opLOADSP_\0
    PSHU  D,X
    JMP   <fetch
    ENDM
-   
+
    opLOADSP_ 1
    opLOADSP_ 2
    opLOADSP_ 3
@@ -852,7 +858,7 @@ opSTORESP_\0
    STX   4*\0-2,U
    JMP   <fetch
    ENDM
-   
+
    opSTORESP_ 2
    opSTORESP_ 3
    opSTORESP_ 4
@@ -893,7 +899,7 @@ opSTORESP_x
    PULU  D           ; load high word
    STD   2,X         ; store high word
    JMP   <fetch      ; next instruction
-   
+
 ***************************************
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
@@ -904,18 +910,22 @@ opADDSP_0
    BU ROL,2
    BU ROL,1
    BU ROL,0
-   jmp   <fetch      ; next instruction
-   
+   JMP   <fetch      ; next instruction
+
 opADDSP_ MACRO
 opADDSP_\0
    BU LDD,2          ; load low word of source
    BU ADDD,2+4*\0    ; add low word of TOS
    BU STD,2          ; store result to TOS (lower word)
-   BU LDD,0          ; load high word of source<<
-   BU ADCB,1+4*\0    ; add with carry the TOS (high word)
-   BU ADCA,0+4*\0    ; second byte
+   BU LDD,0+4*\0     ; load high word of source
+*   BCS   opADDSPh\0  ; 3
+*   BNE   opADDSPh\0  ; 3
+*   JMP   <fetch      ; shortcut
+*opADDSPh\0
+   BU ADCB,1         ; add with carry the TOS (high word)
+   BU ADCA,0         ; second byte
    BU STD,0          ; store result to TOS (high word)
-   jmp   <fetch      ; next instruction
+   JMP   <fetch      ; 3=49(+3) next intruction
    ENDM
 
    opADDSP_  1
@@ -938,14 +948,18 @@ opADDSP_x
    LSLB              ; B ~ 4*x
    ANDB  #%00111100  ; make 4*x postitive
    LEAX  B,U         ; X point to source
-   BX LDD,2          ; load low word of source
-   BU ADDD,2         ; add low word of TOS
+   BU LDD,2          ; load low word of source
+   BX ADDD,2         ; add low word of TOS
    BU STD,2          ; store result to TOS (lower word)
-   BX LDD,0          ; load high word of source
-   BU ADCB,1         ; add with carry the TOS (high word)
-   BU ADCA,0         ; second byte
+   BU LDD,0          ; load high word of source
+*   BCS   opADDSPh
+*   BNE   opADDSPh
+*   JMP   <fetch
+*opADDSPh
+   BX ADCB,1         ; add with carry the TOS (high word)
+   BX ADCA,0         ; second byte
    BU STD,0          ; store result to TOS (high word)
-   jmp   <fetch      ; next instruction
+   JMP   <fetch      ; next instruction
 
 ***************************************
 
@@ -1217,7 +1231,7 @@ opMULT16X16
 * LOGIC
 ***************************************
 
-opLOG MACRO
+BITWISE MACRO
    PULU  D,X
    \0A  ,U
    \0B  1,U
@@ -1226,17 +1240,19 @@ opLOG MACRO
    \0A  2,U
    \0B  3,U
    STD   2,U
-   JMP   <fetch
   ENDM
 
 opAND
-   opLOG AND        ; bitwise "and" of TOS with NOS
+   BITWISE AND       ; bitwise "and" of TOS with NOS
+   JMP   <fetch
 
 opOR
-   opLOG OR         ; bitwise "or" of TOS with NOS
+   BITWISE OR        ; bitwise "or" of TOS with NOS
+   JMP   <fetch
 
 opXOR
-   opLOG EOR        ; bitwise "xor" of TOS with NOS
+   BITWISE EOR       ; bitwise "xor" of TOS with NOS
+   JMP   <fetch
 
 opNOT
    COM   ,U          ; bitwise complement of TOS
@@ -1540,38 +1556,38 @@ opSTOREB
 ***************************************
 
 opLESSTHAN
-   BU LDD,2
-   LEAU  4,U         ; fixup stack
-   BU SUBD,2
-   BU LDD,0-4
-   BU SBCB,1
-   BU SBCA,0
-  IFEQ  TEO_BUGFX
-   BLT   outTRUE
+   PULU  D,X
+  IFEQ B0-0
+   SUBD  ,U
   ELSE
-   BMI   outTRUE
+   CMPX  2,U
   ENDC
+   BLT   outTRUE
+   BGT   outFALSE
+  IFEQ B0-0
+   CMPX  2,U
+  ELSE
+   SUBD  ,U
+  ENDC
+   BLO   outTRUE
    BRA   outFALSE
 
 opLESSTHANOREQUAL
-   BU LDD,2
-   LEAU  4,U
-   BU SUBD,2
-   BU STD,2
-   BU LDD,0-4
-   BU SBCB,1
-   BU SBCA,0
-  IFEQ  TEO_BUGFX
+   PULU  D,X
+  IFEQ B0-0
+   SUBD  ,U
+  ELSE
+   CMPX  2,U
+  ENDC
    BLT   outTRUE
    BGT   outFALSE
+  IFEQ B0-0
+   CMPX  2,U
   ELSE
-   BMI   outTRUE
-   BHI   outFALSE
+   SUBD  ,U
   ENDC
-   BU ORB,3
-   BU ORB,2
-   BNE   outFALSE
-   BRA   outTRUE
+   BLS   outTRUE
+   BRA   outFALSE
 
 opULESSTHAN
    PULU  D,X
@@ -1902,12 +1918,28 @@ opCALL
    STX   <PC_PG      ; update PC page
    JMP   <updatePC
 
-
 doBRANCH
+  IFEQ 1
+   TFR   Y,D
+   SUBD  #$A001
+   ADDA  <PC_PG+1
+   BU ADDD,2
+   STA   <PC_PG+1
+   ANDA  #$3F        ; map 16k address to $A000...$DFFF
+   ADDA  #$A0
+   TFR   D,Y         ; update pc reg
+   LDD   <PC_PG
+   BU ADCA,1
+   ANDB  #$C0        ; align 16k
+   STD   <PC_PG      ; update high word of PC
+   LEAU  8,U         ; fixup stack
+   JMP   <updatePC_D ; update page etc
+  ELSE
    PULU  D,X
    STD   ,U
    STX   2,U
    * BRA   opPOPPCREL
+  ENDC
 
 opPOPPCREL
    BSR   addPCREL
@@ -1930,7 +1962,7 @@ addPCREL
    ADDA  <PC_PG+1
    BU ADDD,2
    BU STD,2
-   BU LDD,0
+   BU LDB,1
    ADCB  <PC_PG
    CLRA              ; 24 bits
    BU STD,0
