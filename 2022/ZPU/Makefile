@@ -57,4 +57,9 @@ test:	$(DISK)
 stat: ../../dcmoto-printer.txt
 	perl < $< -e '%a=(); while(<>) {chomp;$$a{substr($$_, 110)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
 	
-
+memmap: ../../dcmoto_trace.txt
+	cp build/codes.lst ../..
+	cd ../..; \
+	../DCMoto_MemMap/MemMap-v0.1-win-x86/lua.exe \
+	../DCMoto_MemMap/MemMap-v0.1-win-x86/memmap.lua \
+	-mach=to -equ -reset -hot -html
