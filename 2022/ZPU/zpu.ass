@@ -862,7 +862,7 @@ opADDSP_x
    BX LDD,2          ; load low word of source
    BU ADDD,2         ; add low word of TOS
    BU STD,2          ; store result to TOS (lower word)
-   BX LDD,0          ; load high word of source<<
+   BX LDD,0          ; load high word of source
    BU ADCB,1         ; add with carry the TOS (high word)
    BU ADCA,0         ; second byte
    BU STD,0          ; store result to TOS (high word)
@@ -949,10 +949,14 @@ opADD
    STD   6,U         ; 6
    LDD   ,U          ; 5
    LEAU  4,U         ; 5
+   BCS   opADDh      ; 3
+   BNE   opADDh      ; 3
+   JMP   <fetch      ; 3=33 next intruction
+opADDh
    ADCB  1,U         ; 5
    ADCA  ,U          ; 4
    STD   ,U          ; 5
-   JMP   <fetch      ; 3=46 next intruction
+   JMP   <fetch      ; 3=49(+3) next intruction
   ELSE
    PULU  D,X         ; 9
    ADDD  ,U          ; 6
