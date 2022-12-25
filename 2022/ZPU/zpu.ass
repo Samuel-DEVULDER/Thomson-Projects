@@ -773,6 +773,53 @@ sampledTMR
 * Load on stack the value at stack[x]
 * B=--xxxxx0 (2*x)
 ***************************************
+
+opLOADSP_0
+   LDD   ,U
+   LDX   2,U
+   PSHU  D,X
+   BRA   fetch
+
+opLOADSP_ MACRO
+opLOADSP_\0
+   LDD   4*\0,U
+   LDX   4*\0+2,U
+   PSHU  D,X
+   JMP   <fetch
+   ENDM
+   
+   opLOADSP_ 1
+   opLOADSP_ 2
+   opLOADSP_ 3
+   opLOADSP_ 4
+   opLOADSP_ 5
+   opLOADSP_ 6
+   opLOADSP_ 7
+   opLOADSP_ 8
+   opLOADSP_ 9
+   opLOADSP_ 10
+   opLOADSP_ 11
+   opLOADSP_ 12
+   opLOADSP_ 13
+   opLOADSP_ 14
+   opLOADSP_ 15
+   opLOADSP_ 16
+   opLOADSP_ 17
+   opLOADSP_ 18
+   opLOADSP_ 19
+   opLOADSP_ 20
+   opLOADSP_ 21
+   opLOADSP_ 22
+   opLOADSP_ 23
+   opLOADSP_ 24
+   opLOADSP_ 25
+   opLOADSP_ 26
+   opLOADSP_ 27
+   opLOADSP_ 28
+   opLOADSP_ 29
+   opLOADSP_ 30
+   opLOADSP_ 31
+
 opLOADSP_x
    LSLB              ; B ~ x*4
    EORB  #%01000000
@@ -781,43 +828,12 @@ opLOADSP_x
    LDD   ,X          ; load high word
    LDX   2,X         ; load low word
    PSHU  D,X         ; push 32 bits
-   BRA   fetch       ; next instruction
+   JMP   <fetch      ; next instruction
 
+***************************************
 * Write top of stack at stack[x]
 * B=00xxxxx0 (2*x)
-opSTORESP_x
-   LSLB              ; B ~ x*4
-   EORB  #%01000000
-   LEAX  B,U         ; X point to dest (bit7 already 0)
-   PULU  D           ; load low word
-   STD   ,X          ; store low word
-   PULU  D           ; load high word
-   STD   2,X         ; store high word
-   BRA   fetch       ; next instruction
-
-opLOADSP_0
-   LDD   ,U
-   LDX   2,U
-   PSHU  D,X
-   BRA   fetch
-
-opLOADSP_1
-   LDD   4,U
-   LDX   6,U
-   PSHU  D,X
-   BRA   fetch
-
-opLOADSP_2
-   LDD   8,U
-   LDX   10,U
-   PSHU  D,X
-   BRA   fetch
-
-opLOADSP_3
-   LDD   12,U
-   LDX   14,U
-   PSHU  D,X
-   JMP   <fetch
+***************************************
 
 opSTORESP_0
    LEAU  4,U
@@ -829,44 +845,59 @@ opSTORESP_1
    STX   2,U
    JMP   <fetch
 
-opSTORESP_2
+opSTORESP_ MACRO
+opSTORESP_\0
    PULU  D,X
-   STD   4,U
-   STX   6,U
+   STD   4*\0-4,U
+   STX   4*\0-2,U
    JMP   <fetch
-
-opSTORESP_3
-   PULU  D,X
-   STD   8,U
-   STX   10,U
-   JMP   <fetch
-
-opSTORESP_4
-   PULU  D,X
-   STD   12,U
-   STX   14,U
-   JMP   <fetch
+   ENDM
    
-opSTORESP_5
-   PULU  D,X
-   STD   16,U
-   STX   18,U
-   JMP   <fetch
+   opSTORESP_ 2
+   opSTORESP_ 3
+   opSTORESP_ 4
+   opSTORESP_ 5
+   opSTORESP_ 6
+   opSTORESP_ 7
+   opSTORESP_ 8
+   opSTORESP_ 9
+   opSTORESP_ 10
+   opSTORESP_ 11
+   opSTORESP_ 12
+   opSTORESP_ 13
+   opSTORESP_ 14
+   opSTORESP_ 15
+   opSTORESP_ 16
+   opSTORESP_ 17
+   opSTORESP_ 18
+   opSTORESP_ 19
+   opSTORESP_ 20
+   opSTORESP_ 21
+   opSTORESP_ 22
+   opSTORESP_ 23
+   opSTORESP_ 24
+   opSTORESP_ 25
+   opSTORESP_ 26
+   opSTORESP_ 27
+   opSTORESP_ 28
+   opSTORESP_ 29
+   opSTORESP_ 30
+   opSTORESP_ 31
 
+opSTORESP_x
+   LSLB              ; B ~ x*4
+   EORB  #%01000000
+   LEAX  B,U         ; X point to dest (bit7 already 0)
+   PULU  D           ; load low word
+   STD   ,X          ; store low word
+   PULU  D           ; load high word
+   STD   2,X         ; store high word
+   JMP   <fetch      ; next instruction
+   
+***************************************
 * Adds to TOS the value at stack[x]
 * B=0--xxxx00 (4*x)
-opADDSP_x
-   LSLB              ; B ~ 4*x
-   ANDB  #%00111100  ; make 4*x postitive
-   LEAX  B,U         ; X point to source
-   BX LDD,2          ; load low word of source
-   BU ADDD,2         ; add low word of TOS
-   BU STD,2          ; store result to TOS (lower word)
-   BX LDD,0          ; load high word of source
-   BU ADCB,1         ; add with carry the TOS (high word)
-   BU ADCA,0         ; second byte
-   BU STD,0          ; store result to TOS (high word)
-   jmp   <fetch      ; next instruction
+***************************************
 
 opADDSP_0
    BU LSL,3
@@ -894,14 +925,29 @@ opADDSP_\0
    opADDSP_  5
    opADDSP_  6
    opADDSP_  7
-   * opADDSP_  8
-   * opADDSP_  9
-   * opADDSP_  11
-   * opADDSP_  12
-   * opADDSP_  13
-   * opADDSP_  10
-   * opADDSP_  14
-   * opADDSP_  15
+   opADDSP_  8
+   opADDSP_  9
+   opADDSP_  11
+   opADDSP_  12
+   opADDSP_  13
+   opADDSP_  10
+   opADDSP_  14
+   opADDSP_  15
+
+opADDSP_x
+   LSLB              ; B ~ 4*x
+   ANDB  #%00111100  ; make 4*x postitive
+   LEAX  B,U         ; X point to source
+   BX LDD,2          ; load low word of source
+   BU ADDD,2         ; add low word of TOS
+   BU STD,2          ; store result to TOS (lower word)
+   BX LDD,0          ; load high word of source
+   BU ADCB,1         ; add with carry the TOS (high word)
+   BU ADCA,0         ; second byte
+   BU STD,0          ; store result to TOS (high word)
+   jmp   <fetch      ; next instruction
+
+***************************************
 
 opUNKNOWN
 
@@ -1928,71 +1974,71 @@ opPUSHPC2
 ***************************************
 * INSTRUCTION TABLE
 ***************************************
-   FDB   opSTORESP_x          ; 64 %0100 0000
-   FDB   opSTORESP_x          ; 65 %0100 0001
-   FDB   opSTORESP_x          ; 66 %0100 0010
-   FDB   opSTORESP_x          ; 67 %0100 0011
-   FDB   opSTORESP_x          ; 68 %0100 0100
-   FDB   opSTORESP_x          ; 69 %0100 0101
-   FDB   opSTORESP_x          ; 70 %0100 0110
-   FDB   opSTORESP_x          ; 71 %0100 0111
-   FDB   opSTORESP_x          ; 72 %0100 1000
-   FDB   opSTORESP_x          ; 73 %0100 1001
-   FDB   opSTORESP_x          ; 74 %0100 1010
-   FDB   opSTORESP_x          ; 75 %0100 1011
-   FDB   opSTORESP_x          ; 76 %0100 1100
-   FDB   opSTORESP_x          ; 77 %0100 1101
-   FDB   opSTORESP_x          ; 78 %0100 1110
-   FDB   opSTORESP_x          ; 79 %0100 1111
+   FDB   opSTORESP_16         ; 64 %0100 0000
+   FDB   opSTORESP_17         ; 65 %0100 0001
+   FDB   opSTORESP_18         ; 66 %0100 0010
+   FDB   opSTORESP_19         ; 67 %0100 0011
+   FDB   opSTORESP_20         ; 68 %0100 0100
+   FDB   opSTORESP_21         ; 69 %0100 0101
+   FDB   opSTORESP_22         ; 70 %0100 0110
+   FDB   opSTORESP_23         ; 71 %0100 0111
+   FDB   opSTORESP_24         ; 72 %0100 1000
+   FDB   opSTORESP_25         ; 73 %0100 1001
+   FDB   opSTORESP_26         ; 74 %0100 1010
+   FDB   opSTORESP_27         ; 75 %0100 1011
+   FDB   opSTORESP_28         ; 76 %0100 1100
+   FDB   opSTORESP_29         ; 77 %0100 1101
+   FDB   opSTORESP_30         ; 78 %0100 1110
+   FDB   opSTORESP_31         ; 79 %0100 1111
    FDB   opSTORESP_0          ; 80 %0101 0000
    FDB   opSTORESP_1          ; 81 %0101 0001
    FDB   opSTORESP_2          ; 82 %0101 0010
    FDB   opSTORESP_3          ; 83 %0101 0011
    FDB   opSTORESP_4          ; 84 %0101 0100
    FDB   opSTORESP_5          ; 85 %0101 0101
-   FDB   opSTORESP_x          ; 86 %0101 0110
-   FDB   opSTORESP_x          ; 87 %0101 0111
-   FDB   opSTORESP_x          ; 88 %0101 1000
-   FDB   opSTORESP_x          ; 89 %0101 1001
-   FDB   opSTORESP_x          ; 90 %0101 1010
-   FDB   opSTORESP_x          ; 91 %0101 1011
-   FDB   opSTORESP_x          ; 92 %0101 1100
-   FDB   opSTORESP_x          ; 93 %0101 1101
-   FDB   opSTORESP_x          ; 94 %0101 1110
-   FDB   opSTORESP_x          ; 95 %0101 1111
+   FDB   opSTORESP_6          ; 86 %0101 0110
+   FDB   opSTORESP_7          ; 87 %0101 0111
+   FDB   opSTORESP_8          ; 88 %0101 1000
+   FDB   opSTORESP_9          ; 89 %0101 1001
+   FDB   opSTORESP_10         ; 90 %0101 1010
+   FDB   opSTORESP_11         ; 91 %0101 1011
+   FDB   opSTORESP_12         ; 92 %0101 1100
+   FDB   opSTORESP_13         ; 93 %0101 1101
+   FDB   opSTORESP_14         ; 94 %0101 1110
+   FDB   opSTORESP_15         ; 95 %0101 1111
 
-   FDB   opLOADSP_x           ; 96 %0110 0000
-   FDB   opLOADSP_x           ; 97 %0110 0001
-   FDB   opLOADSP_x           ; 98 %0110 0010
-   FDB   opLOADSP_x           ; 99 %0110 0011
-   FDB   opLOADSP_x           ;100 %0110 0100
-   FDB   opLOADSP_x           ;101 %0110 0101
-   FDB   opLOADSP_x           ;102 %0110 0110
-   FDB   opLOADSP_x           ;103 %0110 0111
-   FDB   opLOADSP_x           ;104 %0110 1000
-   FDB   opLOADSP_x           ;105 %0110 1001
-   FDB   opLOADSP_x           ;106 %0110 1010
-   FDB   opLOADSP_x           ;107 %0110 1011
-   FDB   opLOADSP_x           ;108 %0110 1100
-   FDB   opLOADSP_x           ;109 %0110 1101
-   FDB   opLOADSP_x           ;110 %0110 1110
-   FDB   opLOADSP_x           ;111 %0110 1111
+   FDB   opLOADSP_16          ; 96 %0110 0000
+   FDB   opLOADSP_17          ; 97 %0110 0001
+   FDB   opLOADSP_18          ; 98 %0110 0010
+   FDB   opLOADSP_19          ; 99 %0110 0011
+   FDB   opLOADSP_20          ;100 %0110 0100
+   FDB   opLOADSP_21          ;101 %0110 0101
+   FDB   opLOADSP_22          ;102 %0110 0110
+   FDB   opLOADSP_23          ;103 %0110 0111
+   FDB   opLOADSP_24          ;104 %0110 1000
+   FDB   opLOADSP_25          ;105 %0110 1001
+   FDB   opLOADSP_26          ;106 %0110 1010
+   FDB   opLOADSP_27          ;107 %0110 1011
+   FDB   opLOADSP_28          ;108 %0110 1100
+   FDB   opLOADSP_29          ;109 %0110 1101
+   FDB   opLOADSP_30          ;110 %0110 1110
+   FDB   opLOADSP_31          ;111 %0110 1111
    FDB   opLOADSP_0           ;112 %0111 0000
    FDB   opLOADSP_1           ;113 %0111 0001
    FDB   opLOADSP_2           ;114 %0111 0010
    FDB   opLOADSP_3           ;115 %0111 0011
-   FDB   opLOADSP_x           ;116 %0111 0100
-   FDB   opLOADSP_x           ;117 %0111 0101
-   FDB   opLOADSP_x           ;118 %0111 0110
-   FDB   opLOADSP_x           ;119 %0111 0111
-   FDB   opLOADSP_x           ;120 %0111 1000
-   FDB   opLOADSP_x           ;121 %0111 1001
-   FDB   opLOADSP_x           ;122 %0111 1010
-   FDB   opLOADSP_x           ;123 %0111 1011
-   FDB   opLOADSP_x           ;124 %0111 1100
-   FDB   opLOADSP_x           ;125 %0111 1101
-   FDB   opLOADSP_x           ;126 %0111 1110
-   FDB   opLOADSP_x           ;127 %0111 1111
+   FDB   opLOADSP_4           ;116 %0111 0100
+   FDB   opLOADSP_5           ;117 %0111 0101
+   FDB   opLOADSP_6           ;118 %0111 0110
+   FDB   opLOADSP_7           ;119 %0111 0111
+   FDB   opLOADSP_8           ;120 %0111 1000
+   FDB   opLOADSP_9           ;121 %0111 1001
+   FDB   opLOADSP_10          ;122 %0111 1010
+   FDB   opLOADSP_11          ;123 %0111 1011
+   FDB   opLOADSP_12          ;124 %0111 1100
+   FDB   opLOADSP_13          ;125 %0111 1101
+   FDB   opLOADSP_14          ;126 %0111 1110
+   FDB   opLOADSP_15          ;127 %0111 1111
 
 opTable
    FDB   opBREAKPT            ;  0 %0000 0000
@@ -2020,14 +2066,14 @@ opTable
    FDB   opADDSP_5            ; 21 %0001 0101
    FDB   opADDSP_6            ; 22 %0001 0110
    FDB   opADDSP_7            ; 23 %0001 0111
-   FDB   opADDSP_x            ; 24 %0001 1000
-   FDB   opADDSP_x            ; 25 %0001 1001
-   FDB   opADDSP_x            ; 26 %0001 1010
-   FDB   opADDSP_x            ; 27 %0001 1011
-   FDB   opADDSP_x            ; 28 %0001 1100
-   FDB   opADDSP_x            ; 29 %0001 1101
-   FDB   opADDSP_x            ; 30 %0001 1110
-   FDB   opADDSP_x            ; 31 %0001 1111
+   FDB   opADDSP_8            ; 24 %0001 1000
+   FDB   opADDSP_9            ; 25 %0001 1001
+   FDB   opADDSP_10           ; 26 %0001 1010
+   FDB   opADDSP_11           ; 27 %0001 1011
+   FDB   opADDSP_12           ; 28 %0001 1100
+   FDB   opADDSP_13           ; 29 %0001 1101
+   FDB   opADDSP_14           ; 30 %0001 1110
+   FDB   opADDSP_15           ; 31 %0001 1111
 
    FDB   opEMULATE_x          ; 32 %0010 0000
    FDB   opUNKNOWN            ; 33 %0010 0001
