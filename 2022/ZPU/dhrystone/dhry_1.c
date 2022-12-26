@@ -199,7 +199,7 @@ long long            Microseconds,
 
 /* end of variables for time measurement */
 
-int             Number_Of_Runs = 50000;
+int             Number_Of_Runs = 2000;
 
 extern long long _readMicroseconds();
 
@@ -385,9 +385,9 @@ int main ()
   small_printf ("\n");
 
   User_Time = End_Time - Begin_Time;
-  small_printf ("User time: %ds\n", (int)User_Time/1000000);
+  small_printf ("User time: %ds\n", (int)(User_Time/1000000ll));
 
-  if (User_Time < Too_Small_Time*1000000)
+  if (User_Time < Too_Small_Time*1000000ll)
   {
     small_printf ("Measured time too small to obtain meaningful results\n");
     small_printf ("Please increase number of runs\n");
