@@ -677,52 +677,57 @@ chkPC2 SET chkPC
   ELSE
 chkPC2 SET romSentinel
   ENDC
-
+  
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
    LSLB
    ASRB              ; left align signed value
-   SEX               ; [2] extends sign to A ($00 or $FF)
-  IFEQ B0-0
+   SEX               ; extend sign to A
    PSHU  D           ; [7]
-   STA   ,-U         ; [6]
-   STA   ,-U         ; [6]
-  ELSE
-   LDX   #0          ; [3] clear high word
-   LEAX  A,X         ; [5] extends sign to X
-   PSHU  D,X         ; [9] push lower word
-  ENDC
-opIM1
+   PSHU  D           ; [7] At this point B0,B2,B3 are ok
+   STA   B1,U        ; [5] == 19 fix B1
+  
    FETCH_INSTRUCTION
-   BPL   chkPC2      ; next is opIM ? no ==> process next
+   BPL chkPC2
 
 opIM2
    LSLB
-   BU LDA,3
+   LDA   B3,U
    ASRA
    RORB
    BU STD,2
 
    FETCH_INSTRUCTION
-   BPL   chkPC2      ; next is opIM ? no ==> process next
-
+   BMI   opIM3
+   CMPY  #$E000      ; check page change
+   BLO   chkPC2
+   BSR   nxtPage
+   FETCH_INSTRUCTION
+   BPL   chkPC2
+ 
 opIM3
    LSLB
    BU LDA,2
    ASRA
-   BU STA,1
-   BU LDA,3
+   STA   B1,U
+   LDA   B3,U
    RORA
    RORB
    BU STD,2
 
+opIM_wrap
    FETCH_INSTRUCTION
-   BPL   chkPC2      ; next is opIM ? no ==> process next
+   BMI   opIM_wrap2
+   CMPY  #$E000      ; check page change
+   BLO   chkPC2
+   BSR   nxtPage
+   FETCH_INSTRUCTION
+   BPL   chkPC2
 
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
-opIM_wrap
+opIM_wrap2
    LSLB
    BU LSR,0          ; rotate TOS 7 bits left and add B/2 at the bottom
    BU LDA,1
@@ -735,16 +740,27 @@ opIM_wrap
    RORA              ; byte 2 is byte 3 rotated right once
    RORB              ; push bit back to value
    BU STD,2          ; write lower word
-   FETCH_INSTRUCTION
-   BPL   chkPC2      ; next instruction (B already fetched)
-   BRA   opIM_wrap   ; opIM? yes => just increment PC
+
+   BRA   opIM_wrap
+   
+* loads a continuated immediate value
+* B=xxxxxxx0 (value*2)
+
+nxtPage
+   PSHS  B           ; preserve opcode
+   LDD   <PC_PG      ; load PC page
+   ADDD  #$40        ; adds 16kb
+   STD   <PC_PG      ; update PC page
+   BSR   updatePage  ; update BANk
+   LDY   #$A000      ; go to start of page
+   PULS  B,PC        ; restore opcode
 
 * restore the page back to the instruction page
 updatePC
    LDD  #PC_PG       ; load instruction page
 PC_PG SET *-2        ; instruction page (dynamic code)
 updatePC_D
-   BSR  updatePage   ; update page if needed
+   JSR  <updatePage  ; update page if needed
 
 * fetches and execute an instruction
 opNOP
@@ -760,16 +776,10 @@ romSentinel
    BNE   decode      ; from the one on $E000 we are safe to decode
    CMPY  #$E000      ; check page change
    BLO   decode      ; no => just decode inwtruction
-   PSHS  B           ; preserve opcode
-   LDD   <PC_PG      ; load PC page
-   ADDD  #$40        ; adds 16kb
-   STD   <PC_PG      ; update PC page
-   BSR   updatePage  ; update BANk
-   LDY   #$A000      ; go to start of page
-   PULS  B           ; restore opcode
+   BSR   nxtPage
 decode
-   LSLB              ; decode the opcode
    LDX   #opTable
+   LSLB              ; decode the opcode
    JMP   [B,X]       ; jump to instruction
 
 sampledTMR
