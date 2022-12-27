@@ -998,8 +998,8 @@ opPUSHSPADD
    LSLD
    LSLD
    LEAX  D,U
-   BU STX,2
    LDD   #STK_SPACE  ; stack address is $01FF:9xxx
+   BU STX,2
    BU STD,0          ; BANk 0, $Dxxx
    JMP   <fetch
 
@@ -1672,9 +1672,9 @@ outTRUE
 
 opEQ
    PULU D,X
-   SUBD  ,U
-   BNE   outFALSE
    CMPX  2,U
+   BNE   outFALSE
+   SUBD  ,U
    BNE   outFALSE
    BRA   outTRUE
 
