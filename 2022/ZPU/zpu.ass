@@ -1958,15 +1958,19 @@ opCALL
    JMP   <updatePC
 
 doBRANCH
-  IFEQ 1
+  IFEQ 0
    TFR   Y,D
    SUBD  #$A001
    ADDA  <PC_PG+1
    BU ADDD,2
    STA   <PC_PG+1
    ANDA  #$3F        ; map 16k address to $A000...$DFFF
-   ADDA  #$A0
+   ROLA              ; save carry in b0
+   ADDA  #%01000000
+   LSRA              ; get cary back
+   ORA   #%10000000
    TFR   D,Y         ; update pc reg
+*
    LDD   <PC_PG
    BU ADCA,1
    ANDB  #$C0        ; align 16k
