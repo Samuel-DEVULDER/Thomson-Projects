@@ -1494,14 +1494,27 @@ opSTOREIO_end
    LEAU  8,U         ; fixup stack
    JMP   <fetch
 
-opLOAD
-   BU LDA,0          ; chk IO range
+opLOAD SET *
+  IFEQ B0-0
+   LDA   ,U
    CMPA  #STK_SPACE/256
-  IFNE B0-0
    BMI   opLOADnorm
-  ENDC
    BHI   opLOADIO    ; yes => io-specific
-  IFNE B0-0
+   LDX   2,U
+   BRA   opLOAD2
+opLOADnorm SET *
+   JSR   <getAddrMapped   ; convert adress
+opLOAD2
+   LDD   ,X          ; load high word
+   STD   ,U          ; store in TOS
+   LDD   2,X         ; load lower word
+   STD   2,U         ; store in TOS
+   JMP   <updatePC   ; resync PC page and execute next instruction
+  ELSE  
+   LDA   2,0          ; chk IO range
+   CMPA  #STK_SPACE/256
+   BMI   opLOADnorm
+   BHI   opLOADIO    ; yes => io-specific
 opLOADstk
    JSR   <getAddrL   ; load from stack
    LDD   ,X          ; load high/low word
@@ -1509,23 +1522,37 @@ opLOADstk
    LDD   2,X         ; load low/high word
    STD   2,U         ; store in TOS
    JMP   <updatePC   ; resync PC page and execute next instruction
-opLOADnorm
-  ENDC
+opLOADnorm SET *
    JSR   <getAddrL   ; convert adress
    LDD   ,X          ; load high word
-   BU STD,0          ; store in TOS
+   STD   2,U         ; store in TOS
    LDD   2,X         ; load lower word
-   BU STD,2          ; store in TOS
+   STD   ,U          ; store in TOS
    JMP   <updatePC   ; resync PC page and execute next instruction
+  ENDC
 
 opSTORE
-   BU LDA,0          ; chk IO range
+  IFEQ B0-0
+   LDA   ,U
    CMPA  #STK_SPACE/256
-  IFNE B0-0
    BMI   opSTOREnorm
-  ENDC
+   BHI   opSTOREIO    ; yes => io-specific
+   LDX   2,U
+   BRA   opSTORE2
+opSTOREnorm SET *
+   JSR   <getAddrMapped   ; convert adress
+opSTORE2
+   LDD   B4,U
+   STD   ,X
+   LDD   B6,U
+   STD   2,X
+   LEAU  8,U         ; fixup stack
+   JMP   <updatePC   ; page has been modified, ensure PC-page is back
+  ELSE
+   LDA   B2,U        ; chk IO range
+   CMPA  #STK_SPACE/256
+   BMI   opSTOREnorm
    BHI   opSTOREIO   ; yes => io-specific code
-  IFNE B0-0
 opSTOREstk
    JSR   <getAddrL   ; convert TOS to address & set page
    LDD   4,U
@@ -1534,15 +1561,15 @@ opSTOREstk
    STD   2,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
-opSTOREnorm
-  ENDC
+opSTOREnorm SET *
    JSR   <getAddrL   ; convert TOS to address & set page
-   BU LDD,4
+   LDD   B4,U
    STD   ,X
-   BU LDD,6
+   LDD   B6,U
    STD   2,X
    LEAU  8,U         ; fixup stack
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
+  ENDC
 
 opPOPSP
    BU LDU,2
