@@ -677,7 +677,7 @@ chkPC2 SET chkPC
   ELSE
 chkPC2 SET romSentinel
   ENDC
-  
+
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
@@ -687,7 +687,7 @@ opIM
    PSHU  D           ; [7]
    PSHU  D           ; [7] At this point B0,B2,B3 are ok
    STA   B1,U        ; [5] == 19 fix B1
-  
+
    FETCH_INSTRUCTION
    BPL chkPC2
 
@@ -705,7 +705,7 @@ opIM2
    BSR   nxtPage
    FETCH_INSTRUCTION
    BPL   chkPC2
- 
+
 opIM3
    LSLB
    BU LDA,2
@@ -742,7 +742,7 @@ opIM_wrap2
    BU STD,2          ; write lower word
 
    BRA   opIM_wrap
-   
+
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
 
@@ -1250,19 +1250,47 @@ BITWISE MACRO
    \0A  2,U
    \0B  3,U
    STD   2,U
+   JMP   <fetch
   ENDM
 
 opAND
-   BITWISE AND       ; bitwise "and" of TOS with NOS
+  IFEQ 1
+   BITWISE AND       ; [44] bitwise "and" of TOS with NOS
+  ELSE
+   LDD   ,U++
+   BEQ   opAND1
+   ANDA  2,U
+   ANDB  3,U
+opAND1
+   STD   2,U
+   LDD   ,U++
+   ANDA  2,U
+   ANDB  3,U
+   STD   2,U
    JMP   <fetch
+  ENDC
 
 opOR
+  IFEQ 1
    BITWISE OR        ; bitwise "or" of TOS with NOS
+  ELSE
+   LDD   ,U++
+   BEQ   opOR1
+   ORA   2,U
+   ORB   3,U
+   STD   2,U
+opOR1
+   LDD   ,U++
+   BEQ opOR2
+   ORA   2,U
+   ORB   3,U
+   STD   2,U
+opOR2
    JMP   <fetch
+  ENDC
 
 opXOR
    BITWISE EOR       ; bitwise "xor" of TOS with NOS
-   JMP   <fetch
 
 opNOT
    COM   ,U          ; bitwise complement of TOS
@@ -1862,9 +1890,10 @@ opASHIFTRIGHT8
    BCC   opASHIFTRIGHT16
 * abcd --> xabc  swapped cdab --> bcxa
   IFEQ B0-0
-   LDA   2,U
-   STA   3,U
-   LDD   ,U
+   LDD   1,U
+   STD   2,U
+   LDB   ,U
+   SEX
    STD   1,U
   ELSE
    LDA   3,U

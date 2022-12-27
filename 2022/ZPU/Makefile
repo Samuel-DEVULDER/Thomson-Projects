@@ -62,4 +62,4 @@ memmap: ../../dcmoto_trace.txt
 	cd ../..; \
 	../DCMoto_MemMap/MemMap-v0.1-win-x86/lua.exe \
 	../DCMoto_MemMap/MemMap-v0.1-win-x86/memmap.lua \
-	-mach=to -equ -reset -hot -html
+	-mach=to -equ -reset -hot -map -html
