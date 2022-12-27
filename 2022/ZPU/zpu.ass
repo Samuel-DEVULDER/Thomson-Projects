@@ -1663,12 +1663,7 @@ opULESSTHANOREQUAL
    SUBD  ,U
   ENDC
    BHI   outFALSE
-outTRUE
-   LDD   #0          ; write 1 on top of stack
-   BU STD,0
-   INCB
-   BU STD,2
-   JMP   <fetch
+   BRA   outTRUE
 
 opEQ
    PULU D,X
@@ -1676,7 +1671,12 @@ opEQ
    BNE   outFALSE
    SUBD  ,U
    BNE   outFALSE
-   BRA   outTRUE
+outTRUE
+   LDD   #0          ; write 1 on top of stack
+   BU STD,0
+   INCB
+   BU STD,2
+   JMP   <fetch
 
 opNEQ
    PULU D,X
