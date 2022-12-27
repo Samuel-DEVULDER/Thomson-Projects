@@ -1563,11 +1563,7 @@ getAddrStk2
 opLOADH
    BSR   getAddrStk  ; loads 16 bits
    LDD   ,X
-outUnsigned
-   BU STD,2
-   LDD   #0
-   BU STD,0
-   JMP   <updatePC
+   BRA   outUnsigned
 
 opSTOREH
    BSR   getAddrStk  ; stores 16 bits
@@ -1580,7 +1576,11 @@ opLOADB
    BSR   getAddrStk  ; loads 8 bits
    CLRA
    LDB   ,X
-   BRA   outUnsigned
+outUnsigned
+   BU STD,2
+   LDD   #0
+   BU STD,0
+   JMP   <updatePC
 
 opSTOREB
    BSR   getAddrStk  ; stores 8 bits
@@ -1644,6 +1644,7 @@ opULESSTHAN
    BLO   outTRUE
 outFALSE
    LDD   #0          ; writes 0 on top of stack
+outFALSE_D0
    STD   ,U
    STD   2,U
    JMP   <fetch
@@ -1663,7 +1664,12 @@ opULESSTHANOREQUAL
    SUBD  ,U
   ENDC
    BHI   outFALSE
-   BRA   outTRUE
+outTRUE
+   LDD   #0          ; write 1 on top of stack
+   BU STD,0
+   INCB
+   BU STD,2
+   JMP   <fetch
 
 opEQ
    PULU D,X
@@ -1671,8 +1677,7 @@ opEQ
    BNE   outFALSE
    SUBD  ,U
    BNE   outFALSE
-outTRUE
-   LDD   #0          ; write 1 on top of stack
+outTRUE_D0
    BU STD,0
    INCB
    BU STD,2
@@ -1683,8 +1688,8 @@ opNEQ
    SUBD  ,U
    BNE   outTRUE
    CMPX  2,U
-   BNE   outTRUE
-   BRA   outFALSE
+   BNE   outTRUE_D0
+   BRA   outFALSE_D0
 
 ***************************************
 * SHIFT
