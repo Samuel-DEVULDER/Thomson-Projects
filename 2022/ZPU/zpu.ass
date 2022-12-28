@@ -701,15 +701,7 @@ opIM
    BPL chkPC2
   ELSE
    BITB  #%01000000  ; [2]
-   BNE   opIMneg     ; [3]
-   LDX   #$FF80      ; [3]
-   ABX               ; [3]
-   LDD   #0          ; [3]
-   PSHU  D,X         ; [9] = [23]
-   FETCH_INSTRUCTION
-   BMI opIM2
-   JMP <chkPC2
-opIMneg
+   BEQ   opIMpos     ; [3]
    LDX   #$FF00      ; [3]
    ABX               ; [3]
    LDD   #-1         ; [3]
@@ -717,6 +709,13 @@ opIMneg
    FETCH_INSTRUCTION
    BMI opIM2
    JMP <chkPC2
+opIMpos
+   LDX   #$FF80      ; [3]
+   ABX               ; [3]
+   LDD   #0          ; [3]
+   PSHU  D,X         ; [9] = [23]
+   FETCH_INSTRUCTION
+   BPL   chkPC2
   ENDC
 
 opIM2
@@ -2485,6 +2484,7 @@ asmTbl
 
 FILENAME
    FCC   /0:/
+   * FCC   /dhr13k  /
    FCC   /dhryston/
    * FCC   /test    /
    * FCC   /test2   /
