@@ -687,10 +687,10 @@ nxtPage
    LDY   #$A000      ; go to start of page
    PULS  B,PC        ; restore opcode
 
+opIM
   IFNE B0-0
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
-opIM SET *
    LSLB              ; [2]
    ASRB              ; [2] left align signed value
    SEX               ; [2] extend sign to A
@@ -700,7 +700,6 @@ opIM SET *
    FETCH_INSTRUCTION
    BPL chkPC2
   ELSE
-opIM SET *
    BITB  #%01000000  ; [2]
    BNE   opIMneg     ; [3]
    LDX   #$FF80      ; [3]
