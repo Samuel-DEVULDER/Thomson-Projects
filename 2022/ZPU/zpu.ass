@@ -678,18 +678,47 @@ chkPC2 SET chkPC
 chkPC2 SET romSentinel
   ENDC
 
+nxtPage
+   PSHS  B           ; preserve opcode
+   LDD   <PC_PG      ; load PC page
+   ADDD  #$40        ; adds 16kb
+   STD   <PC_PG      ; update PC page
+   JSR   <updatePage ; update BANk
+   LDY   #$A000      ; go to start of page
+   PULS  B,PC        ; restore opcode
+
+  IFNE B0-0
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
-opIM
-   LSLB              ; [2] 
+opIM SET *
+   LSLB              ; [2]
    ASRB              ; [2] left align signed value
    SEX               ; [2] extend sign to A
    PSHU  D           ; [7]
    PSHU  D           ; [7] At this point B0,B2,B3 are ok
    STA   B1,U        ; [5] == [25] fix B1
-
    FETCH_INSTRUCTION
    BPL chkPC2
+  ELSE
+opIM SET *
+   BITB  #%01000000  ; [2]
+   BNE   opIMneg     ; [3]
+   LDX   #$FF80      ; [3]
+   ABX               ; [3]
+   LDD   #0          ; [3]
+   PSHU  D,X         ; [9] = [23]
+   FETCH_INSTRUCTION
+   BMI opIM2
+   JMP <chkPC2
+opIMneg
+   LDX   #$FF00      ; [3]
+   ABX               ; [3]
+   LDD   #-1         ; [3]
+   PSHU  D,X         ; [9] = [23]
+   FETCH_INSTRUCTION
+   BMI opIM2
+   JMP <chkPC2
+  ENDC
 
 opIM2
    LSLB
@@ -743,18 +772,6 @@ opIM_wrap2
 
    BRA   opIM_wrap
 
-* loads a continuated immediate value
-* B=xxxxxxx0 (value*2)
-
-nxtPage
-   PSHS  B           ; preserve opcode
-   LDD   <PC_PG      ; load PC page
-   ADDD  #$40        ; adds 16kb
-   STD   <PC_PG      ; update PC page
-   BSR   updatePage  ; update BANk
-   LDY   #$A000      ; go to start of page
-   PULS  B,PC        ; restore opcode
-
 * restore the page back to the instruction page
 updatePC
    LDD  #PC_PG       ; load instruction page
@@ -776,7 +793,7 @@ romSentinel
    BNE   decode      ; from the one on $E000 we are safe to decode
    CMPY  #$E000      ; check page change
    BLO   decode      ; no => just decode inwtruction
-   BSR   nxtPage
+   JSR   <nxtPage
 decode
    LDX   #opTable
    LSLB              ; decode the opcode
@@ -1510,7 +1527,7 @@ opLOAD2
    LDD   2,X         ; load lower word
    STD   2,U         ; store in TOS
    JMP   <updatePC   ; resync PC page and execute next instruction
-  ELSE  
+  ELSE
    LDA   2,0          ; chk IO range
    CMPA  #STK_SPACE/256
    BMI   opLOADnorm
