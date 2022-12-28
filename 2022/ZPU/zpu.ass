@@ -681,12 +681,12 @@ chkPC2 SET romSentinel
 * loads a 7 bit immediate value
 * B=xxxxxxx0 (value*2)
 opIM
-   LSLB
-   ASRB              ; left align signed value
-   SEX               ; extend sign to A
+   LSLB              ; [2] 
+   ASRB              ; [2] left align signed value
+   SEX               ; [2] extend sign to A
    PSHU  D           ; [7]
    PSHU  D           ; [7] At this point B0,B2,B3 are ok
-   STA   B1,U        ; [5] == 19 fix B1
+   STA   B1,U        ; [5] == [25] fix B1
 
    FETCH_INSTRUCTION
    BPL chkPC2
