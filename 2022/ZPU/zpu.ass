@@ -697,8 +697,6 @@ opIM
    PSHU  D           ; [7]
    PSHU  D           ; [7] At this point B0,B2,B3 are ok
    STA   B1,U        ; [5] == [25] fix B1
-   FETCH_INSTRUCTION
-   BPL chkPC2
   ELSE
    BITB  #%01000000  ; [2]
    BEQ   opIMpos     ; [3]
@@ -707,8 +705,8 @@ opIM
    LDD   #-1         ; [3]
    PSHU  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
-   BMI opIM2
-   JMP <chkPC2
+   BMI   opIM2
+   BRA   chkPC2
 opIMpos
    LDX   #$FF80      ; [3]
    ABX               ; [3]
@@ -726,12 +724,7 @@ opIM2
    BU STD,2
 
    FETCH_INSTRUCTION
-   BMI   opIM3
-   CMPY  #$E000      ; check page change
-   BLO   chkPC2
-   BSR   nxtPage
-   FETCH_INSTRUCTION
-   BPL   chkPC2
+   BPL   opIM_wrap
 
 opIM3
    LSLB
@@ -743,9 +736,9 @@ opIM3
    RORB
    BU STD,2
 
-opIM_wrap
    FETCH_INSTRUCTION
-   BMI   opIM_wrap2
+   BMI   opIM_loop
+opIM_wrap
    CMPY  #$E000      ; check page change
    BLO   chkPC2
    BSR   nxtPage
@@ -754,7 +747,7 @@ opIM_wrap
 
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
-opIM_wrap2
+opIM_loop
    LSLB
    BU LSR,0          ; rotate TOS 7 bits left and add B/2 at the bottom
    BU LDA,1
@@ -768,6 +761,8 @@ opIM_wrap2
    RORB              ; push bit back to value
    BU STD,2          ; write lower word
 
+   FETCH_INSTRUCTION
+   BMI   opIM_loop
    BRA   opIM_wrap
 
 * restore the page back to the instruction page
