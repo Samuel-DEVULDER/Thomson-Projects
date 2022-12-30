@@ -114,14 +114,20 @@ main
    STA   >LGA7       ; RAM
 
    LDA   >$E000      ; $E00 sentinel
-   STA   <romSentinel+1
-   BGE   okSentinel
+   BPL   okROM
    JSR   PUTSTR
-   FCC   /ERROR $E000</
+   FCC   /ERROR ROM BYTE @$E000 < /
    FCB   128+'0
    SWI
    BRA   *
-okSentinel
+okROM
+   LDX   #opTable
+   LSLA
+   LEAX  A,X
+   LDD   ,X
+   STD   <rom_OP+1
+   LDD   #rom_OP_chk
+   STD   ,X
 
    BSR   INITLPR
    BSR   INITMEMORY
@@ -672,12 +678,6 @@ chgBANK
 donePage
    RTS               ; done
 
-  IFNE  CYCLE_TIMER
-chkPC2 SET chkPC
-  ELSE
-chkPC2 SET romSentinel
-  ENDC
-
 nxtPage
    PSHS  B           ; preserve opcode
    LDD   <PC_PG      ; load PC page
@@ -686,6 +686,12 @@ nxtPage
    JSR   <updatePage ; update BANk
    LDY   #$A000      ; go to start of page
    PULS  B,PC        ; restore opcode
+
+  IFNE CYCLE_TIMER
+decode_pos SET decode
+  ELSE
+decode_pos SET decode_
+  ENDC
 
 opIM
   IFNE B0-0
@@ -706,14 +712,14 @@ opIM
    PSHU  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
    BMI   opIM2
-   BRA   chkPC2
+   BRA   decode_pos
 opIMpos
    LDX   #$FF80      ; [3]
    ABX               ; [3]
    LDD   #0          ; [3]
    PSHU  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
-   BPL   chkPC2
+   BPL   decode_pos
   ENDC
 
 opIM2
@@ -740,10 +746,10 @@ opIM3
    BMI   opIM_loop
 opIM_wrap
    CMPY  #$E000      ; check page change
-   BLO   chkPC2
+   BLO   decode_pos
    BSR   nxtPage
    FETCH_INSTRUCTION
-   BPL   chkPC2
+   BPL   decode_pos
 
 * loads a continuated immediate value
 * B=xxxxxxx0 (value*2)
@@ -776,22 +782,24 @@ updatePC_D
 opNOP
 fetch
    FETCH_INSTRUCTION
-chkPC
+decode
   IFNE  CYCLE_TIMER
    JSR   TIMERINTER
   ENDC
    BMI   opIM        ; opcode=1xxxxxxx ? yes => immediate value
-romSentinel
-   CMPB  #$4D        ; speed up: if next byte is different
-   BNE   decode      ; from the one on $E000 we are safe to decode
-   CMPY  #$E000      ; check page change
-   BLO   decode      ; no => just decode inwtruction
-   JSR   <nxtPage
-decode
+decode_
    LDX   #opTable
    LSLB              ; decode the opcode
    JMP   [B,X]       ; jump to instruction
-
+   
+rom_OP_chk
+   CMPY  #$E000      ; check page change
+   BLO   rom_OP      ; no => just decode inwtruction
+   JSR   <nxtPage
+   BRA   fetch
+rom_OP
+   JMP   >opBREAKPT
+   
 sampledTMR
    FDB   0,0,0,0     ; sampled timer
 
