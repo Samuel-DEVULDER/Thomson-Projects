@@ -1281,7 +1281,7 @@ opAND
    ANDB  3,U
 opAND1
    STD   2,U
-   LDD   ,U++
+   PULU  D
    ANDA  2,U
    ANDB  3,U
    STD   2,U
