@@ -199,7 +199,7 @@ long long            Microseconds,
 
 /* end of variables for time measurement */
 
-int             Number_Of_Runs = 2000;
+int             Number_Of_Runs = 5000;
 
 extern long long _readMicroseconds();
 
@@ -218,6 +218,10 @@ int main ()
         Str_30          Str_1_Loc;
         Str_30          Str_2_Loc;
   REG   int             Run_Index;
+
+  if(1) {
+
+  }
 
   /* Initializations */
 
@@ -385,7 +389,6 @@ int main ()
   small_printf ("\n");
 
   User_Time = End_Time - Begin_Time;
-  small_printf ("User time: %ds\n", (int)(User_Time/1000000ll));
 
   if (User_Time < Too_Small_Time*1000000ll)
   {
@@ -531,3 +534,53 @@ register int    l;
 #endif
 
 
+extern int _hardware;
+/* _cpu_config==0 => Abel
+ * _cpu_config==1 => Zeta
+ * _cpu_config==2 => Phi
+ */
+extern int _cpu_config;
+static volatile int *UART;
+static volatile unsigned int *TIMER;
+volatile int *MHZ;
+
+static const int mhz=64;
+
+void __attribute__ ((weak)) _initIO(void)
+{
+	if (_hardware)
+	{
+		if (_cpu_config==2)
+		{
+			/* Phi board addresses */
+			UART=(volatile int *)0x080a000c;
+			TIMER=(volatile int *)0x080a0014;
+			MHZ=(volatile int *)&mhz;
+		} else
+		{
+			/* Abel board */
+			UART=(volatile int *)0xc000;
+			TIMER=(volatile int *)0x9000;
+			MHZ=(volatile int *)0x8800;
+		}
+	} else
+	{
+		UART=(volatile int *)0x80000024;
+		TIMER=(volatile int *)0x80000100;
+		MHZ=(volatile int *)0x80000200;
+	}
+}
+
+unsigned long long __attribute__ ((weak)) _readCycles()
+{
+	long long clock;
+	unsigned int i;
+
+	TIMER[0]=0x2; /* sample timer */
+	clock=0;
+	for (i=0; i<2; i++)
+	{
+		clock|=((unsigned long long )(TIMER[i]))<<(i*32);
+	}
+	return clock;
+}
