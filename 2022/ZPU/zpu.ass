@@ -711,8 +711,8 @@ opIM
    LDD   #-1         ; [3]
    PSHU  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
-   BMI   opIM2
-   BRA   decode_pos
+   BPL   decode_pos
+   BRA   opIM2
 opIMpos
    LDX   #$FF80      ; [3]
    ABX               ; [3]
@@ -1275,16 +1275,19 @@ opAND
   IFEQ 1
    BITWISE AND       ; [44] bitwise "and" of TOS with NOS
   ELSE
-   LDD   ,U++
+   LEAU  4,U
+   LDD   ,U
    BEQ   opAND1
-   ANDA  2,U
-   ANDB  3,U
+   ANDA  -4,U
+   ANDB  1-4,U
+   STD   ,U
 opAND1
-   STD   2,U
-   PULU  D
+   LDD   -2,U
+   * BEQ   opAND2
    ANDA  2,U
    ANDB  3,U
    STD   2,U
+* opAND2
    JMP   <fetch
   ENDC
 
