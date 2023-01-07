@@ -2127,8 +2127,12 @@ int Ass_AllType(int immediate, int lea)
                 {
                     if ((eval.operand == 0)
                      && (mode > 0)
-                     && (indirect_mode == FALSE))
-                        PrintError(ERR_0_BIT) ;
+                     && (indirect_mode == FALSE)) {
+                     //   PrintError(ERR_0_BIT) ;
+						info.cycle.plus = 0 ;
+						run.code[2] = 0x84 ;
+						run.size = 2 ;
+            		}
                     else
                     if ((eval.operand >= -16)
                      && (eval.operand <= 15)
