@@ -56,6 +56,15 @@ test:	$(DISK)
 
 stat: ../../dcmoto-printer.txt
 	perl < $< -e '%a=(); while(<>) {chomp;$$a{substr($$_, 110)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
+
+stat2: ../../dcmoto-printer.txt
+	perl < $< -e '%a=(); $$b=""; while(<>) {chomp;$$a=$$b;$$b=substr($$_, 110);$$a{sprintf("%-10s %-10s", $$a, $$b)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
+
+stat3: ../../dcmoto-printer.txt
+	perl < $< -e '%a=(); $$b=""; $$c=""; while(<>) {chomp;($$a,$$b,$$c)=($$b,$$c,substr($$_, 110));$$a{sprintf("%-10s %-10s %-10s", $$a, $$b, $$c)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
+
+stat4: ../../dcmoto-printer.txt
+	perl < $< -e '%a=(); while(<>) {chomp;($$a,$$b,$$c,$$d)=($$b,$$c,$$d,substr($$_, 110));$$a{sprintf("%-10s %-10s %-10s %-10s", $$a, $$b, $$c, $$d)}++;}; @a = sort { $$a{$$a} <=> $$a{$$b} } (keys(%a)); foreach $$i (@a) {print $$a{$$i},"\t$$i\n";}'
 	
 memmap: ../../dcmoto_trace.txt 
 	cp build/codes.lst ../..

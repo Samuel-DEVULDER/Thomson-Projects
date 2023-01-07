@@ -430,6 +430,7 @@ LOAD
 LOAD00
    LDA   #$02     A=2, B=$00
    STB   DKSTA    Efface erreur
+   STB   $6025   ; FIX COPBUF
    STD   DKTYP    Type de fichier
    STX   DKNAM    Nom du fichier
    STU   LDPTR    Adr d'implantation
@@ -730,7 +731,7 @@ opIM2
    BU STD,2
 
    FETCH_INSTRUCTION
-   BPL   opIM_wrap
+   BPL   decode_pos
 
 opIM3
    LSLB
@@ -742,12 +743,6 @@ opIM3
    RORB
    BU STD,2
 
-   FETCH_INSTRUCTION
-   BMI   opIM_loop
-opIM_wrap
-   CMPY  #$E000      ; check page change
-   BLO   decode_pos
-   BSR   nxtPage
    FETCH_INSTRUCTION
    BPL   decode_pos
 
@@ -769,7 +764,7 @@ opIM_loop
 
    FETCH_INSTRUCTION
    BMI   opIM_loop
-   BRA   opIM_wrap
+   BRA   decode_pos
 
 * restore the page back to the instruction page
 updatePC
@@ -777,6 +772,22 @@ updatePC
 PC_PG SET *-2        ; instruction page (dynamic code)
 updatePC_D
    JSR  <updatePage  ; update page if needed
+   
+NEXT MACRO
+  IFEQ 1
+    JMP  <fetch
+  ELSE
+   FETCH_INSTRUCTION
+  IFNE  CYCLE_TIMER
+   JSR   TIMERINTER
+  ENDC
+   LBMI   opIM       ; opcode=1xxxxxxx ? yes => immediate value
+   LDX   #opTable
+   LSLB              ; decode the opcode
+   JMP   [B,X]       ; jump to instruction
+  ENDC
+  ENDM
+  
 
 * fetches and execute an instruction
 opNOP
@@ -804,224 +815,6 @@ sampledTMR
    FDB   0,0,0,0     ; sampled timer
 
 ***************************************
-* Load on stack the value at stack[x]
-* B=--xxxxx0 (2*x)
-***************************************
-
-opLOADSP_0
-   LDD   ,U
-   LDX   2,U
-   PSHU  D,X
-   BRA   fetch
-
-opLOADSP_ MACRO
-opLOADSP_\0
-   LDD   4*\0,U
-   LDX   4*\0+2,U
-   PSHU  D,X
-   JMP   <fetch
-   ENDM
-
-   opLOADSP_ 1
-   opLOADSP_ 2
-   opLOADSP_ 3
-   opLOADSP_ 4
-   opLOADSP_ 5
-   opLOADSP_ 6
-   opLOADSP_ 7
-   opLOADSP_ 8
-   opLOADSP_ 9
-   opLOADSP_ 10
-   opLOADSP_ 11
-   opLOADSP_ 12
-   opLOADSP_ 13
-   opLOADSP_ 14
-   opLOADSP_ 15
-   opLOADSP_ 16
-   opLOADSP_ 17
-   opLOADSP_ 18
-   opLOADSP_ 19
-   opLOADSP_ 20
-   opLOADSP_ 21
-   opLOADSP_ 22
-   opLOADSP_ 23
-   opLOADSP_ 24
-   opLOADSP_ 25
-   opLOADSP_ 26
-   opLOADSP_ 27
-   opLOADSP_ 28
-   opLOADSP_ 29
-   opLOADSP_ 30
-   opLOADSP_ 31
-
-opLOADSP_x
-   LSLB              ; B ~ x*4
-   EORB  #%01000000
-   ANDB  #%01111100  ; clear bit 7 of 4*x
-   LEAX  B,U         ; X points to source
-   LDD   ,X          ; load high word
-   LDX   2,X         ; load low word
-   PSHU  D,X         ; push 32 bits
-   JMP   <fetch      ; next instruction
-
-***************************************
-* Write top of stack at stack[x]
-* B=00xxxxx0 (2*x)
-***************************************
-
-opSTORESP_0
-   LEAU  4,U
-   JMP   <fetch
-
-opSTORESP_1
-   PULU  D,X
-   STD   ,U
-   STX   2,U
-   JMP   <fetch
-
-opSTORESP_ MACRO
-opSTORESP_\0
-   PULU  D,X
-   STD   4*\0-4,U
-   STX   4*\0-2,U
-   JMP   <fetch
-   ENDM
-
-   opSTORESP_ 2
-   opSTORESP_ 3
-   opSTORESP_ 4
-   opSTORESP_ 5
-   opSTORESP_ 6
-   opSTORESP_ 7
-   opSTORESP_ 8
-   opSTORESP_ 9
-   opSTORESP_ 10
-   opSTORESP_ 11
-   opSTORESP_ 12
-   opSTORESP_ 13
-   opSTORESP_ 14
-   opSTORESP_ 15
-   opSTORESP_ 16
-   opSTORESP_ 17
-   opSTORESP_ 18
-   opSTORESP_ 19
-   opSTORESP_ 20
-   opSTORESP_ 21
-   opSTORESP_ 22
-   opSTORESP_ 23
-   opSTORESP_ 24
-   opSTORESP_ 25
-   opSTORESP_ 26
-   opSTORESP_ 27
-   opSTORESP_ 28
-   opSTORESP_ 29
-   opSTORESP_ 30
-   opSTORESP_ 31
-
-opSTORESP_x
-   LSLB              ; B ~ x*4
-   EORB  #%01000000
-   LEAX  B,U         ; X point to dest (bit7 already 0)
-   PULU  D           ; load low word
-   STD   ,X          ; store low word
-   PULU  D           ; load high word
-   STD   2,X         ; store high word
-   JMP   <fetch      ; next instruction
-
-***************************************
-* Adds to TOS the value at stack[x]
-* B=0--xxxx00 (4*x)
-***************************************
-
-opADDSP_0
-   BU LSL,3
-   BU ROL,2
-   BU ROL,1
-   BU ROL,0
-   JMP   <fetch      ; next instruction
-
-opADDSP_ MACRO
-opADDSP_\0
-   BU LDD,2          ; load low word of source
-   BU ADDD,2+4*\0    ; add low word of TOS
-   BU STD,2          ; store result to TOS (lower word)
-   BU LDD,0+4*\0     ; load high word of source
-*   BCS   opADDSPh\0  ; 3
-*   BNE   opADDSPh\0  ; 3
-*   JMP   <fetch      ; shortcut
-*opADDSPh\0
-   BU ADCB,1         ; add with carry the TOS (high word)
-   BU ADCA,0         ; second byte
-   BU STD,0          ; store result to TOS (high word)
-   JMP   <fetch      ; 3=49(+3) next intruction
-   ENDM
-
-   opADDSP_  1
-   opADDSP_  2
-   opADDSP_  3
-   opADDSP_  4
-   opADDSP_  5
-   opADDSP_  6
-   opADDSP_  7
-   opADDSP_  8
-   opADDSP_  9
-   opADDSP_  11
-   opADDSP_  12
-   opADDSP_  13
-   opADDSP_  10
-   opADDSP_  14
-   opADDSP_  15
-
-opADDSP_x
-   LSLB              ; B ~ 4*x
-   ANDB  #%00111100  ; make 4*x postitive
-   LEAX  B,U         ; X point to source
-   BU LDD,2          ; load low word of source
-   BX ADDD,2         ; add low word of TOS
-   BU STD,2          ; store result to TOS (lower word)
-   BU LDD,0          ; load high word of source
-*   BCS   opADDSPh
-*   BNE   opADDSPh
-*   JMP   <fetch
-*opADDSPh
-   BX ADCB,1         ; add with carry the TOS (high word)
-   BX ADCA,0         ; second byte
-   BU STD,0          ; store result to TOS (high word)
-   JMP   <fetch      ; next instruction
-
-***************************************
-
-opUNKNOWN
-
-opBREAKPT
-   LDA   STATUS
-   ANDA  #%11011111  ; disable timer interrupt
-   STA   STATUS
-   SWI               ; back to monitor
-
-* Pushes stack address
-opPUSHSP
-  IFEQ B0-0
-   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
-   LEAX  ,U
-  ELSE
-   LDX   #STK_SPACE  ; stack address is $01FF:9xxx
-   TFR   U,D
-  ENDC
-   PSHU  D,X
-   JMP   <fetch
-
-opPUSHSPADD
-   BU LDD,2
-   LSLD
-   LSLD
-   LEAX  D,U
-   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
-   BU STX,2
-   BU STD,0          ; BANk 0, $Dxxx
-   JMP   <fetch
-
-***************************************
 * ARITHMETIC
 ***************************************
 
@@ -1031,30 +824,20 @@ opSUB
    * BRA   opADD
 
 opADD
-  IFEQ B0-0
-   LDD   2,U         ; 6
-   ADDD  6,U         ; 7
-   STD   6,U         ; 6
-   LDD   ,U          ; 5
-   LEAU  4,U         ; 5
-   BCS   opADDh      ; 3
-   BNE   opADDh      ; 3
-   JMP   <fetch      ; 3=33 next intruction
-opADDh
-   ADCB  1,U         ; 5
-   ADCA  ,U          ; 4
-   STD   ,U          ; 5
-   JMP   <fetch      ; 3=49(+3) next intruction
-  ELSE
-   PULU  D,X         ; 9
-   ADDD  ,U          ; 6
-   STD   ,U          ; 5
-   TFR   X,D         ; 6
-   ADCB  3,U         ; 5
-   ADCA  2,U         ; 5
-   STD   2,U         ; 6
-   JMP   <fetch      ; 3=45 next intruction
-  ENDC
+   LDD   ,U++
+   BEQ   opADD1
+   ADDD  2,U
+   STD   2,U
+opADD1
+   PULU  D
+   ADDD  2,U
+   STD   2,U
+   BCC   fetch
+   INC   1,U
+   BNE   fetch
+   INC   ,U
+opADD2
+   NEXT
 
 neg_x
    LDD   #0
@@ -1071,7 +854,7 @@ neg_x1
 opNEG
    LEAX  ,U
    BSR   neg_x
-   JMP   <fetch
+   NEXT
 
 opDIV
    CLR   ,-S            ; clear sign bit
@@ -1079,13 +862,13 @@ opDIV
    BX LDB,0
    BPL   opDIV1
    COM   ,S             ; negate sign
-   BSR   neg_x          ; negate dividend
+   JSR   <neg_x         ; negate dividend
 opDIV1
    LEAX  4,U
    BX LDB,0
    BPL   opDIV2
    COM   ,S             ; negate sign
-   BSR   neg_x          ; negate divisor
+   JSR   <neg_x         ; negate divisor
 opDIV2
    BSR   UDIV32
    LEAX  4,U
@@ -1101,7 +884,7 @@ opDIV4
    LEAU  ,X             ; fix stack
    LDB   ,S+            ; test sign
    BPL   opDIV3         ; positive => no chg
-   BSR   neg_x          ; negate result
+   JSR   <neg_x         ; negate result
 opDIV3
    JMP   <fetch
 
@@ -1110,12 +893,12 @@ opMOD
    BX LDB,0
    STB   ,-S            ; store sign
    BPL   opMOD1
-   BSR   neg_x          ; negate dividend
+   JSR   <neg_x         ; negate dividend
 opMOD1
    LEAX  4,U
    BX LDB,0
    BPL   opMOD2
-   BSR   neg_x          ; negate divisor
+   JSR   <neg_x         ; negate divisor
 opMOD2
    BSR   UDIV32
    LEAX  4,U
@@ -1256,6 +1039,242 @@ opMULT16X16
    JMP   <fetch
 
 ***************************************
+* Load on stack the value at stack[x]
+* B=--xxxxx0 (2*x)
+***************************************
+
+
+opLOADSP_0
+   LDD   ,U
+   LDX   2,U
+   PSHU  D,X
+   NEXT
+
+opLOADSP_ MACRO
+opLOADSP_\0
+   LDD   4*\0,U
+   LDX   4*\0+2,U
+   PSHU  D,X
+   LDB   ,Y+
+   BMI   opIMx\0
+   LDX   #opTable
+   LSLB
+   JMP   [B,X]
+opIMx\0
+   JMP   <opIM
+   ENDM
+
+   opLOADSP_ 1
+   opLOADSP_ 2
+   opLOADSP_ 3
+   opLOADSP_ 4
+   opLOADSP_ 5
+   opLOADSP_ 6
+   opLOADSP_ 7
+   opLOADSP_ 8
+   opLOADSP_ 9
+   opLOADSP_ 10
+   opLOADSP_ 11
+   opLOADSP_ 12
+   opLOADSP_ 13
+   opLOADSP_ 14
+   opLOADSP_ 15
+   opLOADSP_ 16
+   opLOADSP_ 17
+   opLOADSP_ 18
+   opLOADSP_ 19
+   opLOADSP_ 20
+   opLOADSP_ 21
+   opLOADSP_ 22
+   opLOADSP_ 23
+   opLOADSP_ 24
+   opLOADSP_ 25
+   opLOADSP_ 26
+   opLOADSP_ 27
+   opLOADSP_ 28
+   opLOADSP_ 29
+   opLOADSP_ 30
+   opLOADSP_ 31
+
+opLOADSP_x
+   LSLB              ; B ~ x*4
+   EORB  #%01000000
+   ANDB  #%01111100  ; clear bit 7 of 4*x
+   LEAX  B,U         ; X points to source
+   LDD   ,X          ; load high word
+   LDX   2,X         ; load low word
+   PSHU  D,X         ; push 32 bits
+   JMP   <fetch      ; next instruction
+
+***************************************
+* Write top of stack at stack[x]
+* B=00xxxxx0 (2*x)
+***************************************
+
+opSTORESP_0
+   LEAU  4,U
+   NEXT
+
+opSTORESP_1
+   PULU  D,X
+   STD   ,U
+   STX   2,U
+   NEXT
+
+opSTORESP_ MACRO
+opSTORESP_\0
+   PULU  D,X
+   STD   4*\0-4,U
+   STX   4*\0-2,U
+   NEXT
+   ENDM
+
+   opSTORESP_ 2
+   opSTORESP_ 3
+   opSTORESP_ 4
+   opSTORESP_ 5
+   opSTORESP_ 6
+   opSTORESP_ 7
+   opSTORESP_ 8
+   opSTORESP_ 9
+   opSTORESP_ 10
+   opSTORESP_ 11
+   opSTORESP_ 12
+   opSTORESP_ 13
+   opSTORESP_ 14
+   opSTORESP_ 15
+   opSTORESP_ 16
+   opSTORESP_ 17
+   opSTORESP_ 18
+   opSTORESP_ 19
+   opSTORESP_ 20
+   opSTORESP_ 21
+   opSTORESP_ 22
+   opSTORESP_ 23
+   opSTORESP_ 24
+   opSTORESP_ 25
+   opSTORESP_ 26
+   opSTORESP_ 27
+   opSTORESP_ 28
+   opSTORESP_ 29
+   opSTORESP_ 30
+   opSTORESP_ 31
+
+opSTORESP_x
+   LSLB              ; B ~ x*4
+   EORB  #%01000000
+   LEAX  B,U         ; X point to dest (bit7 already 0)
+   PULU  D           ; load low word
+   STD   ,X          ; store low word
+   PULU  D           ; load high word
+   STD   2,X         ; store high word
+   JMP   <fetch      ; next instruction
+
+***************************************
+* Adds to TOS the value at stack[x]
+* B=0--xxxx00 (4*x)
+***************************************
+
+opADDSP_0
+   BU LSL,3
+   BU ROL,2
+   BU ROL,1
+   BU ROL,0
+   NEXT
+
+opADDSP_ MACRO
+opADDSP_\0
+   BU LDD,2          ; load low word of source
+   BU ADDD,2+4*\0    ; add low word of TOS
+   BU STD,2          ; store result to TOS (lower word)
+   BU LDD,0+4*\0     ; load high word of source
+*   BCS   opADDSPh\0  ; 3
+*   BNE   opADDSPh\0  ; 3
+*   JMP   <fetch      ; shortcut
+*opADDSPh\0
+   BU ADCB,1         ; add with carry the TOS (high word)
+   BU ADCA,0         ; second byte
+   BU STD,0          ; store result to TOS (high word)
+   NEXT
+   ENDM
+
+   opADDSP_  1
+   opADDSP_  2
+   opADDSP_  3
+   opADDSP_  4
+   opADDSP_  5
+   opADDSP_  6
+   opADDSP_  7
+   opADDSP_  8
+   opADDSP_  9
+   opADDSP_  11
+   opADDSP_  12
+   opADDSP_  13
+   opADDSP_  10
+   opADDSP_  14
+   opADDSP_  15
+
+opADDSP_x
+   LSLB              ; B ~ 4*x
+   ANDB  #%00111100  ; make 4*x postitive
+   LEAX  B,U         ; X point to source
+   BU LDD,2          ; load low word of source
+   BX ADDD,2         ; add low word of TOS
+   BU STD,2          ; store result to TOS (lower word)
+   BU LDD,0          ; load high word of source
+*   BCS   opADDSPh
+*   BNE   opADDSPh
+*   JMP   <fetch
+*opADDSPh
+   BX ADCB,1         ; add with carry the TOS (high word)
+   BX ADCA,0         ; second byte
+   BU STD,0          ; store result to TOS (high word)
+   NEXT
+
+***************************************
+
+opUNKNOWN
+
+opBREAKPT
+   LDA   STATUS
+   ANDA  #%11011111  ; disable timer interrupt
+   STA   STATUS
+   SWI               ; back to monitor
+
+* Pushes stack address
+opPUSHSP
+  IFEQ B0-0
+   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
+   LEAX  ,U
+  ELSE
+   LDX   #STK_SPACE  ; stack address is $01FF:9xxx
+   TFR   U,D
+  ENDC
+   PSHU  D,X
+   NEXT
+
+opPUSHSPADD
+   LDB  ,Y+
+   CMPB #13
+   BEQ  opPUSHSPADDPPOPSP
+   BU LDD,2
+   LSLD
+   LSLD
+   LEAX  D,U
+   BU STX,2
+   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
+   BU STD,0          ; BANk 0, $Dxxx
+   LEAY  -1,Y
+   NEXT
+   
+opPUSHSPADDPPOPSP
+   BU LDD,2
+   LSLD
+   LSLD
+   LEAU  D,U
+   NEXT
+
+***************************************
 * LOGIC
 ***************************************
 
@@ -1268,27 +1287,24 @@ BITWISE MACRO
    \0A  2,U
    \0B  3,U
    STD   2,U
-   JMP   <fetch
+   NEXT
   ENDM
 
 opAND
   IFEQ 1
    BITWISE AND       ; [44] bitwise "and" of TOS with NOS
   ELSE
-   LEAU  4,U
-   LDD   ,U
+   LDD   ,U++
    BEQ   opAND1
-   ANDA  -4,U
-   ANDB  1-4,U
-   STD   ,U
+   ANDA  2,U
+   ANDB  3,U
 opAND1
-   LDD   -2,U
-   * BEQ   opAND2
+   STD   2,U
+   PULU  D
    ANDA  2,U
    ANDB  3,U
    STD   2,U
-* opAND2
-   JMP   <fetch
+   NEXT
   ENDC
 
 opOR
@@ -1301,12 +1317,10 @@ opOR
    ORB   3,U
    STD   2,U
 opOR1
-   LDD   ,U++
-   BEQ opOR2
+   PULU  D
    ORA   2,U
    ORB   3,U
    STD   2,U
-opOR2
    JMP   <fetch
   ENDC
 
@@ -1318,7 +1332,7 @@ opNOT
    COM   1,U
    COM   2,U
    COM   3,U         ; 7*3+6=27
-   JMP   <fetch
+   NEXT
 
 flip2
    LSRA              ; helper to flip A and B bits
@@ -1594,7 +1608,7 @@ opSTOREnorm SET *
 
 opPOPSP
    BU LDU,2
-   JMP   <fetch
+   NEXT
 
 getAddrStk
    IFNE B0-0
@@ -1695,7 +1709,7 @@ outFALSE
 outFALSE_D0
    STD   ,U
    STD   2,U
-   JMP   <fetch
+   NEXT
 
 opULESSTHANOREQUAL
    PULU  D,X
@@ -1717,7 +1731,7 @@ outTRUE
    BU STD,0
    INCB
    BU STD,2
-   JMP   <fetch
+   NEXT
 
 opEQ
    PULU D,X
@@ -1729,7 +1743,7 @@ outTRUE_D0
    BU STD,0
    INCB
    BU STD,2
-   JMP   <fetch
+   NEXT
 
 opNEQ
    PULU D,X
@@ -2082,7 +2096,7 @@ opNEQBRANCH
    BNE   doBRANCH
 noBRANCH
    LEAU  8,U
-   JMP   <fetch
+   NEXT
 
 opPUSHPC
    CLRA               ; 24 bits
