@@ -626,6 +626,17 @@ decode_pos SET decode
 decode_pos SET decode_
   ENDC
 
+opLOADSP_0
+   LDD   ,S
+   LDX   2,S
+   PSHS  D,X
+*   NEXT
+   LDB   ,Y+
+   BMI   opIM
+   LDX   #opTable
+   LSLB
+   JMP   [B,X]
+
 opIM
    BITB  #%01000000  ; [2]
    BEQ   opIMpos     ; [3]
@@ -764,7 +775,7 @@ opADD1
    BNE   fetch
    INC   ,S
 opADD2
-   NEXT
+   BRA   fetch
 
 neg_x
    LDD   #0
@@ -976,12 +987,6 @@ opMULT16X16
 * Load on stack the value at stack[x]
 * B=--xxxxx0 (2*x)
 ***************************************
-
-opLOADSP_0
-   LDD   ,S
-   LDX   2,S
-   PSHS  D,X
-   NEXT
 
 opLOADSP_ MACRO
 opLOADSP_\0
@@ -1567,6 +1572,8 @@ opNEQ
    CMPX  2,S
    BNE   outTRUE
    SUBD  ,S
+   BNE   outTRUE
+   
    BEQ   outFALSE_D0
 outTRUE
    LDD   #0          ; write 1 on top of stack
@@ -1830,9 +1837,8 @@ opEQBRANCH
    LDD   6,S
    BNE   noBRANCH
    * BRA   BRANCH
-
-doBRANCH
-  IFEQ 0
+   
+DO_BRANCH MACRO
    TFR   Y,D
    SUBD  #$A001
    ADDA  <PC_PG+1
@@ -1844,13 +1850,17 @@ doBRANCH
    LSRA              ; get cary back
    ORA   #%10000000
    TFR   D,Y         ; update pc reg
-*
    LDD   <PC_PG
    ADCA  1,S
    ANDB  #$C0        ; align 16k
    STD   <PC_PG      ; update high word of PC
-   LEAS  8,S         ; fixup stack
+   LEAS  \0,S         ; fixup stack
    JMP   <updatePC_D ; update page etc
+   ENDM
+
+doBRANCH
+  IFEQ 0
+   DO_BRANCH 8
   ELSE
    PULS  D,X
    STD   ,S
@@ -1868,6 +1878,18 @@ opEMULATE_x
    TFR   D,X
    LDD   #0
    PSHS  D,X
+   BRA   opCALL
+   
+opCALLPCREL
+   TFR   Y,D
+   SUBD  #$A001
+   ADDA  <PC_PG+1
+   ADDD  2,S
+   STD   2,S
+   LDB   1,S
+   ADCB  <PC_PG
+   CLRA              ; 24 bits
+   STD   ,S
    * BRA   opCALL
 
 opCALL
@@ -1891,8 +1913,7 @@ opCALL
    JMP   <updatePC
 
 opPOPPCREL
-   BSR   addPCREL
-   * BRA   opPOPPC
+   DO_BRANCH 4
 
 opPOPPC
    LDD   2,S         ; lower word of PC
@@ -1904,22 +1925,6 @@ opPOPPC
    STD   <PC_PG      ; update high word of PC
    LEAS  4,S         ; fixup stack
    JMP   <updatePC_D ; update page etc
-
-addPCREL
-   TFR   Y,D
-   SUBD  #$A001
-   ADDA  <PC_PG+1
-   ADDD  2+2,S
-   STD   2+2,S
-   LDB   2+1,S
-   ADCB  <PC_PG
-   CLRA              ; 24 bits
-   STD   2,S
-   RTS
-
-opCALLPCREL
-   BSR   addPCREL
-   BRA   opCALL
 
 opPUSHPC
    CLRA               ; 24 bits
