@@ -79,6 +79,7 @@ okROM SET *
    JSR   INITTIMER
 
 GOZPU
+   LDU   #opTable
    LDS   #$A000-8
    STS   <page       ; force page to be out of address space
    LDD   #0
@@ -633,9 +634,8 @@ opLOADSP_0
 *   NEXT
    LDB   ,Y+
    BMI   opIM
-   LDX   #opTable
    LSLB
-   JMP   [B,X]
+   JMP   [B,U]
 
 opIM
    BITB  #%01000000  ; [2]
@@ -713,10 +713,9 @@ NEXT MACRO
   IFNE  CYCLE_TIMER
    JSR   TIMERINTER
   ENDC
-   BMI   *+8
-   LDX   #opTable
+   BMI   *+5
    LSLB              ; decode the opcode
-   JMP   [B,X]       ; jump to instruction
+   JMP   [B,U]       ; jump to instruction
    JMP   <opIM
   ENDC
   ENDM
@@ -731,9 +730,8 @@ decode
   ENDC
    BMI   opIM        ; opcode=1xxxxxxx ? yes => immediate value
 decode_
-   LDX   #opTable
    LSLB              ; decode the opcode
-   JMP   [B,X]       ; jump to instruction
+   JMP   [B,U]       ; jump to instruction
 
 * handler for opcode out of page   
 outOfPageChk
