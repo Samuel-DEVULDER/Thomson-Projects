@@ -389,6 +389,7 @@ int main ()
   small_printf ("\n");
 
   User_Time = End_Time - Begin_Time;
+  small_printf("User Time: %ds\n",(int)(User_Time/1000000ll));
 
   if (User_Time < Too_Small_Time*1000000ll)
   {
@@ -534,44 +535,9 @@ register int    l;
 #endif
 
 
-extern int _hardware;
-/* _cpu_config==0 => Abel
- * _cpu_config==1 => Zeta
- * _cpu_config==2 => Phi
- */
-extern int _cpu_config;
-static volatile int *UART;
-static volatile unsigned int *TIMER;
-volatile int *MHZ;
+static volatile unsigned int *TIMER = (void*)0x080a0014;
 
-static const int mhz=64;
-
-void __attribute__ ((weak)) _initIO(void)
-{
-	if (_hardware)
-	{
-		if (_cpu_config==2)
-		{
-			/* Phi board addresses */
-			UART=(volatile int *)0x080a000c;
-			TIMER=(volatile int *)0x080a0014;
-			MHZ=(volatile int *)&mhz;
-		} else
-		{
-			/* Abel board */
-			UART=(volatile int *)0xc000;
-			TIMER=(volatile int *)0x9000;
-			MHZ=(volatile int *)0x8800;
-		}
-	} else
-	{
-		UART=(volatile int *)0x80000024;
-		TIMER=(volatile int *)0x80000100;
-		MHZ=(volatile int *)0x80000200;
-	}
-}
-
-unsigned long long __attribute__ ((weak)) _readCycles()
+unsigned long long _readCycles()
 {
 	long long clock;
 	unsigned int i;
