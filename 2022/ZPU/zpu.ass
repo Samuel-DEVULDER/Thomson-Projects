@@ -627,16 +627,6 @@ decode_pos SET decode
 decode_pos SET decode_
   ENDC
 
-opLOADSP_0
-   LDD   ,S
-   LDX   2,S
-   PSHS  D,X
-*   NEXT
-   LDB   ,Y+
-   BMI   opIM
-   LSLB
-   JMP   [B,U]
-
 opIM
    BITB  #%01000000  ; [2]
    BEQ   opIMpos     ; [3]
@@ -645,7 +635,7 @@ opIM
    LDD   #-1         ; [3]
    PSHS  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
-   BPL   decode_pos
+   BPL decode_
    BRA   opIM2
 opIMpos
    LDX   #$FF80      ; [3]
@@ -653,7 +643,7 @@ opIMpos
    LDD   #0          ; [3]
    PSHS  D,X         ; [9] = [23]
    FETCH_INSTRUCTION
-   BPL   decode_pos
+   BPL decode_
 
 opIM2
    LSLB
@@ -985,6 +975,41 @@ opMULT16X16
 * Load on stack the value at stack[x]
 * B=--xxxxx0 (2*x)
 ***************************************
+
+opLOADSP_0
+   LDD   ,Y
+   BPL   opLOADSP_0x
+   CMPB  #5
+   BNE   opLOADSP_0x
+   LDX   ,S
+   LDB   2,S
+   LSLA
+   ASRA
+   BPL   opLOADSP_0p
+   DECB
+   LEAX  -1,X
+opLOADSP_0p
+   ADDA  3,S
+   BCC   opLOADSP_0nx
+   INCB
+   BNE   opLOADSP_0nx
+   LEAX  1,X
+opLOADSP_0nx
+   LEAY  2,Y
+   STA   ,-S
+   STB   ,-S
+   PSHS  X
+   NEXT
+
+opLOADSP_0x
+   LDD   ,S
+   LDX   2,S
+   PSHS  D,X
+   NEXT
+*   LDB   ,Y+
+*   BMI   opIM
+*   LSLB
+*   JMP   [B,U]
 
 opLOADSP_ MACRO
 opLOADSP_\0
