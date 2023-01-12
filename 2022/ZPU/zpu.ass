@@ -1270,6 +1270,19 @@ opXOR
    BITWISE EOR       ; bitwise "xor" of TOS with NOS
 
 opNOT
+   LDD   ,Y
+   SUBD  #$8106
+   BNE   opNOTx
+   LEAY  2,Y
+   LDD   #1
+   ANDB  3,S
+   EORB  #1
+   STD   2,S
+   CLRB
+   STB   ,S
+   NEXT
+   
+opNOTx
    COM   ,S          ; bitwise complement of TOS
    COM   1,S
    COM   2,S
