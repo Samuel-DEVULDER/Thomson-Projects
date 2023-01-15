@@ -2,9 +2,10 @@
    ORG   $7000
 
 SAFE        SET   0           ; force long addressing for long ops (slower)
-TRACE       SET   0           ; traces executed instructions
 LPR         SET   0           ; also output result to printer on parallel port
+TRACE       SET   0           ; traces executed instructions
 CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) ?
+FUSE        SET   1
 
 FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 STACK_SIZE  SET   2048        ; size of stack
@@ -626,6 +627,8 @@ decode_pos SET decode
   ELSE
 decode_pos SET decode_
   ENDC
+  
+* FUSE opIM_x opPUSHSPADD opPOPSP
 
 opIM
    BITB  #%01000000  ; [2]
@@ -696,8 +699,8 @@ updatePC_D
    JSR  <updatePage  ; update page if needed
    
 NEXT MACRO
-  IFEQ 1
-    JMP  <fetch
+  IFNE 0
+    JMP  <fetch      ; -- 397 --> 389s
   ELSE
    FETCH_INSTRUCTION
   IFNE  CYCLE_TIMER
@@ -748,6 +751,8 @@ opSUB
    LEAX  ,S
    BSR   neg_x
    * BRA   opADD
+
+* FUSE opADD opSTORESP_x
 
 opADD
    LDD   ,S++
@@ -977,6 +982,8 @@ opMULT16X16
 ***************************************
 
 opLOADSP_0
+  IFNE FUSE
+* opLOASP_0 opIM_x opADD  404s --> 397s (-0.98%)
    LDD   ,Y
    BPL   opLOADSP_0x
    CMPB  #5
@@ -1000,16 +1007,13 @@ opLOADSP_0nx
    STB   ,-S
    PSHS  X
    NEXT
-
 opLOADSP_0x
+  ENDC
+  
    LDD   ,S
    LDX   2,S
    PSHS  D,X
    NEXT
-*   LDB   ,Y+
-*   BMI   opIM
-*   LSLB
-*   JMP   [B,U]
 
 opLOADSP_ MACRO
 opLOADSP_\0
@@ -1130,6 +1134,7 @@ opSTORESP_x
 * B=0--xxxx00 (4*x)
 ***************************************
 
+
 opADDSP_0
    LSL   3,S
    ROL   2,S
@@ -1139,13 +1144,62 @@ opADDSP_0
 
 opADDSP_ MACRO
 opADDSP_\0
-   LDD   2,S      ; load low word of source
-   ADDD  2+4*\0,S ; add low word of TOS
+  IFNE FUSE
+* opADDSP_x opSTORESP_x --> almost no gain
+   LDB   ,Y
+   CMPB  #80+\0
+   BNE   opADDSP_x\0
+   LEAY  1,Y
+  IFNE 0    ; 77980
+   LDD   ,S++
+   BEQ   opADDSP_c\0
+   ADDD  4*\0-2,S
+   STD   4*\0-2,S
+opADDSP_c\0
+   PULS  D
+   ADDD  4*\0-2,S
+   STD   4*\0-2,S
+   BCC   opADDSP_d\0
+   INC   4*\0-3,S
+   BNE   opADDSP_d\0
+   INC   4*\0-4,S
+opADDSP_d\0
+  ELSE      ; 77840
+   LDD   4*\0+2,S
+   ADDD  2,S
+   STD   4*\0+2,S
+   LDD   ,S
+   LEAS  4,S
+   ADCB  4*\0-4+1,S
+   ADCA  4*\0-4,S
+   STD   4*\0-4,S
+  ENDC
+   NEXT
+opADDSP_x\0
+  ENDC
+  IFNE 1          ; 77860 --> fastest
+   LDD   0+4*\0,S ; load high word of source
+   BEQ   opADDSP_a\0
+   ADDD  ,S
+   STD   ,S
+opADDSP_a\0
+   LDD   2+4*\0,S ; load high word of source
+   ADDD  2,S
+   STD   2,S
+   BCC   opADDSP_b\0
+   INC   1,S
+   BNE   opADDSP_b\0
+   INC   ,S
+opADDSP_b\0
+  ELSE            ; 77920
+   LDD   2+4*\0,S ; load low word of source
+   ADDD  2,s      ; add low word of TOS
    STD   2,S      ; store result to TOS (lower word)
    LDD   0+4*\0,S ; load high word of source
    ADCB  1,S      ; add with carry the TOS (high word)
    ADCA  ,S       ; second byte
    STD   ,S       ; store result to TOS (high word)
+  ENDC
    NEXT
    ENDM
 
@@ -1196,25 +1250,29 @@ opPUSHSP
    NEXT
 
 opPUSHSPADD
+  IFNE FUSE
+* opPUSHSPADD opPOPSP  408s --> 404s (-0.99%)
    LDB   ,Y+
    CMPB  #13
-   BEQ   opPUSHSPADDPPOPSP
-   LDD   #STK_SPACE  ; stack address is $01FF:9xxx
+   BNE   opPUSHSPADDx
+   LDD   2,S
+   LSLD
+   LSLD
+   LEAS  D,S
+   NEXT
+opPUSHSPADDx
+   LEAY  -1,Y
+  ENDC
+
+   LDD   #STK_SPACE  ; stack address is $07FF:9xxx
    STD   ,S          ; BANk 0, $Dxxx
    LDD   2,S
    LSLD
    LSLD
    LEAX  D,S
    STX   2,S
-   LEAY  -1,Y
    NEXT
-   
-opPUSHSPADDPPOPSP
-   LDD   2,S
-   LSLD
-   LSLD
-   LEAS  D,S
-   NEXT
+
 
 ***************************************
 * LOGIC
@@ -1270,6 +1328,8 @@ opXOR
    BITWISE EOR       ; bitwise "xor" of TOS with NOS
 
 opNOT
+  IFNE FUSE
+* opNOT opIM_1 opAND   411s -> 408s (-0.7%)
    LDD   ,Y
    SUBD  #$8106
    BNE   opNOTx
@@ -1279,10 +1339,10 @@ opNOT
    EORB  #1
    STD   2,S
    CLRB
-   STB   ,S
+   STD   ,S
    NEXT
-   
 opNOTx
+  ENDC
    COM   ,S          ; bitwise complement of TOS
    COM   1,S
    COM   2,S
@@ -1484,6 +1544,8 @@ opSTOREIO_end
    LEAS  8,S         ; fixup stack
    JMP   <fetch
 
+* opLOAD IM_-1 EQ
+
 opLOAD SET *
    LDA   ,S
    CMPA  #STK_SPACE/256
@@ -1589,6 +1651,8 @@ opULESSTHANOREQUAL
    CMPX  2,S
    BHI   outFALSE_D0
    BRA   outTRUE_D0
+
+* opEQ opNOT --> opNEQ
 
 opEQ
    PULS  D,X
