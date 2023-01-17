@@ -1,5 +1,7 @@
 (main)zpu
    ORG   $7000
+   
+   
 
 SAFE        SET   0           ; force long addressing for long ops (slower)
 LPR         SET   0           ; also output result to printer on parallel port
@@ -46,15 +48,33 @@ LSLD  MACRO
 
 main
    LEAS  main,PCR
-
-   LDD   #PAGE0+$1000
+   
+* SETS DP
+   LDD   #PAGE0
    TFR   B,DP
    SETDP PAGE0
-
+   
+   BSR   INITLPR
+   
+* DETERMINE BANKING ALGORITHM
+   STA   <TOGEN      ; A=0
+   LDB   >$FFF0
+   CMPB  #3          ; B>=3 for new machines
+   BNE   SKIP_GACFG
+   STB   <TOGEN      ; not null
+   LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
    STA   >LGA7       ; RAM
+SKIP_GACFG
+   BSR   INITMEMORY
 
+   LDX   #FILENAME
+   JSR   LOADFILE
+
+   JSR   INITTIMER
+GOZPU
+* CONFIGURE ROM sentinel
    LDA   >$E000      ; $E00 sentinel
    BPL   okROM
    JSR   PUTSTR
@@ -70,16 +90,7 @@ okROM SET *
    STD   <outOfPageChk2
    LDD   #outOfPageChk
    STD   ,X
-
-   BSR   INITLPR
-   BSR   INITMEMORY
-
-   LDX   #FILENAME
-   JSR   LOADFILE
-
-   JSR   INITTIMER
-
-GOZPU
+* init CPU
    LDU   #opTable
    LDS   #$A000-8
    STS   <page       ; force page to be out of address space
@@ -95,11 +106,13 @@ INITLPR
    JSR   >RSCO
    LDB   #$08        ; to write bytes
    STB   >RSOPC
-   LDB   #12
-   JMP   >RSCO
-   ELSE
-   RTS
    ENDC
+   JSR   PUTS
+   FCB   $1B,$5A,$1B,$66
+   FCB   $11,$14,$1B,$44
+   FCB   $1B,$56,128+12
+   RTS
+   
 
 ***************************************
 * MEMORY
@@ -110,78 +123,75 @@ LAST_PAGE
 INITMEMORY
    BSR   FINDMAX        ; guess LAST_PAGE
    BSR   PRINTMAX       ; prints a message about it
-   LDX   #$A000
    LDA   LAST_PAGE      ; clear all banks starting from the last one
 CLRPAGES
-   STA   LGA5           ; update bank
-   CMPA  #FIRST_PAGE    ; first page ?
-   BEQ   CLRHEAP        ; yes => only clear HEAP data
-   BSR   CLRMEM         ; no => clear $A000..$DFFF
+   STA   ,-S
+   JSR   <BANK          ; update bank
+   LDA   ,S+
+   BSR   CLRPAGE        ; no => clear $A000..$DFFF
    DECA                 ; next page
-   BRA   CLRPAGES
-CLRHEAP
+   BNE   CLRPAGES
+   JSR   <BANK          ; update bank
+* CLEAR FAT-$A000  = stack space"
+   CLRA
    LDX   #FAT
-   * BRA   CLRMEM
-
-CLRMEM
-   PSHS  D,X         ; clears a memory zone upto $E000
+CLRSTACK
+   STA    ,X+       
+   CMPX   #$A000
+   BNE    CLRSTACK
+* CLEAR $A000-$DFFF
+CLRPAGE
+   PSHS  D,X,Y,U,DP,CC       ; clears a memory zone upto $E000
+   ORCC  #$50
+   STS   CLRPAGE2
    LDD   #0
-   BRA   CLRMEM2
-CLRMEM1
-   STD   ,X
-   STD   2,X
-   STD   4,X
-   STD   6,X
-   STD   8,X
-   STD   10,X
-   STD   12,X
-   STD   14,X
-   LEAX  16,X
-CLRMEM2
-   CMPX  #$E000-16
-   BLS   CLRMEM1
-   BRA   CLRMEM4
-CLRMEM3
-   STB   ,X+
-CLRMEM4
-   CMPX  #$E000
-   BLO   CLRMEM3
-   PULS  D,X,PC
-FINDMAX
-   PSHS  D,X            ; find maximum page (LAST_PAGE)
-   LDX   #$A000
-   LDD   #FIRST_PAGE-1
-FINDMAX1
-   INCB
-   CMPB  #$20
-   BEQ   FINDMAX3
-   STB   LGA5
-   STB   ,X
-FINDMAX2
-   BSR   CHKSIG         ; check sucessfull writing of 256 random values at X
-   BNE   FINDMAX3       ; if one fails cut scan here
-   DECA                 ; decrement
-   BNE   FINDMAX2       ; 256 success ? no=>loop
-   BRA   FINDMAX1       ; yes => valid bank, try next one
-FINDMAX3
+   TFR   B,DP
+   TFR   D,X
+   LEAY  ,X
+   LEAU  ,X
+   LDS   #$E000
+CLRPAGE1
+   PSHS  DP,A,X,Y,U           ; 16ko = 8 x 8 x 256
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
+   PSHS  DP,A,X,Y,U
    DECB
-   STB   LAST_PAGE
-   PULS  D,X,PC
+   BNE   CLRPAGE1
+   LDS   #0
+CLRPAGE2 SET *-2
+   PULS  D,X,Y,U,DP,CC,PC
 
-CHKSIG
-   PSHS  D           ; suffle bits (multiply by 5)
-   LDA   ,X
-   LDB   #5
-   MUL
-   STB   ,X
-   LDB   1,X
-   LDA   #5
-   MUL
-   ORB   #1
-   ADDA  ,X
-   STD   ,X
-   SUBD  ,X          ; $5FFE is mapped on $DFFE when we wrapped around the number of pages
-   PULS  D,PC
+FINDMAX
+   PSHS  D,X,U          ; find maximum page (LAST_PAGE)
+   LDX   #256*'N+'K
+   LDU   #$A000
+   LDD   #$FF00+'B
+FINDMAX1
+   INCA
+   CMPA  #$20-FIRST_PAGE
+   BEQ   FINDMAX3
+   PSHS  D
+   JSR   <BANK
+   PULS  D
+   CMPX  2,U
+   BNE   FINDMAX2
+   CMPB  1,U
+   BEQ   FINDMAX3
+FINDMAX2
+   STD   ,U
+   CMPD  ,U
+   BNE   FINDMAX3
+   STX   2,U
+   CMPX  2,U
+   BEQ   FINDMAX1
+FINDMAX3
+   DECA
+   STA   LAST_PAGE
+   PULS  D,X,U,PC
 
 PRINTMAX
    PSHS  D
@@ -190,7 +200,7 @@ PRINTMAX
    FCC   /Found/
    FCB   128+32
    LDB   LAST_PAGE
-   SUBB  #FIRST_PAGE-1
+   INCB
    JSR   DECIMAL
    JSR   PUTSTR
    FCC   /x16k free memory/
@@ -292,8 +302,8 @@ LOADFILE
    BSR   PUTSTR
    FCC   /../
    FCB   128+'.
-   LDA   #FIRST_PAGE
    LDX   1,S
+   CLRA 
    LDU   #$A000
    BSR   LOAD
    BSR   PUTSTR
@@ -356,10 +366,11 @@ LECFA EQU   $E00D    ; lecture fat
 RECFI EQU   $E010    ; recherche fichier
 CONVB EQU   $E01F    ; converison bloc
 DKCOM EQU   $E82A    ; commande d7
+
 LOAD
    PSHS  D,X,U,DP    ; Load a file from minidos
-   STA   LGA5        ; set bank
    PSHS  A           ; set BANK cpt
+   JSR   <BANK       ; set bank
    SETDP $60
    LDD   #$6000
    TFR   A,DP
@@ -433,7 +444,8 @@ LOAD5
    CLRA           efface carry
 LOAD6
    LDD   ,S+      ; fixe cpt BANK
-   STB   LGA5     ; restore init BANK
+   TFR   B,A
+   JSR   >BANK    ; restore init BANK
    PULS  D,X,U,DP,PC
 ERRIO
    JSR   PUTSTR
@@ -469,6 +481,7 @@ LDPTR SET   *-2
    LEAX  ,U
    LDU   DKBUF   Ptr buffer secteur
    BCC   TFRslow
+
 TFRfast
    LDA   ,U+     |
    STA   ,X+     | Transfere
@@ -477,24 +490,24 @@ TFRfast
 TFR1
    STX   LDPTR   Sauve implantation
    RTS
+   
 TFRslow
    LDA   ,U+     |
    STA   ,X+     | Transfere
    CMPX  #$E000
-   BEQ   TFRslow2
-   DECB          | les donnees
-   BNE   TFRslow |
-   BRA   TFR1
-TFRslow2
+   BNE   TFRslow2
+   
    LDX   #$A000
    LDA   3,S
    INCA
    CMPA  LAST_PAGE
    BHI   ERROM
-   STA   3,S
-   STA   LGA5
+   STB   ,-S
+   JSR   >BANK   
+   LDB   ,S+
+TFRslow2
    DECB          | les donnees
-   BNE   TFRfast
+   BNE   TFRslow |
    BRA   TFR1
 
    SETDP 0
@@ -504,6 +517,7 @@ TFRslow2
 ***************************************
 TIMEPT   EQU   $6027
 STATUS   EQU   $6019
+IRQPT    EQU   $6021
 KBIN     EQU   $E830
 
 TIMER_CTR
@@ -523,13 +537,14 @@ INITTIMER
    PSHU  D,X
    PSHU  D,X
   IFEQ  CYCLE_TIMER
+   LDA   STATUS
+   ORA   #%00100100
+   STA   STATUS
    LDX   #TIMERINTER
    STX   TIMEPT
-   LDA   STATUS
-   ORA   #%00100000
-   STA   STATUS
+*   STX   IRQPT
   ENDC
-   ANDCC #$FF-$50
+   ANDCC #$AF
    PULS  D,X,PC
 
 * 100 ms = 100 000 us
@@ -573,6 +588,35 @@ TIMERINTERX
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
    SETDP PAGE0
+   
+***************************************
+* Changes bank at $A000 
+* A = bank number
+* D = trash
+***************************************
+BANK
+   LDB   #0
+TOGEN SET *-1
+   BEQ   COMMUT
+   ADDA  #FIRST_PAGE
+   STA   >LGA5
+   RTS
+   FCB   $0F,$17,$E7,$67,$A7,$27
+COMMUT
+   PSHS  X,U 
+COMMUT1
+   SUBA  #6
+   BCC   COMMUT1
+   LDU   #$E7C0    ; U pointe sur les PIA 
+   LDB   11,U      ; Lecture du registre CRB en E7CB 
+   ANDB  #$FB      ; Passage du PIA en mode direction 
+   STB   11,U   
+   LDX   #COMMUT   ; X pointe sur l'adresse de la table des valeurs a mettre dans le PLA 
+   LDA   A,X       ; Lecture de la valeur de la table 
+   STA   9,U       ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
+   ORB   #$04      ; Passage du PIA en mode donnees 
+   STB   11,U      ; (retour aux conditions depart) 
+   PULS  X,U,PC   ; Retour  
 
 FETCH_INSTRUCTION MACRO
    IFNE  TRACE
@@ -614,11 +658,7 @@ page equ *-2         ; page index (dynamic code)
    ROLA
    LSLB
    ROLA
-* map proper BANk onto $A000...$DFFF space
-* A=BANk number
-chgBANK
-   ADDA  #FIRST_PAGE
-   STA   LGA5        ; need to check, might use PIA instead
+   JMP   <BANK
 donePage
    RTS               ; done
 
