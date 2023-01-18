@@ -613,15 +613,15 @@ COMMUT
 COMMUT1
    SUBA  #6
    BCC   COMMUT1
-   LDU   #$E7C0    ; U pointe sur les PIA 
-   LDB   11,U      ; Lecture du registre CRB en E7CB 
+   LDU   #$E7CB
+   LDB   ,U        ; Lecture du registre CRB en E7CB 
    ANDB  #$FB      ; Passage du PIA en mode direction 
-   STB   11,U   
+   STB   ,U   
    LDX   #COMMUT   ; X pointe sur l'adresse de la table des valeurs a mettre dans le PLA 
    LDA   A,X       ; Lecture de la valeur de la table 
-   STA   9,U       ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
+   STA   -2,U      ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
    ORB   #$04      ; Passage du PIA en mode donnees 
-   STB   11,U      ; (retour aux conditions depart) 
+   STB   ,U        ; (retour aux conditions depart) 
    PULS  D,X,U,PC  ; Retour  
 
 FETCH_INSTRUCTION MACRO
