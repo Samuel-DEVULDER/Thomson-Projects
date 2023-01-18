@@ -609,20 +609,20 @@ BANK
    RTS
    FCB   $0F,$17,$E7,$67,$A7,$27
 COMMUT
-   PSHS  D,X,U 
+   PSHS  D,U 
 COMMUT1
    SUBA  #6
    BCC   COMMUT1
+   LDU   #COMMUT   ; XUpointe sur l'adresse de la table des valeurs a mettre dans le PLA 
+   LDA   A,U       ; Lecture de la valeur de la table 
    LDU   #$E7CB
    LDB   ,U        ; Lecture du registre CRB en E7CB 
    ANDB  #$FB      ; Passage du PIA en mode direction 
    STB   ,U   
-   LDX   #COMMUT   ; X pointe sur l'adresse de la table des valeurs a mettre dans le PLA 
-   LDA   A,X       ; Lecture de la valeur de la table 
    STA   -2,U      ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
    ORB   #$04      ; Passage du PIA en mode donnees 
    STB   ,U        ; (retour aux conditions depart) 
-   PULS  D,X,U,PC  ; Retour  
+   PULS  D,U,PC  ; Retour  
 
 FETCH_INSTRUCTION MACRO
    IFNE  TRACE
