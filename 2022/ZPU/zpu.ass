@@ -610,7 +610,6 @@ BANK
    FCB   $0F,$17,$E7,$67,$A7,$27,$0F
 COMMUT
    PSHS  D,U 
-   SUBA  #7+2+2
    LDU   #COMMUT-7 ; U pointe sur l'adresse de la table des valeurs a mettre dans le PLA 
    LDA   A,U       ; Lecture de la valeur de la table 
    LDU   #$E7CB
