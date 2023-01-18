@@ -57,18 +57,18 @@ main
    BSR   INITTTY
    
 * DETERMINE BANKING ALGORITHM
-   LDA   #$20        ; A="BRA"
    LDB   >$FFF0
    CMPB  #3          ; B>=3 for new machines
+   LDD   #$200D      ; A="BRA COMMUT"; CARRY unchanged.
    BLO   SET_BANKALG 
    LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
    STA   >LGA7       ; RAM
-   LDA   #$81        ; A="CMP"
-   STA   <updatePageBank
+   LDD   #$8B00+FIRST_PAGE ; A="ADDA #FIRST_PAGE"
+   STD   <updatePageBank
 SET_BANKALG
-   STA   <BANK
+   STD   <BANK
    BSR   INITMEMORY
 
    LDX   #FILENAME
@@ -603,7 +603,7 @@ PAGE0   SET   */256
 ***************************************
 BANK
    BRA   COMMUT    ; will becomle CMPA #nn on TO8+
-   ADDA  #FIRST_PAGE
+*   ADDA  #FIRST_PAGE
    STA   >LGA5
    SUBA  #FIRST_PAGE
    RTS
@@ -663,7 +663,7 @@ page equ *-2         ; page index (dynamic code)
    ROLA
 updatePageBank
    JMP   <BANK
-   ADDA  #FIRST_PAGE
+*   ADDA  #FIRST_PAGE
    STA   >LGA5
 donePage
    RTS               ; done
