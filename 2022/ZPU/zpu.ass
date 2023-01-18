@@ -54,7 +54,7 @@ main
    TFR   B,DP
    SETDP PAGE0
    
-   BSR   INITLPR
+   BSR   INITTTY
    
 * DETERMINE BANKING ALGORITHM
    STA   <TOGEN      ; A=0
@@ -99,7 +99,14 @@ okROM SET *
    PSHS  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
 
-INITLPR
+INITTTY
+   JSR   $E800
+   LDX   #INITTTYs
+   LDB   ,X+
+INITTTY1
+   JSR   >$E803
+   LDB   ,X+
+   BNE   INITTTY1
    IFNE  LPR         ; open parallel port
    LDB   #$40
    STB   >RSOPC
@@ -107,12 +114,16 @@ INITLPR
    LDB   #$08        ; to write bytes
    STB   >RSOPC
    ENDC
-   JSR   PUTS
-   FCB   $1B,$5A,$1B,$66
-   FCB   $11,$14,$1B,$44
-   FCB   $1B,$56,128+12
-   RTS
-   
+   LDB   #12
+   JMP   PUTCHAR
+INITTTYs
+   FCB   $1B,$5B     ; 80x25
+   FCB   $1B,$42     ; FG=GREEN
+   FCB   $1B,$50     ; BG=BLACK
+   FCB   $1B,$60     ; BD=BLACK
+   FCB   $0C         ; CLS
+   FCB   $1B,$68     ; COLOR OFF
+   FCB   $11,0       ; CURSOR ON
 
 ***************************************
 * MEMORY
