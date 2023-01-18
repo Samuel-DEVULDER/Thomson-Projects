@@ -607,13 +607,10 @@ BANK
    STA   >LGA5
    SUBA  #FIRST_PAGE
    RTS
-   FCB   $0F,$17,$E7,$67,$A7,$27
+   FCB   $0F,$17,$E7,$67,$A7,$27,$0F
 COMMUT
    PSHS  D,U 
-COMMUT1
-   SUBA  #6
-   BCC   COMMUT1
-   LDU   #COMMUT   ; XUpointe sur l'adresse de la table des valeurs a mettre dans le PLA 
+   LDU   #COMMUT-7 ; XUpointe sur l'adresse de la table des valeurs a mettre dans le PLA 
    LDA   A,U       ; Lecture de la valeur de la table 
    LDU   #$E7CB
    LDB   ,U        ; Lecture du registre CRB en E7CB 
