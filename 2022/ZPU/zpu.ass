@@ -50,23 +50,25 @@ main
    LEAS  main,PCR
    
 * SETS DP
-   LDD   #PAGE0
-   TFR   B,DP
+   LDA   #PAGE0
+   TFR   A,DP
    SETDP PAGE0
    
    BSR   INITTTY
    
 * DETERMINE BANKING ALGORITHM
-   STA   <TOGEN      ; A=0
+   LDA   #$20        ; A="BRA"
    LDB   >$FFF0
    CMPB  #3          ; B>=3 for new machines
-   BNE   SKIP_GACFG
-   STB   <TOGEN      ; not null
+   BNE   SET_BANKALG 
    LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
    STA   >LGA7       ; RAM
-SKIP_GACFG
+   LDA   #$81        ; A="CMP"
+   STA   <updatePageBank
+SET_BANKALG
+   STA   <BANK
    BSR   INITMEMORY
 
    LDX   #FILENAME
@@ -136,15 +138,12 @@ INITMEMORY
    BSR   PRINTMAX       ; prints a message about it
    LDA   LAST_PAGE      ; clear all banks starting from the last one
 CLRPAGES
-   STA   ,-S
    JSR   <BANK          ; update bank
-   LDA   ,S+
    BSR   CLRPAGE        ; no => clear $A000..$DFFF
    DECA                 ; next page
    BNE   CLRPAGES
    JSR   <BANK          ; update bank
 * CLEAR FAT-$A000  = stack space"
-   CLRA
    LDX   #FAT
 CLRSTACK
    STA    ,X+       
@@ -185,9 +184,7 @@ FINDMAX1
    INCA
    CMPA  #$20-FIRST_PAGE
    BEQ   FINDMAX3
-   PSHS  D
    JSR   <BANK
-   PULS  D
    CMPX  2,U
    BNE   FINDMAX2
    CMPB  1,U
@@ -513,9 +510,7 @@ TFRslow
    INCA
    CMPA  LAST_PAGE
    BHI   ERROM
-   STB   ,-S
    JSR   >BANK   
-   LDB   ,S+
 TFRslow2
    DECB          | les donnees
    BNE   TFRslow |
@@ -603,18 +598,16 @@ PAGE0   SET   */256
 ***************************************
 * Changes bank at $A000 
 * A = bank number
-* D = trash
 ***************************************
 BANK
-   LDB   #0
-TOGEN SET *-1
-   BEQ   COMMUT
+   BRA   COMMUT
    ADDA  #FIRST_PAGE
    STA   >LGA5
+   SUBA  #FIRST_PAGE
    RTS
    FCB   $0F,$17,$E7,$67,$A7,$27
 COMMUT
-   PSHS  X,U 
+   PSHS  D,X,U 
 COMMUT1
    SUBA  #6
    BCC   COMMUT1
@@ -627,7 +620,7 @@ COMMUT1
    STA   9,U       ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
    ORB   #$04      ; Passage du PIA en mode donnees 
    STB   11,U      ; (retour aux conditions depart) 
-   PULS  X,U,PC   ; Retour  
+   PULS  D,X,U,PC  ; Retour  
 
 FETCH_INSTRUCTION MACRO
    IFNE  TRACE
@@ -669,7 +662,10 @@ page equ *-2         ; page index (dynamic code)
    ROLA
    LSLB
    ROLA
+updatePageBank
    JMP   <BANK
+   ADDA  #FIRST_PAGE
+   STA   >LGA5
 donePage
    RTS               ; done
 
