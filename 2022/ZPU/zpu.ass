@@ -60,7 +60,7 @@ main
    LDA   #$20        ; A="BRA"
    LDB   >$FFF0
    CMPB  #3          ; B>=3 for new machines
-   BNE   SET_BANKALG 
+   BLO   SET_BANKALG 
    LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
@@ -102,7 +102,9 @@ okROM SET *
    JMP   opPOPPC     ; and off we go
 
 INITTTY
-   JSR   $E800
+*   JSR   $E800
+   LDD   #$A559
+   STD   >$60FE
    LDX   #INITTTYs
    LDB   ,X+
 INITTTY1
@@ -600,7 +602,7 @@ PAGE0   SET   */256
 * A = bank number
 ***************************************
 BANK
-   BRA   COMMUT
+   BRA   COMMUT    ; will becomle CMPA #nn on TO8+
    ADDA  #FIRST_PAGE
    STA   >LGA5
    SUBA  #FIRST_PAGE
@@ -649,11 +651,11 @@ getAddrMapped
    ADDA  #$A0        ; make it point to $A000...$DFFF
    TFR   D,X         ; X updated
    LDD   2+1,S       ; load 16kb page section of address
+   ANDB  #$C0        ; just keep the 2 top bits
 
 * updates page when neeeded
 * D=high bytes of the 24bits address
 updatePage
-   ANDB  #$C0        ; just keep the 2 top bits
    CMPD  #page       ; compare with current page index
 page equ *-2         ; page index (dynamic code)
    BEQ   donePage    ; same => just return
