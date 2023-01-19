@@ -2004,6 +2004,11 @@ opEQBRANCH
    * BRA   BRANCH
    
 DO_BRANCH MACRO
+   LDD   1,S
+   BEQ   DO_Bp\1
+   ADDD  #1
+   BEQ   DO_Bm\1
+DO_B2\1   
    TFR   Y,D
    SUBD  #$A001
    ADDA  <PC_PG+1
@@ -2021,11 +2026,31 @@ DO_BRANCH MACRO
    STD   <PC_PG      ; update high word of PC
    LEAS  \0,S         ; fixup stack
    JMP   <updatePC_D ; update page etc
+
+DO_Bp\1
+   LDB   3,S
+   LEAX  D,Y
+   CMPX  #$E001
+   BCC   DO_B2\1
+   LEAY  -1,X
+   LEAS  \0,S
+   NEXT
+   
+DO_Bm\1
+   COMA
+   LDB   3,S
+   LEAX  D,Y
+   CMPX  #$A001
+   BCS   DO_B2\1
+   LEAY  -1,X
+   LEAS  \0,S
+   NEXT
+   
    ENDM
 
 doBRANCH
   IFEQ 0
-   DO_BRANCH 8
+   DO_BRANCH 8,doBRANCH
   ELSE
    PULS  D,X
    STD   ,S
@@ -2078,7 +2103,7 @@ opCALL
    JMP   <updatePC
 
 opPOPPCREL
-   DO_BRANCH 4
+   DO_BRANCH 4,opPOPPCREL
 
 opPOPPC
    LDD   2,S         ; lower word of PC
