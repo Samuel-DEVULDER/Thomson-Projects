@@ -54,7 +54,7 @@ main
    TFR   A,DP
    SETDP PAGE0
    
-   BSR   INITTTY
+   JSR   INITTTY
    
 * DETERMINE BANKING ALGORITHM
    LDB   >$FFF0
@@ -100,34 +100,6 @@ okROM SET *
    LDX   #0
    PSHS  D,X         ; push address $0000 0000
    JMP   opPOPPC     ; and off we go
-
-INITTTY
-*   JSR   $E800
-   LDD   #$A559
-   STD   >$60FE
-   LDX   #INITTTYs
-   LDB   ,X+
-INITTTY1
-   JSR   >$E803
-   LDB   ,X+
-   BNE   INITTTY1
-   IFNE  LPR         ; open parallel port
-   LDB   #$40
-   STB   >RSOPC
-   JSR   >RSCO
-   LDB   #$08        ; to write bytes
-   STB   >RSOPC
-   ENDC
-   LDB   #12
-   JMP   PUTCHAR
-INITTTYs
-   FCB   $1B,$5B     ; 80x25
-   FCB   $1B,$42     ; FG=GREEN
-   FCB   $1B,$50     ; BG=BLACK
-   FCB   $1B,$60     ; BD=BLACK
-   FCB   $0C         ; CLS
-   FCB   $1B,$68     ; COLOR OFF
-   FCB   $11,0       ; CURSOR ON
 
 ***************************************
 * MEMORY
@@ -216,6 +188,53 @@ PRINTMAX
    FCC   /x16k free memory/
    FCB   13,10+128
    PULS  D,PC
+
+INITTTY
+*   JSR   $E800
+   LDD   #$A559
+   STD   >$60FE
+   LDX   #INITTTY_lores
+* change palette
+   LDA   >$FFF0
+   CMPA  #2
+   BLO   NOTTYPAL
+   LDX   #$E7DA
+   LDD   #0
+   STB   1,X
+   LDD   #$FF0
+   STB   ,X
+   STA   ,X
+   LDD   #$F00
+   STB   ,X
+   STA   ,X
+   LDX   #INITTTY_hires
+NOTTYPAL
+   LDB   ,X+
+INITTTY1
+   JSR   >$E803
+   LDB   ,X+
+   BNE   INITTTY1
+   IFNE  LPR         ; open parallel port
+   LDB   #$40
+   STB   >RSOPC
+   JSR   >RSCO
+   LDB   #$08        ; to write bytes
+   STB   >RSOPC
+   ENDC
+   LDB   #12
+   JMP   PUTCHAR
+INITTTY_hires
+   FCB   $1B,$5B     ; 80x25
+   FCB   $1B,$66     ; BD=MAGENTA 
+   FCB   $11,0       ; CURSOR ON
+
+INITTTY_lores
+   FCB   $1B,$44     ; FG=BLUE
+   FCB   $1B,$56     ; BG=MAGENTA
+   FCB   $1B,$66     ; BD=MAGENTA 
+   FCB   $0C         ; CLS
+   FCB   $1B,$68     ; COLOR OFF
+   FCB   $11,0       ; CURSOR ON
 
 PUTS
    PSHS  B        ; prints a 0 or neg-terminated string pointed by X (updated)
