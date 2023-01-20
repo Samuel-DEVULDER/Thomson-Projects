@@ -2089,9 +2089,21 @@ opCALLPCREL
 opCALL
    LDD   1,S
    ANDB  #$C0        ; clear lower bit
+
+  IFNE 1
    CMPD  <PC_PG
-   BEQ   opCALL2
-   
+   BNE   opCALL2
+   LDD   2,S         ; fix lower bits
+   ANDA  #$3F
+   ADDA  #$A0
+   EXG   Y,D         ; update PC_REG
+   SUBA  #$A0        ; clear upper bits of old PC
+   ADDA  <PC_PG+1    ; add page lower bits
+   STD   2,S         ; store lower word of PC
+   NEXT
+opCALL2
+  ENDC
+  
    TFR   D,X         ; saves PC_PG
 
    LDD   2,S         ; fix lower bits
@@ -2103,21 +2115,12 @@ opCALL
    ADDA  <PC_PG+1    ; add page lower bits
    STD   2,S         ; store lower word of PC
    LDB   <PC_PG      ; load pages upper bits
-   CLRA              ; PC is 24 bits
-   STD   ,S          ; store upper word of PC
+   STB   1,S
+*   CLRA              ; PC is 24 bits
+*   STD   ,S          ; store upper word of PC
 
    STX   <PC_PG      ; update PC page
    JMP   <updatePC
-
-opCALL2
-   LDD   2,S         ; fix lower bits
-   ANDA  #$3F
-   ADDA  #$A0
-   EXG   Y,D         ; update PC_REG
-   SUBA  #$A0        ; clear upper bits of old PC
-   ADDA  <PC_PG+1    ; add page lower bits
-   STD   2,S         ; store lower word of PC
-   NEXT
 
 opPOPPCREL
    DO_BRANCH 4,opPOPPCREL
