@@ -2132,6 +2132,13 @@ opPOPPC
    TFR   D,Y         ; update pc reg
    LDD   1,S         ; load page field
    ANDB  #$C0        ; align 16k
+  IFNE 1
+   CMPD  <PC_PG
+   BNE   opPOPPC2
+   LEAS  4,S         ; fixup stack
+   NEXT
+opPOPPC2
+  ENDC
    STD   <PC_PG      ; update high word of PC
    LEAS  4,S         ; fixup stack
    JMP   <updatePC_D ; update page etc
