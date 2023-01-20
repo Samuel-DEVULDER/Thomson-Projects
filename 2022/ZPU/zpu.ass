@@ -2089,6 +2089,9 @@ opCALLPCREL
 opCALL
    LDD   1,S
    ANDB  #$C0        ; clear lower bit
+   CMPD  <PC_PG
+   BEQ   opCALL2
+   
    TFR   D,X         ; saves PC_PG
 
    LDD   2,S         ; fix lower bits
@@ -2105,6 +2108,16 @@ opCALL
 
    STX   <PC_PG      ; update PC page
    JMP   <updatePC
+
+opCALL2
+   LDD   2,S         ; fix lower bits
+   ANDA  #$3F
+   ADDA  #$A0
+   EXG   Y,D         ; update PC_REG
+   SUBA  #$A0        ; clear upper bits of old PC
+   ADDA  <PC_PG+1    ; add page lower bits
+   STD   2,S         ; store lower word of PC
+   NEXT
 
 opPOPPCREL
    DO_BRANCH 4,opPOPPCREL
