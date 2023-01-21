@@ -676,6 +676,7 @@ updatePage
    CMPD  #page       ; compare with current page index
 page equ *-2         ; page index (dynamic code)
    BEQ   donePage    ; same => just return
+pageDiffers
    STD   <page       ; different => update page index
    LSLB              ; compute the proper memory bank
    ROLA
@@ -762,7 +763,9 @@ updatePC
    LDD  #PC_PG       ; load instruction page
 PC_PG SET *-2        ; instruction page (dynamic code)
 updatePC_D
-   JSR  <updatePage  ; update page if needed
+   CMPD <page
+   BEQ  fetch
+   JSR  <pageDiffers ; update page if needed
    
 NEXT MACRO
   IFNE 0
@@ -1988,7 +1991,6 @@ opASHIFTRIGHT32
 * CONTROL FLOW (PC RELATED)
 ***************************************
 
-   
 DO_BRANCH MACRO
   IFNE SMALL_BRNCH
    LDD   1,S
