@@ -1988,21 +1988,6 @@ opASHIFTRIGHT32
 * CONTROL FLOW (PC RELATED)
 ***************************************
 
-opNEQBRANCH
-   LDD   6,S
-   BNE   doBRANCH
-   LDD   4,S
-   BNE   doBRANCH
-noBRANCH
-   LEAS  8,S
-   NEXT
-
-opEQBRANCH
-   LDD   4,S
-   BNE   noBRANCH
-   LDD   6,S
-   BNE   noBRANCH
-   * BRA   BRANCH
    
 DO_BRANCH MACRO
   IFNE SMALL_BRNCH
@@ -2045,6 +2030,22 @@ DO_Bx\1
    JMP   <updatePC_D ; update page etc
    ENDM
 
+opNEQBRANCH
+   LDD   6,S
+   BNE   doBRANCH
+   LDD   4,S
+   BNE   doBRANCH
+noBRANCH
+   LEAS  8,S
+   NEXT
+
+opEQBRANCH
+   LDD   4,S
+   BNE   noBRANCH
+   LDD   6,S
+   BNE   noBRANCH
+   * BRA   doBRANCH
+
 doBRANCH
   IFEQ 0
    DO_BRANCH 8,doBRANCH
@@ -2052,7 +2053,7 @@ doBRANCH
    PULS  D,X
    STD   ,S
    STX   2,S
-   BRA   opPOPPCREL
+   * BRA   opPOPPCREL
   ENDC
 
 opPOPPCREL
@@ -2080,8 +2081,9 @@ opCALLPCREL
    STD   2,S
    LDB   1,S
    ADCB  <PC_PG
-   CLRA              ; 24 bits
-   STD   ,S
+   * CLRA              ; 24 bits
+   * STD   ,S
+   STB    1,S
    * BRA   opCALL
 
 opCALL
