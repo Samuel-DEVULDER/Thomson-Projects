@@ -2006,11 +2006,25 @@ opEQBRANCH
    
 DO_BRANCH MACRO
   IFNE SMALL_BRNCH
+   LDD   1,S
+   BEQ   DO_Bp\1
+   ADDD  #1
+   BNE   DO_Bx\1
    LDD   2,S
-   BPL   DO_Bp\1
-   CMPA  #-1
-   BEQ   DO_Bm\1
-DO_B2\1   
+   LEAX  D,Y
+   CMPX  #$A001
+   BCS   DO_Bx\1
+DO_Bj\1   
+   LEAY  -1,X
+   LEAS  \0,S
+   NEXT
+DO_Bp\1   
+   LDB   3,S
+   LEAX  ,Y
+   ABX
+   CMPX  #$E001
+   BCS   DO_Bj\1
+DO_Bx\1
   ENDC
    TFR   Y,D
    SUBD  #$A001
@@ -2029,27 +2043,6 @@ DO_B2\1
    STD   <PC_PG      ; update high word of PC
    LEAS  \0,S         ; fixup stack
    JMP   <updatePC_D ; update page etc
-  IFNE SMALL_BRNCH
-DO_Bp\1
-   CMPA  1,S
-   BNE   DO_B2\1 
-   LEAX  ,Y
-   ABX
-   CMPX  #$E001
-   BCC   DO_B2\1
-   LEAY  -1,X
-   LEAS  \0,S
-   NEXT
-DO_Bm\1
-   CMPA  1,S
-   BNE   DO_B2\1 
-   LEAX  D,Y
-   CMPX  #$A001
-   BCS   DO_B2\1
-   LEAY  -1,X
-   LEAS  \0,S
-   NEXT
-  ENDC
    ENDM
 
 doBRANCH
