@@ -2055,10 +2055,15 @@ doBRANCH
    BRA   opPOPPCREL
   ENDC
 
+opPOPPCREL
+   DO_BRANCH 4,opPOPPCREL
+
 opEMULATE_x
    LSLB              ; B=1xxx xx00
    LSLB              ; B=xxxx x000
-   BEQ   opASHIFTRIGHT32 ; fetch
+   BNE   opEMULATE_2 ; emulate_0 is a no_op
+   JMP   <opNOP
+opEMULATE_2
    CLRA              ; D=0000 0000 xxxx x000
    LSLD              ; D=0000 000x xxxx 0000
    LSLD              ; D=0000 00xx xxx0 0000=x*32
@@ -2114,9 +2119,6 @@ opCALL2
 
    STX   <PC_PG      ; update PC page
    JMP   <updatePC
-
-opPOPPCREL
-   DO_BRANCH 4,opPOPPCREL
 
 opPOPPC
    LDD   2,S         ; lower word of PC
