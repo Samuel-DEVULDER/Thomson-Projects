@@ -697,8 +697,6 @@ decode_pos SET decode_
   
 * FUSE opIM_x opPUSHSPADD opPOPSP
 
-lastIM SET *
-
 opIM
    BITB  #%01000000  ; [2]
    BEQ   opIMpos     ; [3]
@@ -769,26 +767,6 @@ updatePC_D
    BEQ  fetch
    JSR  <pageDiffers ; update page if needed
    
-NEXT MACRO
-  IFNE 0
-    JMP  <fetch      ; -- 397 --> 389s
-  ELSE
-   FETCH_INSTRUCTION
-  IFNE  CYCLE_TIMER
-   JSR   TIMERINTER
-  ENDC
-   IFLE  (*-lastIM+2)-128
-   BMI   lastIM
-   ELSE
-   BPL   *+4
-lastIM SET *
-   JMP   <opIM
-   ENDC
-   LSLB              ; decode the opcode
-   JMP   [B,U]       ; jump to instruction
-  ENDC
-  ENDM
-
 * fetches and execute an instruction
 opNOP
 fetch
@@ -801,6 +779,28 @@ decode
 decode_
    LSLB              ; decode the opcode
    JMP   [B,U]       ; jump to instruction
+
+last_decode set decode_
+NEXT MACRO
+  IFNE 0
+    JMP  <fetch      ; -- 397 --> 389s
+  ELSE
+   FETCH_INSTRUCTION
+  IFNE  CYCLE_TIMER
+   JSR   TIMERINTER
+  ENDC
+   IFLE  (*-last_decode+2)-128
+   BPL   last_decode
+   JMP   <opIM
+   ELSE
+   BPL   *+4
+   JMP   <opIM
+last_decode SET *
+   LSLB              ; decode the opcode
+   JMP   [B,U]       ; jump to instruction
+   ENDC
+  ENDC
+  ENDM
 
 * handler for opcode out of page   
 outOfPageChk
@@ -823,11 +823,29 @@ sampledTMR
 * ARITHMETIC
 ***************************************
 
-opSUB
-   LEAX  ,S
-   BSR   neg_x
-   * BRA   opADD
+neg_x
+   LDD   #0
+   SUBD  2,X
+   STD   2,X
+   LDD   #0
+   BCC   neg_x1
+   LDD   #-1
+neg_x1
+   SUBD  ,X
+   STD   ,X
+   RTS
 
+opSUB
+   LDD   6,S
+   SUBD  2,S
+   STD   6,S
+   LDD   4,S
+   SBCB  1,S
+   SBCA  ,S
+   LEAS  4,S
+   STD   ,S
+   NEXT
+   
 * FUSE opADD opSTORESP_x
 
 opADD
@@ -844,19 +862,7 @@ opADD1
    BNE   fetch
    INC   ,S
 opADD2
-   BRA   fetch
-
-neg_x
-   LDD   #0
-   SUBD  2,X
-   STD   2,X
-   LDD   #0
-   BCC   neg_x1
-   LDD   #-1
-neg_x1
-   SUBD  ,X
-   STD   ,X
-   RTS
+   NEXT
 
 opNEG
    LEAX  ,S
