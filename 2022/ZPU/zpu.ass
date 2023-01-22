@@ -697,6 +697,8 @@ decode_pos SET decode_
   
 * FUSE opIM_x opPUSHSPADD opPOPSP
 
+lastIM SET *
+
 opIM
    BITB  #%01000000  ; [2]
    BEQ   opIMpos     ; [3]
@@ -775,10 +777,15 @@ NEXT MACRO
   IFNE  CYCLE_TIMER
    JSR   TIMERINTER
   ENDC
-   BMI   *+5
+   IFLE  (*-lastIM+2)-128
+   BMI   lastIM
+   ELSE
+   BPL   *+4
+lastIM SET *
+   JMP   <opIM
+   ENDC
    LSLB              ; decode the opcode
    JMP   [B,U]       ; jump to instruction
-   JMP   <opIM
   ENDC
   ENDM
 
