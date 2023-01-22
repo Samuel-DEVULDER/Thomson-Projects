@@ -1122,11 +1122,17 @@ opLOADSP_0p
    BNE   opLOADSP_0nx
    LEAX  1,X
 opLOADSP_0nx
-   LEAY  2,Y
    STA   ,-S
    STB   ,-S
    PSHS  X
-   NEXT
+*   LEAY  2,Y
+*   NEXT
+   LEAY  3,Y
+   LDB   -1,Y
+   BPL   *+4
+   JMP   <opIM
+   ASLB
+   JMP   [B,U]
 opLOADSP_0x
   ENDC
   
