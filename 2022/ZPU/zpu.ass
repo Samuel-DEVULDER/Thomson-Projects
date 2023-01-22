@@ -9,6 +9,7 @@ TRACE       SET   0           ; traces executed instructions
 CYCLE_TIMER SET   0           ; timer based on cycle (costly) or rtc (accurate) ?
 FUSE        SET   1           ; fuses frequent sequences of isntructions into a big one
 SMALL_BRNCH SET   1           ; optimizes 8-bits branches
+DATA_SPACE  SET   1           ; use cartirge space for data
 
 FIRST_PAGE  SET   2           ; address 0 is mapped to that page
 STACK_SIZE  SET   2048        ; size of stack
@@ -65,8 +66,26 @@ main
    LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
-   STA   >LGA7       ; RAM
-   LDD   #$8B00+FIRST_PAGE ; A="ADDA #FIRST_PAGE"
+   STA   >LGA7       ; RAM in $A000 space
+  IFNE DATA_SPACE
+   LDD   #$9D00+(getAddrROM&255) ; JSR <getAddrROM
+   STD   >opLOADB
+   STD   >opLOADH
+   STD   >opSTOREB
+   STD   >opSTOREH
+   LDD   #$9D00+(getAddrMappedROM&255) < JSR getAddrMappedROM
+   STD   >opLOADnorm
+   STD   >opSTOREnorm
+
+   LDD   #$0E00+(fetch&255)
+   STD   >opLOADx
+   STD   >opLOADBx
+   STD   >opLOADHx
+   STD   >opSTOREx
+   STD   >opSTOREBx
+   STD   >opSTOREHx
+   ENDC
+   LDD   #$8B00+FIRST_PAGE ; D="ADDA #FIRST_PAGE"
    STD   <updatePageBank
 SET_BANKALG
    STD   <BANK
@@ -660,8 +679,28 @@ getAddrL
 getAddr
    LDA   2+0,S       ; speedup: if nul then adress is mapped
    BEQ   getAddrMapped
+getAddrStack
    LDX   2+2,S
    RTS
+
+getAddrROM
+   LDA   2+0,S       ; speedup: if nul then adress is mapped
+   BNE   getAddrStack
+getAddrMappedROM   
+   LDD   2+2,S       ; load lower part of the address
+   ANDA  #$3F        ; clear high bits
+   EORA  #$20
+   TFR   D,X
+   LDD   2+1,S       ; load 16kb page section of address
+   ANDB  #$C0        ; just keep the 2 top bits
+   LSLB              ; compute the proper memory bank
+   ROLA
+   LSLB
+   ROLA
+   ADDA  #FIRST_PAGE+$60
+   STA   >LGA6
+   RTS
+   
 getAddrMapped
    LDD   2+2,S       ; load lower part of the address
    ANDA  #$3F        ; clear high bits
@@ -1642,6 +1681,7 @@ opLOAD2
    STD   ,S          ; store in TOS
    LDD   2,X         ; load lower word
    STD   2,S         ; store in TOS
+opLOADx   
    JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
@@ -1659,6 +1699,7 @@ opSTORE2
    LDD   6,S
    STD   2,X
    LEAS  8,S         ; fixup stack
+opSTOREx   
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
 opPOPSP
@@ -1668,23 +1709,28 @@ opPOPSP
 opLOADH
    JSR   <getAddr    ; loads 16 bits
    LDD   ,X
-   BRA   outUnsigned
+   STD   2,S
+   LDD   #0
+   STD   ,S
+opLOADHx   
+   JMP   <updatePC
 
 opSTOREH
    JSR   <getAddr    ; stores 16 bits
    LDD   6,S
    STD   ,X
    LEAS  8,S         ; fixup stack
+opSTOREHx   
    JMP   <updatePC
 
 opLOADB
    JSR   <getAddr    ; loads 8 bits
    CLRA
    LDB   ,X
-outUnsigned
    STD   2,S
-   LDD   #0
+   CLRB
    STD   ,S
+opLOADBx   
    JMP   <updatePC
 
 opSTOREB
@@ -1692,6 +1738,7 @@ opSTOREB
    LDB   7,S
    STB   ,X
    LEAS  8,S         ; fixup stack
+opSTOREBx   
    JMP   <updatePC
 
 ***************************************
