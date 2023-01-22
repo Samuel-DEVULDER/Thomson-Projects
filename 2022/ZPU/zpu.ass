@@ -692,7 +692,6 @@ getAddrMappedROM
    EORA  #$20
    TFR   D,X
    LDD   2+1,S       ; load 16kb page section of address
-   ANDB  #$C0        ; just keep the 2 top bits
    LSLB              ; compute the proper memory bank
    ROLA
    LSLB
