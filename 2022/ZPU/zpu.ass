@@ -1282,7 +1282,7 @@ opADDSP_\0
    LDB   ,Y
    CMPB  #80+\0
    BNE   opADDSP_x\0
-   LEAY  1,Y
+   LEAY  2,Y
   IFNE 0    ; 77980
    LDD   ,S++
    BEQ   opADDSP_c\0
@@ -1307,7 +1307,7 @@ opADDSP_d\0
    ADCA  4*\0-4,S
    STD   4*\0-4,S
   ENDC
-   NEXT
+   NEXT  -1
 opADDSP_x\0
   ENDC
   IFNE 1          ; 77860 --> fastest
