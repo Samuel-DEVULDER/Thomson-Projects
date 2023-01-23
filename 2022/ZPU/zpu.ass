@@ -843,7 +843,7 @@ NEXT MACRO
   IFLE  (*-last_decode+2)-128
    BPL   last_decode
    JMP   <opIM
-   ELSE
+  ELSE
    BPL   *+4
    JMP   <opIM
 last_decode SET *
