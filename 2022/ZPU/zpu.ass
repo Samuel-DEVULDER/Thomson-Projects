@@ -661,10 +661,20 @@ COMMUT
    PULS  D,U,PC  ; Retour  
 
 FETCH_INSTRUCTION MACRO
-   IFNE  TRACE
+ IFEQ  \0+0
+  IFNE  TRACE
    JSR   doTRACE
-   ENDC
+  ENDC
    LDB   ,Y+         ; fetch next instruction code
+ ELSE
+  IFNE  TRACE
+   LEAY  \0,Y
+   JSR   doTRACE
+   LDB   ,Y+ 
+  ELSE
+   LDB   \0,Y
+  ENDC
+ ENDC
    ENDM
 
 * SAFE version of getAddr for long values
@@ -820,14 +830,17 @@ decode_
 
 last_decode set decode_
 NEXT MACRO
-  IFNE 0
-    JMP  <fetch      ; -- 397 --> 389s
-  ELSE
-   FETCH_INSTRUCTION
+ IFNE 0
+  IFNE \0+0
+   LEAY  \0,Y
+  ENDC
+   JMP  <fetch      ; -- 397 --> 389s
+ ELSE
+   FETCH_INSTRUCTION \0+0
   IFNE  CYCLE_TIMER
    JSR   TIMERINTER
   ENDC
-   IFLE  (*-last_decode+2)-128
+  IFLE  (*-last_decode+2)-128
    BPL   last_decode
    JMP   <opIM
    ELSE
@@ -836,8 +849,8 @@ NEXT MACRO
 last_decode SET *
    LSLB              ; decode the opcode
    JMP   [B,U]       ; jump to instruction
-   ENDC
   ENDC
+ ENDC
   ENDM
 
 * handler for opcode out of page   
@@ -1125,14 +1138,8 @@ opLOADSP_0nx
    STA   ,-S
    STB   ,-S
    PSHS  X
-*   LEAY  2,Y
-*   NEXT
    LEAY  3,Y
-   LDB   -1,Y
-   BPL   *+4
-   JMP   <opIM
-   ASLB
-   JMP   [B,U]
+   NEXT  -1
 opLOADSP_0x
   ENDC
   
@@ -1387,7 +1394,7 @@ opPUSHSPADD
    LEAS  D,S
    NEXT
 opPUSHSPADDx
-   LEAY  -1,Y
+*   LEAY  -1,Y
   ENDC
 
    LDD   #STK_SPACE  ; stack address is $07FF:9xxx
@@ -1397,8 +1404,7 @@ opPUSHSPADDx
    LSLD
    LEAX  D,S
    STX   2,S
-   NEXT
-
+   NEXT  -FUSE
 
 ***************************************
 * LOGIC
@@ -1466,14 +1472,8 @@ opNOT
    STD   2,S
    CLRB
    STD   ,S
-*   LEAY  2,Y
-*   NEXT
    LEAY  3,Y
-   LDB   -1,Y
-   BPL   *+4
-   JMP   <opIM
-   LSLB
-   JMP   [B,U]
+   NEXT  -1
 opNOTx
   ENDC
    COM   ,S          ; bitwise complement of TOS
@@ -2074,9 +2074,9 @@ DO_BRANCH MACRO
    CMPX  #$A001
    BCS   DO_Bx\1
 DO_Bj\1   
-   LEAY  -1,X
    LEAS  \0,S
-   NEXT
+   LEAY  ,X
+   NEXT  -1
 DO_Bp\1   
    LDB   3,S
    LEAX  ,Y
