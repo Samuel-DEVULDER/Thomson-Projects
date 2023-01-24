@@ -803,8 +803,8 @@ opIM_loop
    STD    2,S        ; write lower word
 
    FETCH_INSTRUCTION
-   BMI   opIM_loop
-   BRA   decode_pos
+   BPL   decode_pos
+   BRA   opIM_loop
 
 * restore the page back to the instruction page
 updatePC
@@ -1283,21 +1283,6 @@ opADDSP_\0
    CMPB  #80+\0
    BNE   opADDSP_x\0
    LEAY  2,Y
-  IFNE 0    ; 77980
-   LDD   ,S++
-   BEQ   opADDSP_c\0
-   ADDD  4*\0-2,S
-   STD   4*\0-2,S
-opADDSP_c\0
-   PULS  D
-   ADDD  4*\0-2,S
-   STD   4*\0-2,S
-   BCC   opADDSP_d\0
-   INC   4*\0-3,S
-   BNE   opADDSP_d\0
-   INC   4*\0-4,S
-opADDSP_d\0
-  ELSE      ; 77840
    LDD   4*\0+2,S
    ADDD  2,S
    STD   4*\0+2,S
@@ -1306,11 +1291,9 @@ opADDSP_d\0
    ADCB  4*\0-4+1,S
    ADCA  4*\0-4,S
    STD   4*\0-4,S
-  ENDC
    NEXT  -1
 opADDSP_x\0
   ENDC
-  IFNE 1          ; 77860 --> fastest
    LDD   0+4*\0,S ; load high word of source
    BEQ   opADDSP_a\0
    ADDD  ,S
@@ -1324,15 +1307,6 @@ opADDSP_a\0
    BNE   opADDSP_b\0
    INC   ,S
 opADDSP_b\0
-  ELSE            ; 77920
-   LDD   2+4*\0,S ; load low word of source
-   ADDD  2,s      ; add low word of TOS
-   STD   2,S      ; store result to TOS (lower word)
-   LDD   0+4*\0,S ; load high word of source
-   ADCB  1,S      ; add with carry the TOS (high word)
-   ADCA  ,S       ; second byte
-   STD   ,S       ; store result to TOS (high word)
-  ENDC
    NEXT
    ENDM
 
