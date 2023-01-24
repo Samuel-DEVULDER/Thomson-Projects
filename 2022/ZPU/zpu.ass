@@ -1421,13 +1421,11 @@ opNOT
    LDD   ,Y
    SUBD  #$8106
    BNE   opNOTx
-*   LDD   #1
+   STD   ,S
    INCB
    ANDB  3,S
    EORB  #1
    STD   2,S
-   CLRB
-   STD   ,S
    LEAY  3,Y
    NEXT  -1
 opNOTx
