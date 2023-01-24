@@ -1691,11 +1691,10 @@ opSTOREHx
 
 opLOADB
    JSR   <getAddr    ; loads 8 bits
-   CLRA
+   LDD   #0
+   STD   ,S
    LDB   ,X
    STD   2,S
-   CLRB
-   STD   ,S
 opLOADBx   
    JMP   <updatePC
 
