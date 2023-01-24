@@ -1331,6 +1331,27 @@ opBREAKPT
    ANDA  #%11011111  ; disable timer interrupt
    STA   STATUS
    SWI               ; back to monitor
+   
+   JSR   PUTSTR
+   FCB   13,10
+   FCC   /PRESS ANY KEY TO REBOOT.../
+   FCB   128+7
+waitkey
+   JSR  GETC
+   TSTB
+   BNE  REBOOT
+   JSR  $E81B        ; LPIN
+   BCS  REBOOT
+   CLRA
+   JSR  $E827        ; JOY(0)
+   BCS  REBOOT   
+   INCA
+   JSR  $E827        ; JOY(1)
+   BCS  REBOOT   
+   BRA  waitkey
+REBOOT
+*   JMP main
+   JMP  [$FFFE]
 
 * Pushes stack address
 opPUSHSP
@@ -2157,9 +2178,9 @@ opPOPPC
    LEAS  4,S         ; fixup stack
   IFNE 1
    CMPD  <PC_PG
-   BNE   opPOPPC2
+   BNE   opPOPPCx
    NEXT
-opPOPPC2
+opPOPPCx
   ENDC
    STD   <PC_PG      ; update high word of PC
    JMP   <updatePC_D ; update page etc
