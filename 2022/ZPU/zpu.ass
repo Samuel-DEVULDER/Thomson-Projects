@@ -775,7 +775,7 @@ opIM2
 
 opIM3
    LSLB
-   LDA   2,S
+*   LDA   2,S      ; useless A is already loaded with correct value
    ASRA
    STA   1,S
    LDA   3,S
