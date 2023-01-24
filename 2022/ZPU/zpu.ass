@@ -1572,11 +1572,11 @@ timer_latch
    ORCC  #$50
    LDU   #TIMER_CTR
    PULU  D,X
-   STD   sampledTMR
-   STX   sampledTMR+2
+   STD   <sampledTMR
+   STX   <sampledTMR+2
    PULU  D,X
-   STD   sampledTMR+4
-   STX   sampledTMR+6
+   STD   <sampledTMR+4
+   STX   <sampledTMR+6
    PULS  U,CC
   IFEQ  CYCLE_TIMER
    BRA   timer_latch_phi
