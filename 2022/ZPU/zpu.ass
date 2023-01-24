@@ -1277,23 +1277,6 @@ opADDSP_0
 
 opADDSP_ MACRO
 opADDSP_\0
-  IFNE FUSE
-* opADDSP_x opSTORESP_x --> almost no gain
-   LDB   ,Y
-   CMPB  #80+\0
-   BNE   opADDSP_x\0
-   LEAY  2,Y
-   LDD   4*\0+2,S
-   ADDD  2,S
-   STD   4*\0+2,S
-   LDD   ,S
-   LEAS  4,S
-   ADCB  4*\0-4+1,S
-   ADCA  4*\0-4,S
-   STD   4*\0-4,S
-   NEXT  -1
-opADDSP_x\0
-  ENDC
    LDD   0+4*\0,S ; load high word of source
    BEQ   opADDSP_a\0
    ADDD  ,S
