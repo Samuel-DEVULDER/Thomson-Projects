@@ -1516,14 +1516,14 @@ timer_latch_phi
    BNE   timer_latch_phi3
    LDB   #6
 timer_latch_phi2
-   LSL   sampledTMR+7
-   ROL   sampledTMR+6
-   ROL   sampledTMR+5
-   ROL   sampledTMR+4
-   ROL   sampledTMR+3
-   ROL   sampledTMR+2
-   ROL   sampledTMR+1
-   ROL   sampledTMR
+   LSL   <sampledTMR+7
+   ROL   <sampledTMR+6
+   ROL   <sampledTMR+5
+   ROL   <sampledTMR+4
+   ROL   <sampledTMR+3
+   ROL   <sampledTMR+2
+   ROL   <sampledTMR+1
+   ROL   <sampledTMR
    DECB
    BNE   timer_latch_phi2
 timer_latch_phi3
@@ -1531,12 +1531,12 @@ timer_latch_phi3
   ENDC
 
 timer_high
-   LDX   sampledTMR     ; load high word of latched timer
-   LDD   sampledTMR+2
+   LDX   <sampledTMR     ; load high word of latched timer
+   LDD   <sampledTMR+2
    BRA   opLOADIO_end
 timer_low
-   LDX   sampledTMR+4   ; load low word of latched timer
-   LDD   sampledTMR+6
+   LDX   <sampledTMR+4   ; load low word of latched timer
+   LDD   <sampledTMR+6
    BRA   opLOADIO_end
 timer_mhz
    LDX   #0             ; return Mhz (1 for Thomson rtc)
