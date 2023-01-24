@@ -1766,8 +1766,6 @@ opNEQ
    CMPX  2,S
    BNE   outTRUE
    SUBD  ,S
-   BNE   outTRUE
-   
    BEQ   outFALSE_D0
 outTRUE
    LDD   #0          ; write 1 on top of stack
