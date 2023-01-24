@@ -2117,7 +2117,7 @@ opCALL
 
   IFNE 1
    CMPD  <PC_PG
-   BNE   opCALL2
+   BNE   opCALLx
    LDD   2,S         ; fix lower bits
    ANDA  #$3F
    ADDA  #$A0
@@ -2126,7 +2126,7 @@ opCALL
    ADDA  <PC_PG+1    ; add page lower bits
    STD   2,S         ; store lower word of PC
    NEXT
-opCALL2
+opCALLx
   ENDC
   
    TFR   D,X         ; saves PC_PG
