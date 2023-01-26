@@ -1,7 +1,7 @@
 (main)zpu
    ORG   $7000
-   
-   
+
+
 
 SAFE        SET   0           ; force long addressing for long ops (slower)
 LPR         SET   0           ; also output result to printer on parallel port
@@ -50,19 +50,19 @@ LSLD  MACRO
 
 main
    LEAS  main,PCR
-   
+
 * SETS DP
    LDA   #PAGE0
    TFR   A,DP
    SETDP PAGE0
-   
+
    JSR   INITTTY
-   
+
 * DETERMINE BANKING ALGORITHM
    LDB   >$FFF0
    CMPB  #3          ; B>=3 for new machines
    LDD   #$200D      ; A="BRA COMMUT"; CARRY unchanged.
-   BLO   SET_BANKALG 
+   BLO   SET_BANKALG
    LDA   #$10
    ORA   >$6081      ; Activate
    STA   >$6081      ; direct
@@ -140,7 +140,7 @@ CLRPAGES
 * CLEAR FAT-$A000  = stack space"
    LDX   #FAT
 CLRSTACK
-   STA    ,X+       
+   STA    ,X+
    CMPX   #$A000
    BNE    CLRSTACK
 * CLEAR $A000-$DFFF
@@ -245,13 +245,13 @@ INITTTY1
    JMP   PUTCHAR
 INITTTY_hires
    FCB   $1B,$5B     ; 80x25
-   FCB   $1B,$66     ; BD=MAGENTA 
+   FCB   $1B,$66     ; BD=MAGENTA
    FCB   $11,0       ; CURSOR ON
 
 INITTTY_lores
    FCB   $1B,$44     ; FG=BLUE
    FCB   $1B,$56     ; BG=MAGENTA
-   FCB   $1B,$66     ; BD=MAGENTA 
+   FCB   $1B,$66     ; BD=MAGENTA
    FCB   $0C         ; CLS
    FCB   $1B,$68     ; COLOR OFF
    FCB   $11,0       ; CURSOR ON
@@ -352,7 +352,7 @@ LOADFILE
    FCC   /../
    FCB   128+'.
    LDX   1,S
-   CLRA 
+   CLRA
    LDU   #$A000
    BSR   LOAD
    BSR   PUTSTR
@@ -539,19 +539,19 @@ TFRfast
 TFR1
    STX   LDPTR   Sauve implantation
    RTS
-   
+
 TFRslow
    LDA   ,U+     |
    STA   ,X+     | Transfere
    CMPX  #$E000
    BNE   TFRslow2
-   
+
    LDX   #$A000
    LDA   3,S
    INCA
    CMPA  LAST_PAGE
    BHI   ERROM
-   JSR   >BANK   
+   JSR   >BANK
 TFRslow2
    DECB          | les donnees
    BNE   TFRslow |
@@ -635,9 +635,9 @@ TIMERINTERX
    ORG   ((*+255)/256)*256
 PAGE0   SET   */256
    SETDP PAGE0
-   
+
 ***************************************
-* Changes bank at $A000 
+* Changes bank at $A000
 * A = bank number
 ***************************************
 BANK
@@ -648,17 +648,17 @@ BANK
    RTS
    FCB   $0F,$17,$E7,$67,$A7,$27,$0F
 COMMUT
-   PSHS  D,U 
-   LDU   #COMMUT-7 ; U pointe sur l'adresse de la table des valeurs a mettre dans le PLA 
-   LDA   A,U       ; Lecture de la valeur de la table 
+   PSHS  D,U
+   LDU   #COMMUT-7 ; U pointe sur l'adresse de la table des valeurs a mettre dans le PLA
+   LDA   A,U       ; Lecture de la valeur de la table
    LDU   #$E7CB
-   LDB   ,U        ; Lecture du registre CRB en E7CB 
-   ANDB  #$FB      ; Passage du PIA en mode direction 
-   STB   ,U   
-   STA   -2,U      ; Modifications des directions ecriture dans le DDRB du PIA en E7C9 
-   ORB   #$04      ; Passage du PIA en mode donnees 
-   STB   ,U        ; (retour aux conditions depart) 
-   PULS  D,U,PC  ; Retour  
+   LDB   ,U        ; Lecture du registre CRB en E7CB
+   ANDB  #$FB      ; Passage du PIA en mode direction
+   STB   ,U
+   STA   -2,U      ; Modifications des directions ecriture dans le DDRB du PIA en E7C9
+   ORB   #$04      ; Passage du PIA en mode donnees
+   STB   ,U        ; (retour aux conditions depart)
+   PULS  D,U,PC  ; Retour
 
 FETCH_INSTRUCTION MACRO
  IFEQ  \0+0
@@ -670,7 +670,7 @@ FETCH_INSTRUCTION MACRO
   IFNE  TRACE
    LEAY  \0,Y
    JSR   doTRACE
-   LDB   ,Y+ 
+   LDB   ,Y+
   ELSE
    LDB   \0,Y
   ENDC
@@ -696,7 +696,7 @@ getAddrStack
 getAddrROM
    LDA   2+0,S       ; speedup: if nul then adress is mapped
    BNE   getAddrStack
-getAddrMappedROM   
+getAddrMappedROM
    LDD   2+2,S       ; load lower part of the address
    ANDA  #$3F        ; clear high bits
    EORA  #$20
@@ -709,7 +709,7 @@ getAddrMappedROM
    ADDA  #FIRST_PAGE+$60
    STA   >LGA6
    RTS
-   
+
 getAddrMapped
    LDD   2+2,S       ; load lower part of the address
    ANDA  #$3F        ; clear high bits
@@ -742,7 +742,7 @@ decode_pos SET decode
   ELSE
 decode_pos SET decode_
   ENDC
-  
+
 * FUSE opIM_x opPUSHSPADD opPOPSP
 
 opIM
@@ -814,7 +814,7 @@ updatePC_D
    CMPD <page
    BEQ  fetch
    JSR  <pageDiffers ; update page if needed
-   
+
 * fetches and execute an instruction
 opNOP
 fetch
@@ -853,7 +853,7 @@ last_decode SET *
  ENDC
   ENDM
 
-* handler for opcode out of page   
+* handler for opcode out of page
 outOfPageChk
    CMPY  #$E000      ; check ROM ?
    BHS   nextPage    ; yes => next 16k page
@@ -866,7 +866,7 @@ nextPage
    JSR   <updatePage ; update BANk
    LDY   #$A000      ; go to start of page
    BRA   fetch
-  
+
 sampledTMR
    FDB   0,0,0,0     ; sampled timer
 
@@ -896,7 +896,7 @@ opSUB
    LEAS  4,S
    STD   ,S
    NEXT
-   
+
 * FUSE opADD opSTORESP_x
 
 opADD
@@ -919,7 +919,7 @@ opNEG
    LEAX  ,S
    BSR   neg_x
    NEXT
-   
+
 opDIV
    LEAX  ,S             ; X = ptr to dividend
    LEAS  -7,S           ; get space for UDIV32 sign+tmp16+mod32=1+2+4=7
@@ -1142,7 +1142,7 @@ opLOADSP_0nx
    NEXT  -1
 opLOADSP_0x
   ENDC
-  
+
    LDD   ,S
    LDX   2,S
    PSHS  D,X
@@ -1331,7 +1331,7 @@ opBREAKPT
    ANDA  #%11011111  ; disable timer interrupt
    STA   STATUS
    SWI               ; back to monitor
-   
+
    JSR   PUTSTR
    FCB   13,10
    FCC   /PRESS ANY KEY TO REBOOT.../
@@ -1344,10 +1344,10 @@ waitkey
    BCS  REBOOT
    CLRA
    JSR  $E827        ; JOY(0)
-   BCS  REBOOT   
+   BCS  REBOOT
    INCA
    JSR  $E827        ; JOY(1)
-   BCS  REBOOT   
+   BCS  REBOOT
    BRA  waitkey
 REBOOT
 *   JMP main
@@ -1668,7 +1668,7 @@ opLOAD2
    STD   ,S          ; store in TOS
    LDD   2,X         ; load lower word
    STD   2,S         ; store in TOS
-opLOADx   
+opLOADx
    JMP   <updatePC   ; resync PC page and execute next instruction
 
 opSTORE
@@ -1686,7 +1686,7 @@ opSTORE2
    LDD   6,S
    STD   2,X
    LEAS  8,S         ; fixup stack
-opSTOREx   
+opSTOREx
    JMP   <updatePC   ; page has been modified, ensure PC-page is back
 
 opPOPSP
@@ -1699,7 +1699,7 @@ opLOADH
    STD   2,S
    LDD   #0
    STD   ,S
-opLOADHx   
+opLOADHx
    JMP   <updatePC
 
 opSTOREH
@@ -1707,7 +1707,7 @@ opSTOREH
    LDD   6,S
    STD   ,X
    LEAS  8,S         ; fixup stack
-opSTOREHx   
+opSTOREHx
    JMP   <updatePC
 
 opLOADB
@@ -1716,7 +1716,7 @@ opLOADB
    STD   ,S
    LDB   ,X
    STD   2,S
-opLOADBx   
+opLOADBx
    JMP   <updatePC
 
 opSTOREB
@@ -1724,7 +1724,7 @@ opSTOREB
    LDB   7,S
    STB   ,X
    LEAS  8,S         ; fixup stack
-opSTOREBx   
+opSTOREBx
    JMP   <updatePC
 
 ***************************************
@@ -1810,17 +1810,17 @@ opLSHIFTRIGHT
    LEAX  4,S
    LDD   ,X
    BEQ   opLSHIFTRIGHT_half
-   
+
    LSR   3,S
    BCC   opLSHIFTRIGHT2
    LSHIFTRIGHT
-   
+
 opLSHIFTRIGHT2
    LSR   3,S
    BCC   opLSHIFTRIGHT4
    LSHIFTRIGHT
    LSHIFTRIGHT
-   
+
 opLSHIFTRIGHT4
    LSR   3,S
    BCC   opLSHIFTRIGHT8
@@ -1828,7 +1828,7 @@ opLSHIFTRIGHT4
    LSHIFTRIGHT
    LSHIFTRIGHT
    LSHIFTRIGHT
-   
+
 opLSHIFTRIGHT8
    STD   ,X
    LSR   3,S
@@ -1848,7 +1848,7 @@ opLSHIFTRIGHT16
    STD   2,X
    LDD   #0
    STD   ,X
-   
+
 opLSHIFTRIGHT32
    LEAS  ,X
    JMP   <fetch
@@ -1858,13 +1858,13 @@ opLSHIFTRIGHT_half
    LSR   3,S
    BCC   opLSHIFTRIGHT_half2
    LSRD
-   
+
 opLSHIFTRIGHT_half2
    LSR   3,S
    BCC   opLSHIFTRIGHT_half4
    LSRD
    LSRD
-   
+
 opLSHIFTRIGHT_half4
    LSR   3,S
    BCC   opLSHIFTRIGHT_half8
@@ -1872,18 +1872,18 @@ opLSHIFTRIGHT_half4
    LSRD
    LSRD
    LSRD
-   
+
 opLSHIFTRIGHT_half8
    LSR   3,S
    BCC   opLSHIFTRIGHT_half16
    TFR   A,B
    CLRA
-   
+
 opLSHIFTRIGHT_half16
    LSR   3,S
    BCC   opLSHIFTRIGHT_half32
    LDD   #0
-   
+
 opLSHIFTRIGHT_half32
    STD   2,X
    LEAS  ,X
@@ -1899,17 +1899,17 @@ opASHIFTLEFT
    LEAX  4,S
    LDD   2,X
    BEQ   opASHIFTLEFT_half
-   
+
    LSR   3,S
    BCC   opASHIFTLEFT2
    ASHIFTLEFT
-   
+
 opASHIFTLEFT2
    LSR   3,S
    BCC   opASHIFTLEFT4
    ASHIFTLEFT
    ASHIFTLEFT
-   
+
 opASHIFTLEFT4
    LSR   3,S
    BCC   opASHIFTLEFT8
@@ -1917,7 +1917,7 @@ opASHIFTLEFT4
    ASHIFTLEFT
    ASHIFTLEFT
    ASHIFTLEFT
-   
+
 opASHIFTLEFT8
    STD   2,X
    LSR   3,S
@@ -1937,7 +1937,7 @@ opASHIFTLEFT16
    STD   ,X
    LDD   #0
    STD   2,X
-   
+
 opASHIFTLEFT32
    LEAS  ,X
    JMP   <fetch
@@ -1947,13 +1947,13 @@ opASHIFTLEFT_half
    BCC   opASHIFTLEFT_half2
    LSR   3,S
    LSLD
-   
+
 opASHIFTLEFT_half2
    LSR   3,S
    BCC   opASHIFTLEFT_half4
    LSLD
    LSLD
-   
+
 opASHIFTLEFT_half4
    LSR   3,S
    BCC   opASHIFTLEFT_half8
@@ -1961,18 +1961,18 @@ opASHIFTLEFT_half4
    LSLD
    LSLD
    LSLD
-   
+
 opASHIFTLEFT_half8
    LSR   3,S
    BCC   opASHIFTLEFT_half16
    TFR   B,A
    CLRB
-   
+
 opASHIFTLEFT_half16
    LSR   3,S
    BCC   opASHIFTLEFT_half32
    LDD   #0
-   
+
 opASHIFTLEFT_half32
    STD   ,X
    LEAS  ,X
@@ -1990,13 +1990,13 @@ opASHIFTRIGHT
    LSR  3,S
    BCC   opASHIFTRIGHT2
    ASHIFTRIGHT
-   
+
 opASHIFTRIGHT2
    LSR   3,S
    BCC   opASHIFTRIGHT4
    ASHIFTRIGHT
    ASHIFTRIGHT
-   
+
 opASHIFTRIGHT4
    LSR   3,S
    BCC   opASHIFTRIGHT8
@@ -2004,7 +2004,7 @@ opASHIFTRIGHT4
    ASHIFTRIGHT
    ASHIFTRIGHT
    ASHIFTRIGHT
-   
+
 opASHIFTRIGHT8
    STD   ,X
    LSR   3,S
@@ -2015,7 +2015,7 @@ opASHIFTRIGHT8
    LDB   ,X
    SEX
    STD   ,X
-  
+
 opASHIFTRIGHT16
    LSR   3,S
    LEAS  ,X
@@ -2045,11 +2045,11 @@ DO_BRANCH MACRO
    LEAX  D,Y
    CMPX  #$A001
    BCS   DO_Bx\1
-DO_Bj\1   
+DO_Bj\1
    LEAS  \0,S
    LEAY  ,X
    NEXT  -1
-DO_Bp\1   
+DO_Bp\1
    LDB   3,S
    LEAX  ,Y
    ABX
@@ -2118,7 +2118,7 @@ opEMULATE_2
    LDD   #0
    PSHS  D,X
    BRA   opCALL
-   
+
 opCALLPCREL
    TFR   Y,D
    SUBD  #$A001
@@ -2149,7 +2149,7 @@ opCALL
    NEXT
 opCALLx
   ENDC
-  
+
    TFR   D,X         ; saves PC_PG
 
    LDD   2,S         ; fix lower bits
