@@ -1,8 +1,6 @@
 (main)zpu
    ORG   $7000
 
-
-
 SAFE        SET   0           ; force long addressing for long ops (slower)
 LPR         SET   0           ; also output result to printer on parallel port
 TRACE       SET   0           ; traces executed instructions
@@ -547,8 +545,8 @@ TFRslow
    BNE   TFRslow2
 
    LDX   #$A000
+   INC   3,S
    LDA   3,S
-   INCA
    CMPA  LAST_PAGE
    BHI   ERROM
    JSR   >BANK
@@ -1116,6 +1114,9 @@ opMULT16X16
 
 opLOADSP_0
   IFNE FUSE
+  IFNE  TRACE
+   JSR   doTRACE
+  ENDC  
 * opLOASP_0 opIM_x opADD  404s --> 397s (-0.98%)
    LDD   ,Y
    BPL   opLOADSP_0x
@@ -1363,6 +1364,9 @@ opPUSHSP
 opPUSHSPADD
   IFNE FUSE
 * opPUSHSPADD opPOPSP  408s --> 404s (-0.99%)
+  IFNE  TRACE
+   JSR   doTRACE
+  ENDC
    LDB   ,Y+
    CMPB  #13
    BNE   opPUSHSPADDx
@@ -1438,6 +1442,9 @@ opXOR
 
 opNOT
   IFNE FUSE
+  IFNE  TRACE
+   JSR   doTRACE
+  ENDC  
 * opNOT opIM_1 opAND   411s -> 408s (-0.7%)
    LDD   ,Y
    SUBD  #$8106
@@ -2578,8 +2585,8 @@ asmTbl
 FILENAME
    FCC   /0:/
    * FCC   /dhr13k  /
-   FCC   /dhryston/
-   * FCC   /test    /
+   * FCC   /dhryston/
+   FCC   /test    /
    * FCC   /test2   /
    * FCC   /a       /
    * FCC   /eliza   /
