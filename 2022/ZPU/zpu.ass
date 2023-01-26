@@ -639,7 +639,7 @@ PAGE0   SET   */256
 * A = bank number
 ***************************************
 BANK
-   BRA   COMMUT    ; will becomle CMPA #nn on TO8+
+   BRA   COMMUT    ; will become ADDA #FIRST_PAGE on TO8+
 *   ADDA  #FIRST_PAGE
    STA   >LGA5
    SUBA  #FIRST_PAGE
@@ -1116,7 +1116,7 @@ opLOADSP_0
   IFNE FUSE
   IFNE  TRACE
    JSR   doTRACE
-  ENDC  
+  ENDC
 * opLOASP_0 opIM_x opADD  404s --> 397s (-0.98%)
    LDD   ,Y
    BPL   opLOADSP_0x
@@ -1444,7 +1444,7 @@ opNOT
   IFNE FUSE
   IFNE  TRACE
    JSR   doTRACE
-  ENDC  
+  ENDC
 * opNOT opIM_1 opAND   411s -> 408s (-0.7%)
    LDD   ,Y
    SUBD  #$8106
@@ -2585,8 +2585,8 @@ asmTbl
 FILENAME
    FCC   /0:/
    * FCC   /dhr13k  /
-   * FCC   /dhryston/
-   FCC   /test    /
+   FCC   /dhryston/
+   * FCC   /test    /
    * FCC   /test2   /
    * FCC   /a       /
    * FCC   /eliza   /
