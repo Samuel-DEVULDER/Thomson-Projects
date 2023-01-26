@@ -639,7 +639,7 @@ PAGE0   SET   */256
 * A = bank number
 ***************************************
 BANK
-   BRA   COMMUT    ; will becomle CMPA #nn on TO8+
+   BRA   COMMUT    ; will become ADDA #FIRST_PAGE on TO8+
 *   ADDA  #FIRST_PAGE
    STA   >LGA5
    SUBA  #FIRST_PAGE
