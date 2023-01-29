@@ -639,7 +639,7 @@ PAGE0   SET   */256
 * A = bank number
 ***************************************
 BANK
-   BRA   COMMUT    ; will become ADDA #FIRST_PAGE on TO8+
+   BRA   COMMUT    ; will becomle CMPA #nn on TO8+
 *   ADDA  #FIRST_PAGE
    STA   >LGA5
    SUBA  #FIRST_PAGE
@@ -684,13 +684,6 @@ getAddrL
    ENDC
 
 * make page and X points to the address in TOS (stack unmodified)
-getAddr
-   LDA   2+0,S       ; speedup: if nul then adress is mapped
-   BEQ   getAddrMapped
-getAddrStack
-   LDX   2+2,S
-   RTS
-
 getAddrROM
    LDA   2+0,S       ; speedup: if nul then adress is mapped
    BNE   getAddrStack
@@ -708,6 +701,12 @@ getAddrMappedROM
    STA   >LGA6
    RTS
 
+getAddr
+   LDA   2+0,S       ; speedup: if nul then adress is mapped
+   BEQ   getAddrMapped
+getAddrStack
+   LDX   2+2,S
+   RTS
 getAddrMapped
    LDD   2+2,S       ; load lower part of the address
    ANDA  #$3F        ; clear high bits
@@ -1116,7 +1115,7 @@ opLOADSP_0
   IFNE FUSE
   IFNE  TRACE
    JSR   doTRACE
-  ENDC
+  ENDC  
 * opLOASP_0 opIM_x opADD  404s --> 397s (-0.98%)
    LDD   ,Y
    BPL   opLOADSP_0x
@@ -1444,7 +1443,7 @@ opNOT
   IFNE FUSE
   IFNE  TRACE
    JSR   doTRACE
-  ENDC
+  ENDC  
 * opNOT opIM_1 opAND   411s -> 408s (-0.7%)
    LDD   ,Y
    SUBD  #$8106
