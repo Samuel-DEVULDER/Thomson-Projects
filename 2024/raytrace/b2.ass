@@ -115,7 +115,7 @@ calcXY
          std   iY
          
          else
-
+* fait gagner 15sec environ
          ldx   #0
 calcXY1  cmpa  #100
          bcs   calcXY2
@@ -150,42 +150,43 @@ calcXY8  cmpd  #200
          subd  #200
          leax  1,x
 calcXY9  exg   d,x
-         stx   iY         
          std   iX
          lslb
          rola
          std   i2X
+         tfr   x,d
+         std   iY         
          
          endc
          
-         clr   fX
-         ldd   c_m0p1
-         std   fY
-         ldd   c_m0p1+2
-         std   fY+2
-         ldd   c_3
-         std   fZ
-         ldd   c_3+2
-         std   fZ+2         
+         sta   fX
          
+         ldu   #c_m0p1
+         pulu  d,x
+         std   fY
+         stx   fY+2
+         
+         pulu  d,x      ; c_3
+         std   fZ
+         stx   fZ+2
+
          rts
+
+calcUV_  jsr   itof
+         jsr   fsuba
+         ldx   #c_1o130
+         jmp   fmula
          
 calcUVW  ldd   i2X
-         jsr   itof
          ldx   #c_159p5
-         jsr   fsuba
+         bsr   calcUV_
          jsr   fneg
-         ldx   #c_1o130
-         jsr   fmula
          ldx   #fU
          jsr   movmf    ; U = (2M-159.5)/130
          
          ldd   iY
-         jsr   itof
          ldx   #c_99p5
-         jsr   fsuba
-         ldx   #c_1o130
-         jsr   fmula
+         bsr   calcUV_
          ldx   #fV
          jsr   movmf    ; V = (99.5-N)/130
          
@@ -215,9 +216,10 @@ calcUVW  ldd   i2X
          ldd   c_1
          tst   <FACSGN
          bmi   *+4
-         eorb  #128
+         eorb  #128     ; negate
          std   ,x       
-         ldd   c_1+2
+*         ldd   c_1+2
+         clrd
          std   2,x      ; I = -sign(U)
          rts       
 
@@ -254,6 +256,13 @@ sphere_EFP
          jsr   fmula    ; W*Z
          ldx   #fP
          jmp   fsubm    ; P=V*F + U*E - W*Z
+
+ftst     pshs  b
+         ldb   <FACEXP
+         beq   ftstx
+         ldb   <FACSGN
+         orb   #127
+ftstx    puls  b,pc
          
 sphere_bounce
          bsr   sphere_EFP
@@ -284,7 +293,7 @@ sphere_bounce
          ldx   #fT
          jsr   faddm    ; T = P*P - E*E - F*F - Z*Z + 1
          
-         jsr   ftst     
+         bsr   ftst     
          bgt   *+3      ; IF T>0 THEN
          rts
 
@@ -295,7 +304,7 @@ sphere_bounce
          ldx   #fT
          jsr   movmf    ; T = -(P + SQR(T))
          
-         jsr   ftst   
+         bsr   ftst   
          bgt   *+3      ; IF T>0 THEN
          rts
          
@@ -323,8 +332,8 @@ sphere_bounce
          jsr   sphere_EFP
          
          ldx   #fP
-         ldb   ,x
-         beq   *+4
+*         ldb   ,x
+*         beq   *+4
          inc   ,x      ; P=2*P
          
          jsr   movfm
@@ -402,23 +411,23 @@ ground
          jsr   fadda
 *         bsr   fmul4
          jsr   ftoi
-         ldx   #c_8
+         ldx   #ground0
          lsrb
          bcc   *+5
-         ldx   #c_13
+         ldx   #ground1
          stx   <dalle+1,pcr
          
          ldx   #fV
-         jsr   movfm
-         jsr   fneg
+         bsr   movfm
+         bsr   fneg
          jsr   fsqrt
 fmul4    ldb   <FACEXP
-         beq   *+6
+*        beq   *+6
          addb  #2
          stb   <FACEXP        
 *        bsr   fmul4    ; FAC=4*SQRT(-V)
          
-dalle    ldx   #c_8
+dalle    ldx   #ground0
          jsr   fadda
          ldx   #fV      
          bra   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
@@ -443,14 +452,13 @@ calcCOL  ldx   #vac
          ldx   #cols
          ldb   b,X
          rts
-         
-ftst     pshs  b
-         ldb   <FACEXP
-         beq   ftstx
-         ldb   <FACSGN
-         orb   #127
-ftstx    puls  b,pc
 
+*fneg    ldb   #53
+*        jmp   >EXTRA
+
+fneg     com  <FACSGN
+         rts
+                  
 /
 fopa     ldu   ,s
          pulu  X
@@ -516,8 +524,16 @@ movmf    ldb   #63
          jmp   >EXTRA
          endc
 
-movaf    ldb   #64
-         jmp   >EXTRA
+*movaf    ldb   #64
+*         jmp   >EXTRA
+
+movaf    ldd   <FACEXP
+         std   <ARGEXP
+         ldd   <FACMO
+         std   <ARGMO
+         ldb   <FACSGN
+         stb   <ARGSGN
+         rts
 
 *fsgn    ldb   #41
 *        jmp   >EXTRA
@@ -533,15 +549,6 @@ fsqrt    ldb   #44
 
 *fint    ldb   #51
 *        jmp   >EXTRA
-         
-*fneg    ldb   #53
-*        jmp   >EXTRA
-fneg     ldb   <FACEXP
-         beq   *+9
-         ldb   #128
-         eorb  <FACSGN
-         stb   <FACSGN
-         rts
          
 faddm    bsr   fadda
          bra   movmf         
@@ -629,13 +636,11 @@ prtTime  lda   >STATUS
          rts
          
 prt100   pshs  d
-         lda   #-1
-prt100a  inca
-         subb  #10
+         lda   1,s
+         clrb
+prt100a  subd  #2559
          bcc   prt100a
-         addb  #10
-*         addd  #-246
-         exg   b,a
+         addd  #2559
          bsr   prt10
          tfr   a,b
          bsr   prt10
@@ -786,20 +791,18 @@ cols     fcb   0,1,2,3,4,5,6,7
          fcb   0,12,13,14,15
          
 c_m0p1   fdb   $7DCC,$CCCD       ; -.1
+c_3      fdb   $8240,$0000       ; 3
+
 c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_159p5  fdb   $881F,$8000       ; 159.5
 c_99p5   fdb   $8747,$0000       ; 99.5
-c_0      fdb   $0000,$0000       ; 0
-c_0p5    fdb   $8000,$0000       ; 0.5
+
 c_1      fdb   $8100,$0000       ; 1
 c_2      fdb   $8200,$0000       ; 2
-c_3      fdb   $8240,$0000       ; 3
-c_4      fdb   $8300,$0000       ; 4
-c_5      fdb   $8320,$0000       ; 5
 c_7      fdb   $8360,$0000       ; 7
 
-c_8      fdb   $8400,$0000       ; 8
-c_13     fdb   $8450,$0000       ; 13
+ground0  fdb   $8400,$0000       ; 8
+ground1  fdb   $8450,$0000       ; 13
 
 (info)
 
