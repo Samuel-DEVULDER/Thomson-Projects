@@ -55,23 +55,6 @@ ini      pshs  dp
          tfr   a,dp
          stb   <VALTYP
          clr   <DBLFLG         
-*         ldd   #errhnd
-*         std   <$6185
-* init dither
-         ldx   #vac
-dithloop ldd   ,x
-         subd  #32
-         jsr   itof
-         pshs  x
-         ldx   #fT
-         jsr   movmf
-         puls  x
-         ldd   fT
-         bpl   *+4
-         suba  #6       ; div64
-         std   ,x++
-         cmpx  #cols
-         bne   dithloop
 * init timer         
          ldd   #timert
          std   >TIMEPT
@@ -429,7 +412,11 @@ ground
          jsr   movfm
          jsr   fneg
          jsr   fsqrt
-         bsr   fmul4    ; FAC=4*SQRT(-V)
+fmul4    ldb   <FACEXP
+         beq   *+6
+         addb  #2
+         stb   <FACEXP        
+*        bsr   fmul4    ; FAC=4*SQRT(-V)
          
 dalle    ldx   #c_8
          jsr   fadda
@@ -463,12 +450,6 @@ ftst     pshs  b
          ldb   <FACSGN
          orb   #127
 ftstx    puls  b,pc
-
-fmul4    ldb   <FACEXP
-         beq   *+6
-         addb  #2
-         stb   <FACEXP  
-         rts
 
 /
 fopa     ldu   ,s
@@ -613,10 +594,6 @@ ftoi     ldd   #$0232
          stb   <VALTYP
          ldd   <FACMO
          rts
-
-errhnd   rts
-         lds   <$6175
-         puls  a,dp,x,y,u,pc
 
 prtTime  lda   >STATUS
          ldb   >FORME
@@ -763,8 +740,6 @@ timert   inc   >iTime+1
          inc   >iTime+0
 timert1  jmp   KBIN
 
-beep     ldb   #7
-         jmp   >PUTC
 
 * print a string   
 puts0    jsr   >PUTC
@@ -782,14 +757,29 @@ palette  fdb   $000,$100,$200,$500
          fdb   $010,$020,$050,$0A0
          fdb   $011,$022,$055,$0AA
          
-vac      fdb   15,48,24,42,28,49,37,10
-         fdb   30,5,51,9,57,1,23,54
-         fdb   40,20,58,14,32,47,8,62
-         fdb   3,44,35,26,41,18,34,27
-         fdb   50,17,7,63,2,52,59,13
-         fdb   38,53,29,46,22,11,43,25
-         fdb   0,21,12,55,39,31,6,56
-         fdb   33,60,36,4,16,61,19,45
+vac      fdb   $7F88,$7F00,$7E80,$7E20
+         fdb   $7D80,$7F08,$7D20,$7FB0
+         
+         fdb   $7C80,$7FD8,$7F18,$7FB8
+         fdb   $7F48,$7FF8,$7E90,$7F30
+         
+         fdb   $7E00,$7EC0,$7F50,$7F90
+         fdb   $0000,$7E70,$7FC0,$7F70
+         
+         fdb   $7FE8,$7E40,$7C40,$7DC0
+         fdb   $7E10,$7EE0,$7C00,$7DA0
+         
+         fdb   $7F10,$7EF0,$7FC8,$7F78
+         fdb   $7FF0,$7F20,$7F58,$7F98
+         
+         fdb   $7D40,$7F28,$7CC0,$7E60
+         fdb   $7EA0,$7FA8,$7E30,$7DE0
+
+         fdb   $8080,$7EB0,$7FA0,$7F38
+         fdb   $7D60,$7B80,$7FD0,$7F40
+
+         fdb   $7B00,$7F60,$7D00,$7FE0
+         fdb   $7F80,$7F68,$7ED0,$7E50
          
 cols     fcb   0,1,2,3,4,5,6,7
          fcb   0,8,9,10,11
