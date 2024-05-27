@@ -1,0 +1,3 @@
+
+10 CLEAR ,&H8FFF
+20 LOADM "b2",,R

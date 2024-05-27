@@ -1,0 +1,836 @@
+(main)B2
+
+TIMEPT   equ   $6027
+STATUS   equ   $6019
+FORME    equ   $6038
+CHDRAW   equ   $6041
+PTGENE   equ   $60CF
+
+PUTC     equ   $E803
+EXTRA    equ   $EC0C
+SETP     equ   $EC00
+PLOT     equ   $E80F
+KBIN     equ   $E830
+
+DBLFLG   equ   $6103
+VALTYP   equ   $6105
+
+FACEXP   equ   $614E
+FACHO    equ   $614F
+FACMO    equ   $6150
+FACLO    equ   $6151
+FACSGN   equ   $6156
+
+ARGEXP   equ   $6159
+ARGHO    equ   $615A
+ARGMO    equ   $615B
+ARGLO    equ   $615C
+ARGSGN   equ   $6161
+
+ldab     macro
+         ldd   #(\0)*256+\1
+         endm
+
+clrd     macro
+         clrb
+         clra
+*         ldab  0,0
+         endm
+         
+         setdp $61
+
+         org   $9000
+         
+ini      pshs  dp
+* init screen
+         ldx   #inistr
+         jsr   puts        
+         ldx   #palette
+         lda   #$FF
+         jsr   SETP
+* init extramon + math         
+         incb
+         jsr   EXTRA
+         ldd   #$6104
+         tfr   a,dp
+         stb   <VALTYP
+         clr   <DBLFLG         
+*         ldd   #errhnd
+*         std   <$6185
+* init dither
+         ldx   #vac
+dithloop ldd   ,x
+         subd  #32
+         jsr   itof
+         pshs  x
+         ldx   #fT
+         jsr   movmf
+         puls  x
+         ldd   fT
+         bpl   *+4
+         suba  #6       ; div64
+         std   ,x++
+         cmpx  #cols
+         bne   dithloop
+* init timer         
+         ldd   #timert
+         std   >TIMEPT
+         ldb   >STATUS
+         orb   #$20
+         stb   >STATUS
+         andcc #255-$50
+         
+         clrd
+         stb   >CHDRAW
+         std   iTime
+         std   iRnd
+                 
+newpx    jsr   calcXY
+         jsr   calcUVW
+         jsr   sphere_bounce
+         jsr   ground_or_sky
+         jsr   calcCOL
+
+         stb   FORME
+         ldx   iX
+         ldy   iY
+         jsr   PLOT
+         
+         ldd   iRnd
+nxrnd    lslb
+         rola
+         lslb
+         rola
+         addd  iRnd
+         addd  #1
+         anda  #127
+         std   iRnd
+         beq   done
+         cmpd  #32000
+         bcc   nxrnd
+         bra   newpx
+
+done     ldx   #0
+         leay  ,x
+         jsr   prtTime
+
+loop     jmp   loop
+   
+         puls  dp,pc
+
+calcXY    
+         ifne 1
+         
+         std   <ARGMO
+         ldd   #200
+         jsr   idivmod
+         std   iX
+         lslb
+         rola
+         std   i2X
+         ldd   <ARGMO
+         std   iY
+         
+         else
+
+         ldx   #0
+calcXY1  cmpa  #100
+         bcs   calcXY2
+         suba  #100
+         leax  128,x
+calcXY2  cmpa  #50
+         bcs   calcXY3
+         suba  #50
+         leax  64,x
+calcXY3  cmpa  #25
+         bcs   calcXY4
+         suba  #25
+         leax  32,x
+calcXY4  cmpd  #3200
+         bcs   calcXY5
+         subd  #3200
+         leax  16,x
+calcXY5  cmpd  #1600
+         bcs   calcXY6
+         subd  #1600
+         leax  8,x
+calcXY6  cmpd  #800
+         bcs   calcXY7
+         subd  #800
+         leax  4,x
+calcXY7  cmpd  #400
+         bcs   calcXY8
+         subd  #400
+         leax  2,x
+calcXY8  cmpd  #200
+         bcs   calcXY9
+         subd  #200
+         leax  1,x
+calcXY9  exg   d,x
+         stx   iY         
+         std   iX
+         lslb
+         rola
+         std   i2X
+         
+         endc
+         
+         clr   fX
+         ldd   c_m0p1
+         std   fY
+         ldd   c_m0p1+2
+         std   fY+2
+         ldd   c_3
+         std   fZ
+         ldd   c_3+2
+         std   fZ+2         
+         
+         rts
+         
+calcUVW  ldd   i2X
+         jsr   itof
+         ldx   #c_159p5
+         jsr   fsuba
+         jsr   fneg
+         ldx   #c_1o130
+         jsr   fmula
+         ldx   #fU
+         jsr   movmf    ; U = (2M-159.5)/130
+         
+         ldd   iY
+         jsr   itof
+         ldx   #c_99p5
+         jsr   fsuba
+         ldx   #c_1o130
+         jsr   fmula
+         ldx   #fV
+         jsr   movmf    ; V = (99.5-N)/130
+         
+         jsr   fsqr
+         ldx   #fT
+         jsr   movmf    ; T=V*V
+         ldx   #fU
+         jsr   movfm
+         jsr   fsqr     
+         ldx   #fT
+         jsr   fadda    ; FAC=V*V+U*U
+         ldx   #c_1
+         jsr   fadda    ; FAC=V*V+U*U+1
+         jsr   f1osqrt
+         ldx   #fW
+         jsr   movmf    ; W = 1/sqrt(1+U*U+V*V)
+         
+         ldx   #fV
+         jsr   fmulm    ; V=V*W
+         
+         ldx   #fW
+         jsr   movfm
+         ldx   #fU
+         jsr   fmulm    ; U=U*W
+         
+         ldx   #fI
+         ldd   c_1
+         tst   <FACSGN
+         bmi   *+4
+         eorb  #128
+         std   ,x       
+         ldd   c_1+2
+         std   2,x      ; I = -sign(U)
+         rts       
+
+sphere_EFP
+         ldx   #fI
+         jsr   movfm
+         ldx   #fX
+         jsr   fadda
+         ldx   #fE
+         jsr   movmf    ; E=X+I
+         
+         ldx   #fI
+         jsr   movfm
+         ldx   #fY
+         jsr   fadda
+         ldx   #fF
+         jsr   movmf    ; F=Y+I
+
+         ldx   #fV
+         jsr   fmula
+         ldx   #fP
+         jsr   movmf    ; P=V*F
+         
+         ldx   #fU
+         jsr   movfm
+         ldx   #fE
+         jsr   fmula
+         ldx   #fP
+         jsr   faddm    ; P += U*E
+         
+         ldx   #fW
+         jsr   movfm
+         ldx   #fZ
+         jsr   fmula    ; W*Z
+         ldx   #fP
+         jmp   fsubm    ; P=V*F + U*E - W*Z
+         
+sphere_bounce
+         bsr   sphere_EFP
+         
+         jsr   fsqr
+         ldx   #fT
+         jsr   movmf    ; T=P*P
+         
+         ldx   #fE
+         jsr   movfm
+         jsr   fsqr
+         ldx   #fT
+         jsr   fsubm    ; T -= E*E
+         
+         ldx   #fF
+         jsr   movfm
+         jsr   fsqr
+         ldx   #fT
+         jsr   fsubm    ; T -= F*F
+         
+         ldx   #fZ
+         jsr   movfm
+         jsr   fsqr
+
+         ldx   #c_1
+         jsr   fsuba    ; 1 - Z*Z
+
+         ldx   #fT
+         jsr   faddm    ; T = P*P - E*E - F*F - Z*Z + 1
+         
+         jsr   ftst     
+         bgt   *+3      ; IF T>0 THEN
+         rts
+
+         jsr   fsqrt
+         ldx   #fP
+         jsr   fadda 
+         jsr   fneg
+         ldx   #fT
+         jsr   movmf    ; T = -(P + SQR(T))
+         
+         jsr   ftst   
+         bgt   *+3      ; IF T>0 THEN
+         rts
+         
+         ldx   #fU
+         jsr   fmula
+         ldx   #fX
+         jsr   faddm    ; X=X+U*T
+
+         ldx   #fT
+         jsr   movfm
+ 
+         ldx   #fV
+         jsr   fmula
+         ldx   #fY
+         jsr   faddm    ; Y=Y+V*T
+
+         ldx   #fT
+         jsr   movfm
+         
+         ldx   #fW
+         jsr   fmula
+         ldx   #fZ
+         jsr   fsubm    ; Z=Z-W*T
+         
+         jsr   sphere_EFP
+         
+         ldx   #fP
+         ldb   ,x
+         beq   *+4
+         inc   ,x      ; P=2*P
+         
+         jsr   movfm
+         ldx   #fE
+         jsr   fmula
+         ldx   #fU
+         jsr   fsubm    ; U=U-P*E
+         
+         ldx   #fP
+         jsr   movfm
+         ldx   #fF
+         jsr   fmula
+         ldx   #fV
+         jsr   fsubm    ; V=V-P*F
+         
+         ldx   #fP
+         jsr   movfm
+         ldx   #fZ
+         jsr   fmula
+         ldx   #fW
+         jsr   faddm    ; W=W+P*Z
+         
+         ldx   #fI+1
+         ldb   #128
+         eorb  ,x
+         stb   ,x       ; I=-I
+         jmp   sphere_bounce         
+
+ground_or_sky         
+         ldb   fV+1
+         bmi   ground
+sky
+         ldx   #fV
+         jsr   movfm
+         jsr   fsqrt
+         ldx   #c_7
+         jsr   fmula     
+         ldx   #fV
+         jmp   movmf    ; V=7*sqrt(V)
+ground         
+         ldx   #fY
+         jsr   movfm
+         ldx   #c_2
+         jsr   fadda
+         jsr   movaf
+         ldx   #fV
+         jsr   movfm
+         jsr   fdiv     
+         ldx   #fP
+         jsr   movmf    ; P=(Y+2)/V
+         
+         ldx   #fU
+         jsr   fmula
+         ldx   #fX
+         jsr   fsuba
+         jsr   floor
+*         jsr   ftoi     ; d = int(X-U*P)
+*         stb   ,-s
+         ldx   #fT
+         jsr   movmf
+         
+         ldx   #fP
+         jsr   movfm
+         
+         ldx   #fW
+         jsr   fmula
+         ldx   #fZ
+         jsr   fsuba
+         jsr   floor
+*         jsr   ftoi     ; d = int(X-W*Z)
+*         eorb  ,s
+*         andb  #1
+*         stb   ,s
+         ldx   #fT
+         jsr   fadda
+*         bsr   fmul4
+         jsr   ftoi
+         ldx   #c_8
+         lsrb
+         bcc   *+5
+         ldx   #c_13
+         stx   <dalle+1,pcr
+         
+         ldx   #fV
+         jsr   movfm
+         jsr   fneg
+         jsr   fsqrt
+         bsr   fmul4    ; FAC=4*SQRT(-V)
+         
+dalle    ldx   #c_8
+         jsr   fadda
+         ldx   #fV      
+         bra   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
+         
+calcCOL  ldx   #vac
+         ldb   iY+1
+         andb  #7
+         lslb
+         abx
+         ldab  16,7
+         andb  iX+1
+         mul
+         ldd   d,x
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         clrd
+         std   <FACMO
+         ldx   #fV
+         bsr   faddm
+         jsr   ftoi
+         ldx   #cols
+         ldb   b,X
+         rts
+         
+ftst     pshs  b
+         ldb   <FACEXP
+         beq   ftstx
+         ldb   <FACSGN
+         orb   #127
+ftstx    puls  b,pc
+
+fmul4    ldb   <FACEXP
+         beq   *+6
+         addb  #2
+         stb   <FACEXP  
+         rts
+
+/
+fopa     ldu   ,s
+         pulu  X
+         bsr   movam
+         pulu  ,x
+         stu   ,s
+         jmp   ,u
+
+fopm     ldu   ,s
+         pulu  X
+         bsr   movam
+         pulu  ,x
+         stu   ,s
+         jsr   ,u
+         bra   movmf
+
+fop3     ldu   ,s
+         pulu  X
+         bsr   movam
+         pulu  x
+         bsr   movfm
+         jsr   ,u
+         pulu  x
+         stu   ,s
+         bra   movmf
+/
+
+movam    ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         ldd   2,x
+         std   <ARGMO
+         rts       
+
+         ifne  1
+movfm    ldd   ,x
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         ldd   2,x
+         std   <FACMO
+         rts    
+         else
+movfm    ldb   #62
+         jmp   >EXTRA
+         endc
+
+         ifne  1
+movmf    lda   <FACEXP
+         beq   movmf0
+         ldb   <FACSGN
+         orb   #127
+         andb  <FACHO
+         std   ,x
+         ldd   <FACMO
+         std   2,x
+         rts
+movmf0   sta   ,x
+         rts
+         else
+movmf    ldb   #63
+         jmp   >EXTRA
+         endc
+
+movaf    ldb   #64
+         jmp   >EXTRA
+
+*fsgn    ldb   #41
+*        jmp   >EXTRA
+
+floor    ldb   #42
+         jmp   >EXTRA
+
+*fabs    ldb   #43
+*        jmp   >EXTRA
+
+fsqrt    ldb   #44
+         jmp   >EXTRA
+
+*fint    ldb   #51
+*        jmp   >EXTRA
+         
+*fneg    ldb   #53
+*        jmp   >EXTRA
+fneg     ldb   <FACEXP
+         beq   *+9
+         ldb   #128
+         eorb  <FACSGN
+         stb   <FACSGN
+         rts
+         
+faddm    bsr   fadda
+         bra   movmf         
+
+fadda    bsr   movam
+*        bra   fadd
+
+fadd     ldb   #54
+         jmp   >EXTRA
+
+fsubm    bsr   fsuba
+         bra   movmf
+
+fsuba    bsr   movam
+*        bra   fsub
+
+fsub     ldb   #55
+         jmp   >EXTRA
+         
+fsqr     bsr   movaf         
+         bra   fmul
+         
+fmulm    bsr   fmula
+         bra   movmf
+fmula    bsr   movam
+*        bra   fmul       
+fmul     ldb   #56
+         jmp   >EXTRA
+         
+f1osqrt  bsr   fsqrt
+         ldx   #c_1
+         bsr   movam
+*        bra   fdiv        
+
+fdiv     ldb   #57
+         jmp   >EXTRA
+         
+*atof    ldb   #65
+*        jmp   >EXTRA
+
+itof     std   <FACMO
+         ldd   #$0402
+         stb   <VALTYP
+         ldb   #50
+         jmp   >EXTRA
+
+ftoi     ldd   #$0232
+         jsr   >EXTRA
+         ldb   #4
+         stb   <VALTYP
+         ldd   <FACMO
+         rts
+
+errhnd   rts
+         lds   <$6175
+         puls  a,dp,x,y,u,pc
+
+prtTime  lda   >STATUS
+         ldb   >FORME
+         pshs  d
+         
+         ldab  0,255-$20
+         sta   >FORME
+         andb  >STATUS
+         stb   >STATUS        ; arret timer
+                  
+         ldd   >iTime
+         std   <ARGMO
+*         ldd   #36000
+*         bsr   idivmod
+*         bsr   prt10
+*         ldb   #':
+*         bsr   putc16
+         ldd   #600
+         bsr   idivmod
+         bsr   prt100
+         ldb   #'m
+         bsr   putc16
+         ldd   #10
+         bsr   idivmod
+         bsr   prt100
+         ldb   #'.
+         bsr   putc16
+         ldb   <ARGMO+1
+         bsr   prt10
+         puls  d
+         sta   >STATUS
+         stb   >FORME
+         rts
+         
+prt100   pshs  d
+         lda   #-1
+prt100a  inca
+         subb  #10
+         bcc   prt100a
+         addb  #10
+*         addd  #-246
+         exg   b,a
+         bsr   prt10
+         tfr   a,b
+         bsr   prt10
+         puls  d,pc
+
+* print a decimal
+prt10    addb  #'0
+* fall through   
+
+* prints a char in bm16
+putc16   pshs  u,d,y
+         subb  #31
+         lda   #8
+         mul
+         addd  >PTGENE
+         tfr   d,u         
+         incb        ; sets b0
+putc16_0 pshs  b,x
+         lda   ,-u
+*         lsra
+*         ora   ,u
+         bra   putc16_3
+putc16_1 jsr   >PLOT ; destroys B
+putc16_2 leax  1,x
+         lsla
+putc16_3 bmi   putc16_1
+         bne   putc16_2
+         puls  b,x
+         leay  1,y
+         lslb        ; loops 8 times
+         bne   putc16_0
+         leax  8,x   ; next pos
+         puls  u,d,y,pc
+         
+* D = ARG / D and ARG = ARG % D
+
+         ifne  1
+         
+idivmod  pshs  x,u         
+         ldx   #1
+idivmod_ tsta
+         bmi   idivmod1
+         bne   idivmod0
+         ldx   #9
+         exg   a,b
+         bra   idivmod_
+idivmod0 leax  1,x
+         lslb
+         rola
+         bpl   idivmod0
+idivmod1 std   <FACMO
+         ldd   <ARGMO
+         ldu   #-1
+         stu   <ARGMO
+         ldu   #FACMO
+idivmod2 cmpd  ,u
+         bcs   idivmod3
+         subd  ,u
+idivmod3 rol   <ARGMO+1
+         rol   <ARGMO
+         lsr   ,u
+         ror   1,u
+         leax  -1,x
+         bne   idivmod2
+         ldx   <ARGMO
+         std   <ARGMO
+         tfr   x,d
+         coma
+         comb
+         puls  x,u,pc
+
+         else
+         
+idivmod  pshs  x
+         ldx   #16
+         std   <idivmod0+4,pcr
+         std   <idivmod1-2,pcr
+         ldd   #0
+         lsl   <ARGMO+1
+         rol   <ARGMO
+idivmod0 rolb 
+         rola
+         cmpd  #0
+         bcs   idivmod1
+         subd  #0
+idivmod1 rol   <ARGMO+1
+         rol   <ARGMO
+         leax  -1,x
+         bne   idivmod0
+         tfr   d,x
+         ldd   <ARGMO
+         stx   <ARGMO
+         comb 
+         coma  
+         puls  x,pc
+         
+         endc
+
+* timer routine, called every 1/10 sec
+timert   inc   >iTime+1
+         bne   timert1
+         inc   >iTime+0
+timert1  jmp   KBIN
+
+beep     ldb   #7
+         jmp   >PUTC
+
+* print a string   
+puts0    jsr   >PUTC
+puts     ldb   ,x+
+         bne   puts0
+         rts
+   
+inistr   fcb   $14      cursor off
+         fcb   $1b,$5e  bm16
+         fcb   $1b,$60  black border
+         fcb   0
+         
+palette  fdb   $000,$100,$200,$500
+         fdb   $C00,$C10,$C50,$CC0
+         fdb   $010,$020,$050,$0A0
+         fdb   $011,$022,$055,$0AA
+         
+vac      fdb   15,48,24,42,28,49,37,10
+         fdb   30,5,51,9,57,1,23,54
+         fdb   40,20,58,14,32,47,8,62
+         fdb   3,44,35,26,41,18,34,27
+         fdb   50,17,7,63,2,52,59,13
+         fdb   38,53,29,46,22,11,43,25
+         fdb   0,21,12,55,39,31,6,56
+         fdb   33,60,36,4,16,61,19,45
+         
+cols     fcb   0,1,2,3,4,5,6,7
+         fcb   0,8,9,10,11
+         fcb   0,12,13,14,15
+         
+c_m0p1   fdb   $7DCC,$CCCD       ; -.1
+c_1o130  fdb   $797C,$0FC1       ; 1/130
+c_159p5  fdb   $881F,$8000       ; 159.5
+c_99p5   fdb   $8747,$0000       ; 99.5
+c_0      fdb   $0000,$0000       ; 0
+c_0p5    fdb   $8000,$0000       ; 0.5
+c_1      fdb   $8100,$0000       ; 1
+c_2      fdb   $8200,$0000       ; 2
+c_3      fdb   $8240,$0000       ; 3
+c_4      fdb   $8300,$0000       ; 4
+c_5      fdb   $8320,$0000       ; 5
+c_7      fdb   $8360,$0000       ; 7
+
+c_8      fdb   $8400,$0000       ; 8
+c_13     fdb   $8450,$0000       ; 13
+
+(info)
+
+iTime    rmb   2
+iRnd     rmb   2
+iX       rmb   2
+iY       rmb   2
+i2X      rmb   2
+
+fX       rmb   4
+fY       rmb   4
+fZ       rmb   4
+
+fU       rmb   4
+fV       rmb   4
+fW       rmb   4
+
+fI       rmb   4
+fE       rmb   4
+fF       rmb   4
+fP       rmb   4
+fT       rmb   4
+
+         end   ini   
