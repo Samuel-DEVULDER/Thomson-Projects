@@ -564,7 +564,7 @@ f1osqrt
          bra   fdiv        
          endc
 
-         ifne  0
+         ifne  1
 fdiv     jmp   fastDiv        ; 24:19
          else
 fdiv     ldb   #57            ; 23:11
@@ -711,107 +711,33 @@ fastMul  lda   <FACEXP
          eora  <FACSGN
          sta   <FACSGN
          
-         ldd   <FACHO
-         std   <ARGLO+1
-         lda   <FACLO
-         sta   <ARGLO+3
-         
-         clrd
-         std   <FACHO
-         std   <FACLO
-         
-* A1A2A3
-* B1B2B3
-* ======
-*         B3A3  
-         ldb   <ARGEXP+3
-         lda   <ARGLO+3
-         mul
-         adca  #0
-         sta   <FACLO+2
-*       B2A3
-         ldb   <ARGMO
-         lda   <ARGLO+3
-         mul
-         addd  <FACLO+1
-         std   <FACLO+1
-*       B3A2
-         ldb   <ARGLO
-         beq   xxx1
-         lda   <ARGLO+2
-         mul
-         addd  <FACLO+1
-         std   <FACLO+1
-         bcc   xxx1
-         inc   <FACLO
-xxx1
-*     B1A3         
+         lda   <FACMO    *   B1A2
          ldb   <ARGHO
-         lda   <ARGLO+3
-         beq   xxx2
          mul
-         addd  <FACLO
-         std   <FACLO
-         bcc   xxx2
-         inc   <FACMO
-xxx2
-*     B2A2         
-         ldb   <ARGMO
-         beq   fastMul1
-         lda   <ARGLO+2
-         beq   fastMul1
-         mul
-         addd  <FACLO
-         std   <FACLO
-         bcc   fastMul1
-         inc   <FACMO
-fastMul1
-*     B3A1
-         ldb   <ARGLO
-         beq   fastMul2
-         lda   <ARGLO+1
-         mul
-         addd  <FACLO
-         std   <FACLO
-         bcc   fastMul2
-         inc   <FACMO
-fastMul2
-*   B1A2
-         lda   <ARGLO+2
-         beq   fastMul3
-         ldb   <ARGHO
+         std   <FACMO
+
+         ldb   <ARGMO    *   B2A1
+         lda   <FACHO
          mul
          addd  <FACMO
          std   <FACMO
-         bcc   fastMul3
-         inc   <FACHO
-fastMul3
-*   B2A1
-         ldb   <ARGMO
-         beq   fastMul4
-         lda   <ARGLO+1
-         mul
-         addd  <FACMO
-         std   <FACMO
-         bcc   fastMul4
-         inc   <FACHO
-fastMul4         
-* B1A1                  FE01
-         lda   <ARGLO+1
+      
+         ldb   #0        * get carry
+         rolb
+            
+         lda   <FACHO
+         stb   <FACHO    * B1A1                  FE01
          ldb   <ARGHO           
          mul                     
          addd  <FACHO
-fastMul5
-         bmi   fastMul6
-         dec   <FACEXP
-         beq   fastMul6
-         lsl   <FACLO+1
-         rol   <FACLO
+         bmi   fastMul2
+fastMul1 dec   <FACEXP
+         beq   fastMul2
+         lsl   <FACLO
          rolb
          rola
-         bra   fastMul5
-fastMul6
-         std   <FACHO
+         bpl   fastMul1
+fastMul2 std   <FACHO
          rts
       
 prtTime  lda   >STATUS
