@@ -9,7 +9,7 @@ PTGENE   equ   $60CF
 PUTC     equ   $E803
 EXTRA    equ   $EC0C
 SETP     equ   $EC00
-PLOT     equ   $E80F
+*PLOT     equ   $E80F
 KBIN     equ   $E830
 
 DBLFLG   equ   $6103
@@ -73,18 +73,12 @@ ini      pshs  dp
          
 * init pseudo-random point generator         
          std   <iRnd
-newpx    jsr   calcXY
-         jsr   calcUVW
-         jsr   spheres
-         jsr   ground_or_sky
-         jsr   calcCOL
-
-         stb   FORME
+newpx    jmp   calcXY
+drwpx    stb   FORME
          ldx   <iX
          ldy   <iY
-         jsr   PLOT
-         
-         ldd   <iRnd
+         jsr   PLOT        
+nxtpx    ldd   <iRnd
 nxrnd    lslb
          rola
          lslb
@@ -175,8 +169,8 @@ calcXY9  exg   d,x
          std   fZ
          stx   fZ+2
 
-         rts
-
+         bra   calcUVW
+         
 calcUV_  jsr   itof
          jsr   fsuba
          ldx   #c_1o130
@@ -215,21 +209,24 @@ calcUVW  ldd   <i2X
          ldx   #fW
          jsr   movfm
          ldx   #fU
-         jmp   fmulm    ; U=U*W
+         jsr   fmulm    ; U=U*W
          
+*        bra   spheres
+ 
+
 spheres  ldx   #c_sph-6
          leax  6,x
          ldd   ,x
-         bge   *+3
-         rts
+         bge   *+4
+         bra   no_sphere
          subd  <i2X
          bge   *+3
          negb
          cmpb  #50
          bhi   spheres+3
          ldd   2,x
-         bne   *+3
-         rts
+         bne   *+4
+         bra   no_sphere
          subd  <iY
          bge   *+3
          negb
@@ -238,6 +235,8 @@ spheres  ldx   #c_sph-6
          ldd   4,x
          std   <fI         
          bra   sphere_bounce
+no_sphere
+         jmp   ground_or_sky
                   
 sphere_EFP
          ldx   #fI
@@ -310,8 +309,8 @@ sphere_bounce
          jsr   faddm    ; T = P*P - E*E - F*F - Z*Z + 1
          
          bsr   ftst     
-         bgt   *+3      ; IF T>0 THEN
-         rts
+         bgt   *+5      ; IF T>0 THEN
+         jmp   ground_or_sky
 
          jsr   fsqrt
          ldx   #fP
@@ -321,8 +320,8 @@ sphere_bounce
          jsr   movmf    ; T = -(P + SQR(T))
          
          bsr   ftst   
-         bgt   *+3      ; IF T>0 THEN
-         rts
+         bgt   *+5      ; IF T>0 THEN
+         jmp   ground_or_sky
          
          ldx   #fU
          jsr   fmula
@@ -388,7 +387,8 @@ sky
          ldx   #c_7
          jsr   fmula     
          ldx   #fV
-         jmp   movmf    ; V=7*sqrt(V)
+         jsr   movmf    ; V=7*sqrt(V)
+         bra   calcCOL
 ground         
          ldx   #fY
          jsr   movfm
@@ -433,7 +433,7 @@ ground
          stx   <dalle+1,pcr
          
          ldx   #fV
-         bsr   movfm
+         jsr   movfm
          bsr   fneg
          jsr   fsqrt
          ldb   <FACEXP
@@ -442,9 +442,10 @@ ground
          stb   <FACEXP  ; FAC=4*SQRT(-V)
          
 dalle    ldx   #ground0
-         bsr   fadda
+         jsr   fadda
          ldx   #fV      
-         bra   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
+         jsr   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
+*         bra   calcCOL
          
 calcCOL  ldx   #vac
          ldb   <iY+1
@@ -465,7 +466,7 @@ calcCOL  ldx   #vac
          jsr   ftoi
          ldx   #cols
          ldb   b,X
-         rts
+         jmp   drwpx
 
 fneg     com  <FACSGN
          rts
@@ -619,7 +620,7 @@ fastInvSqrt
          suba  <FACMO
          sta   <FACMO
          
-         ldd   #$6037
+         ldd   #$6037   ; includes bias correction
          sbcb  <FACHO
          sbca  <FACEXP
 
@@ -763,81 +764,6 @@ fastSqr  lda   <FACEXP
          bmi   fastMul2
          bra   fastMul1
 
-* affiche le temps mm:ss.d      
-prtTime  lda   >STATUS
-         ldb   >FORME
-         pshs  d
-         
-         ldab  0,255-$20
-         sta   >FORME
-         andb  >STATUS
-         stb   >STATUS        ; arret timer
-                  
-         ldd   <iTime
-         std   <ARGMO
-*         ldd   #36000
-*         bsr   idivmod
-*         bsr   prt10
-*         ldb   #':
-*         bsr   putc16
-         ldd   #600
-         bsr   idivmod
-         bsr   prt100
-         ldb   #'m
-         bsr   putc16
-         ldd   #10
-         bsr   idivmod
-         bsr   prt100
-         ldb   #'.
-         bsr   putc16
-         ldb   <ARGMO+1
-         bsr   prt10
-         puls  d
-         sta   >STATUS
-         stb   >FORME
-         rts
-         
-prt100   pshs  d
-*         lda   1,s
-*         clrb
-         exg   a,b
-prt100a  subd  #2559
-         bcc   prt100a
-         addd  #2559
-         bsr   prt10
-         tfr   a,b
-         bsr   prt10
-         puls  d,pc
-
-* print a decimal
-prt10    addb  #'0
-*        bra   putc16
-
-* prints a char in bm16
-putc16   pshs  u,d,y
-         subb  #31
-         lda   #8
-         mul
-         addd  >PTGENE
-         tfr   d,u         
-         incb        ; sets b0
-putc16_0 pshs  b,x
-         lda   ,-u
-*         lsra
-*         ora   ,u
-         bra   putc16_3
-putc16_1 jsr   >PLOT ; destroys B
-putc16_2 leax  1,x
-         lsla
-putc16_3 bmi   putc16_1
-         bne   putc16_2
-         puls  b,x
-         leay  1,y
-         lslb        ; loops 8 times
-         bne   putc16_0
-         leax  8,x   ; next pos
-         puls  u,d,y,pc
-         
 * D = ARG / D and ARG = ARG % D
 
          ifne  1
@@ -902,6 +828,115 @@ idivmod1 rol   <ARGMO+1
          
          endc
 
+* affiche le temps mm:ss.d      
+prtTime  lda   >STATUS
+         ldb   >FORME
+         pshs  d
+         
+         ldab  0,255-$20
+         sta   >FORME
+         andb  >STATUS
+         stb   >STATUS        ; arret timer
+                  
+         ldd   <iTime
+         std   <ARGMO
+*         ldd   #36000
+*         bsr   idivmod
+*         bsr   prt10
+*         ldb   #':
+*         bsr   putc16
+         ldd   #600
+         bsr   idivmod
+         bsr   prt100
+         ldb   #'m
+         bsr   putc16
+         ldd   #10
+         bsr   idivmod
+         bsr   prt100
+         ldb   #'.
+         bsr   putc16
+         ldb   <ARGMO+1
+         bsr   prt10
+         puls  d
+         sta   >STATUS
+         stb   >FORME
+         rts
+         
+prt100   pshs  d
+*         lda   1,s
+*         clrb
+         exg   a,b
+prt100a  subd  #2559
+         bcc   prt100a
+         addd  #2559
+         bsr   prt10
+         tfr   a,b
+         bsr   prt10
+         puls  d,pc
+
+* print a decimal
+prt10    addb  #'0
+*        bra   putc16
+
+* prints a char in bm16
+putc16   pshs  u,d,y
+         subb  #31
+         lda   #8
+         mul
+         addd  >PTGENE
+         tfr   d,u         
+         incb        ; sets b0
+putc16_0 pshs  x,b
+         lda   ,-u
+*         lsra
+*         ora   ,u
+         bra   putc16_3
+putc16_1 bsr   PLOT ; destroys B
+putc16_2 leax  1,x
+         lsla
+putc16_3 bmi   putc16_1
+         bne   putc16_2
+         puls  x,b
+         leay  1,y
+         lslb        ; loops 8 times
+         bne   putc16_0
+         leax  8,x   ; next pos
+         puls  u,d,y,pc
+
+* faster BM16 version of PLOT ($E80F)
+* FORM contains dedoubled color XX
+PLOT     pshs  d,x
+*         jsr   $E80F
+*         puls  d,x,pc
+
+         tfr   y,d      ; calc px address
+         lda   #40
+         mul
+         adda  #$40
+         tfr   d,x
+         ldb   3,s
+         lsrb
+         lsrb
+         abx
+         
+         ldb   >$E7C3   ; ramA or ramB ?
+         orb   #1
+         sbcb  #0
+         stb   >$E7C3
+         
+         ldb   3,s      ; compute mask 
+         lsrb           
+         ldd   #$0FF0   
+         bcc   *+5      
+         ldd   #$F00F   
+         
+         andb  FORME    ; display pixel
+         anda  ,x
+         sta   ,x
+         orb   ,x
+         stb   ,x
+         puls  d,x,pc
+         
 * print a string   
 puts0    jsr   >PUTC
 puts     ldb   ,x+
@@ -920,7 +955,11 @@ timert1  jmp   KBIN
 inistr   fcb   $14      cursor off
          fcb   $1b,$5e  bm16
          fcb   $1b,$60  black border
-         fcb   0
+
+cols     fcb   0
+         fcb   $11,$22,$33,$44,$55,$66,$77
+         fcb   $00,$88,$99,$aa,$bb
+         fcb   $00,$cc,$dd,$ee,$ff
          
 palette  fdb   $000,$100,$200,$500
          fdb   $C00,$C10,$C50,$CC0
@@ -950,12 +989,7 @@ vac      fdb   $7F88,$7F00,$7E80,$7E20
 
          fdb   $7B00,$7F60,$7D00,$7FE0
          fdb   $7F80,$7F68,$7ED0,$7E50
-         
-cols     fcb   0,1,2,3,4,5,6,7
-         fcb   0,8,9,10,11
-         fcb   0,12,13,14,15
-
-         
+                  
 c_m0p1   fdb   $7DCC,$CCCD       ; -.1
 c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
 
