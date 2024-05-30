@@ -41,53 +41,58 @@ clrd     macro
 
          org   $9000
          
+defusr   pshs  a,dp,x
+         jsr   fastInvSqrt
+         puls  a,dp,x,pc
+         
 ini      pshs  dp
-* init screen
-         ldx   #inistr
-         jsr   puts        
-         ldx   #palette
-         lda   #$FF
-         jsr   SETP
 * init extramon + math         
-         incb
-         jsr   EXTRA
          ldd   #$6104
          tfr   a,dp
          stb   <VALTYP
          clr   <DBLFLG         
+         ldab   $ff,1
+         jsr   EXTRA
+* init screen
+         ldx   #palette
+*         lda   #$FF
+         jsr   SETP
+         ldx   #inistr
+         jsr   puts        
 * init timer         
          ldd   #timert
          std   >TIMEPT
-         ldb   >STATUS
-         orb   #$20
+         ldb   #$20
+         orb   >STATUS
          stb   >STATUS
-         andcc #255-$50
-         
+         andcc #255-$50    ; enable interrupts
          clrd
+         std   <fI+2
          stb   >CHDRAW
-         std   iTime
-         std   iRnd
-                 
+         std   <iTime      ; rester time counter
+         
+* init pseudo-random point generator         
+         std   <iRnd
 newpx    jsr   calcXY
          jsr   calcUVW
-         jsr   sphere_bounce
+         jsr   spheres
          jsr   ground_or_sky
          jsr   calcCOL
 
          stb   FORME
-         ldx   iX
-         ldy   iY
+         ldx   <iX
+         ldy   <iY
          jsr   PLOT
          
-         ldd   iRnd
+         ldd   <iRnd
 nxrnd    lslb
          rola
          lslb
          rola
-         addd  iRnd
+         addd  <iRnd
          addd  #1
          anda  #127
-         std   iRnd
+         std   <iRnd
          beq   done
          cmpd  #32000
          bcc   nxrnd
@@ -102,17 +107,17 @@ loop     jmp   loop
          puls  dp,pc
 
 calcXY    
-         ifne 1
+         ifne 0
          
          std   <ARGMO
          ldd   #200
          jsr   idivmod
-         std   iX
+         std   <iX
          lslb
          rola
-         std   i2X
+         std   <i2X
          ldd   <ARGMO
-         std   iY
+         std   <iY
          
          else
 * fait gagner 15sec environ
@@ -150,12 +155,12 @@ calcXY8  cmpd  #200
          subd  #200
          leax  1,x
 calcXY9  exg   d,x
-         std   iX
+         std   <iX
          lslb
          rola
-         std   i2X
+         std   <i2X
          tfr   x,d
-         std   iY         
+         std   <iY         
          
          endc
          
@@ -177,14 +182,14 @@ calcUV_  jsr   itof
          ldx   #c_1o130
          jmp   fmula
          
-calcUVW  ldd   i2X
+calcUVW  ldd   <i2X
          ldx   #c_159p5
          bsr   calcUV_
          jsr   fneg
          ldx   #fU
          jsr   movmf    ; U = (2M-159.5)/130
          
-         ldd   iY
+         ldd   <iY
          ldx   #c_99p5
          bsr   calcUV_
          ldx   #fV
@@ -210,19 +215,30 @@ calcUVW  ldd   i2X
          ldx   #fW
          jsr   movfm
          ldx   #fU
-         jsr   fmulm    ; U=U*W
+         jmp   fmulm    ; U=U*W
          
-         ldx   #fI
-         ldd   c_1
-         tst   <FACSGN
-         bmi   *+4
-         eorb  #128     ; negate
-         std   ,x       
-*         ldd   c_1+2
-         clrd
-         std   2,x      ; I = -sign(U)
-         rts       
-
+spheres  ldx   #c_sph-6
+         leax  6,x
+         ldd   ,x
+         bge   *+3
+         rts
+         subd  <i2X
+         bge   *+3
+         negb
+         cmpb  #50
+         bhi   spheres+3
+         ldd   2,x
+         bne   *+3
+         rts
+         subd  <iY
+         bge   *+3
+         negb
+         cmpb  #50
+         bhi   spheres+3
+         ldd   4,x
+         std   <fI         
+         bra   sphere_bounce
+                  
 sphere_EFP
          ldx   #fI
          jsr   movfm
@@ -253,7 +269,7 @@ sphere_EFP
          ldx   #fW
          jsr   movfm
          ldx   #fZ
-         jsr   fmula    ; W*Z
+         jsr   fmula    ; FAC=W*Z
          ldx   #fP
          jmp   fsubm    ; P=V*F + U*E - W*Z
 
@@ -263,7 +279,7 @@ ftst     pshs  b
          ldb   <FACSGN
          orb   #127
 ftstx    puls  b,pc
-         
+
 sphere_bounce
          bsr   sphere_EFP
          
@@ -409,7 +425,6 @@ ground
 *         stb   ,s
          ldx   #fT
          jsr   fadda
-*         bsr   fmul4
          jsr   ftoi
          ldx   #ground0
          lsrb
@@ -421,24 +436,23 @@ ground
          bsr   movfm
          bsr   fneg
          jsr   fsqrt
-fmul4    ldb   <FACEXP
+         ldb   <FACEXP
 *        beq   *+6
          addb  #2
-         stb   <FACEXP        
-*        bsr   fmul4    ; FAC=4*SQRT(-V)
+         stb   <FACEXP  ; FAC=4*SQRT(-V)
          
 dalle    ldx   #ground0
-         jsr   fadda
+         bsr   fadda
          ldx   #fV      
          bra   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
          
 calcCOL  ldx   #vac
-         ldb   iY+1
+         ldb   <iY+1
          andb  #7
          lslb
          abx
          ldab  16,7
-         andb  iX+1
+         andb  <iX+1
          mul
          ldd   d,x
          stb   <FACSGN
@@ -453,39 +467,9 @@ calcCOL  ldx   #vac
          ldb   b,X
          rts
 
-*fneg    ldb   #53
-*        jmp   >EXTRA
-
 fneg     com  <FACSGN
          rts
                   
-/
-fopa     ldu   ,s
-         pulu  X
-         bsr   movam
-         pulu  ,x
-         stu   ,s
-         jmp   ,u
-
-fopm     ldu   ,s
-         pulu  X
-         bsr   movam
-         pulu  ,x
-         stu   ,s
-         jsr   ,u
-         bra   movmf
-
-fop3     ldu   ,s
-         pulu  X
-         bsr   movam
-         pulu  x
-         bsr   movfm
-         jsr   ,u
-         pulu  x
-         stu   ,s
-         bra   movmf
-/
-
 movam    ldd   ,x
          stb   <ARGSGN
          orb   #128
@@ -535,21 +519,9 @@ movaf    ldd   <FACEXP
          stb   <ARGSGN
          rts
 
-*fsgn    ldb   #41
-*        jmp   >EXTRA
-
 floor    ldb   #42
          jmp   >EXTRA
 
-*fabs    ldb   #43
-*        jmp   >EXTRA
-
-fsqrt    ldb   #44
-         jmp   >EXTRA
-
-*fint    ldb   #51
-*        jmp   >EXTRA
-         
 faddm    bsr   fadda
          bra   movmf         
 
@@ -567,27 +539,40 @@ fsuba    bsr   movam
 
 fsub     ldb   #55
          jmp   >EXTRA
-         
-fsqr     bsr   movaf         
-         bra   fmul
-         
+                  
 fmulm    bsr   fmula
          bra   movmf
+
 fmula    bsr   movam
 *        bra   fmul       
-fmul     ldb   #56
+
+fmul     
+         ifne  1
+         jmp   fastMul
+         else
+         ldb   #56
          jmp   >EXTRA
+         endc
          
-f1osqrt  bsr   fsqrt
+f1osqrt  
+         ifne  1
+         bra   fastInvSqrt    ; 23:11
+         else
+         bsr   fsqrt          ; 25:38
          ldx   #c_1
          bsr   movam
-*        bra   fdiv        
+         bra   fdiv        
+         endc
 
-fdiv     ldb   #57
+         ifne  0
+fdiv     jmp   fastDiv        ; 24:19
+         else
+fdiv     ldb   #57            ; 23:11
          jmp   >EXTRA
-         
-*atof    ldb   #65
-*        jmp   >EXTRA
+         endc
+
+fsqr     bsr   movaf         
+         bra   fmul
 
 itof     std   <FACMO
          ldd   #$0402
@@ -602,6 +587,233 @@ ftoi     ldd   #$0232
          ldd   <FACMO
          rts
 
+fastInvSqrt
+         pshs  x
+         leas  -8,s         
+         leax  4,s
+         clra
+         sta   <FACSGN
+         sta   <ARGSGN
+         bsr   movmf
+               
+         ldd   <FACEXP
+         suba  #2       ; make bias = 127
+         lslb           ; |
+         lsra           ; | make ieee
+         rorb           ; | 
+      
+         lsra           ; |
+         rorb           ; |
+         ror   <FACMO   ; | i>>1
+         ror   <FACLO   ; |
+         std   <FACEXP  ; |
+      
+         ldd   #$5a86   ;  $5F375A86 - (i>>1)
+         subd  <FACMO
+         std   <FACMO
+         std   <ARGMO
+         ldd   #$5f37
+         sbcb  <FACHO
+         sbca  <FACEXP
+      
+         inca           ; set bias back to 128
+         addb  #128     ; extract msbit -> carry
+         rola           ; move carry to a
+         orb   #128     ; set msbit
+         std   <FACEXP
+         std   <ARGEXP
+  
+         leax  ,s
+         jsr   movmf    ; save y on stack
+         bsr   fmul     ; y*y
+         leax  4,s
+         bsr   fmula    ; x*y*y
+         ldx   #c_3
+         jsr   fsuba    ; 3 - x*y*y
+         dec   <FACEXP  ; 1.5 - y*y*x/2
+         leax  ,s
+         bsr   fmula    ; y*(1.5 - x*y*y/2)
+
+*         bsr   Newton
+*         bsr   Newton
+*         bsr   Newton
+
+         leas  8,s
+         puls  x,pc
+
+         ifne 0
+Newton   leax  2,s
+         jsr   movmf    ; save y on stack
+         bsr   fsqr     ; y*y
+         leax  6,s
+         bsr   fmula    ; x*y*y
+         ldx   #c_3
+         bsr   fsuba    ; 3 - x*y*y
+         dec   <FACEXP  ; 1.5 - y*y*x/2
+         leax  2,s
+         bra   fmula    ; y*(1.5 - x*y*y/2)
+         endc
+
+         ifne  0
+fsqrt    ldb   #44      ; 23:57
+         jmp   >EXTRA
+         else
+fsqrt    pshs  x
+         leas  -4,s     ; 23:12
+         leax  ,s
+         jsr   movmf
+         bsr   fastInvSqrt
+         leax  ,s
+         jsr   fmula
+         leas  4,s
+         puls  x,pc
+         endc
+
+fastDiv  pshs  x
+         lda   <ARGEXP
+         beq   fastDiv2
+         leas  -4,s
+         ldb   <ARGSGN
+         eorb  <FACSGN
+         orb   #127
+         andb  <ARGHO
+         std   ,s
+         ldd   <ARGMO
+         std   2,S
+         bsr   fastInvSqrt
+         jsr   fsqr
+         leax  ,s
+         jsr   fmula
+         lda   <FACEXP
+         leas  4,s         
+fastDiv2 sta   <FACEXP
+         puls  x,pc
+            
+fastMulO tfr   a,b      ;
+         sex   
+fastMul0 sta   <FACEXP
+         rts
+fastMul  lda   <FACEXP
+         beq   fastMul0+2
+         suba  #$80
+         sta   <FACEXP
+
+         lda   <ARGEXP
+         beq   fastMul0
+
+         suba  #$80
+         adda  <FACEXP
+         bvs   fastMulO
+         adda  #$80
+         sta   <FACEXP
+         
+         lda   <ARGSGN
+         eora  <FACSGN
+         sta   <FACSGN
+         
+         ldd   <FACHO
+         std   <ARGLO+1
+         lda   <FACLO
+         sta   <ARGLO+3
+         
+         clrd
+         std   <FACHO
+         std   <FACLO
+         
+* A1A2A3
+* B1B2B3
+* ======
+*         B3A3  
+         ldb   <ARGEXP+3
+         lda   <ARGLO+3
+         mul
+         adca  #0
+         sta   <FACLO+2
+*       B2A3
+         ldb   <ARGMO
+         lda   <ARGLO+3
+         mul
+         addd  <FACLO+1
+         std   <FACLO+1
+*       B3A2
+         ldb   <ARGLO
+         beq   xxx1
+         lda   <ARGLO+2
+         mul
+         addd  <FACLO+1
+         std   <FACLO+1
+         bcc   xxx1
+         inc   <FACLO
+xxx1
+*     B1A3         
+         ldb   <ARGHO
+         lda   <ARGLO+3
+         beq   xxx2
+         mul
+         addd  <FACLO
+         std   <FACLO
+         bcc   xxx2
+         inc   <FACMO
+xxx2
+*     B2A2         
+         ldb   <ARGMO
+         beq   fastMul1
+         lda   <ARGLO+2
+         beq   fastMul1
+         mul
+         addd  <FACLO
+         std   <FACLO
+         bcc   fastMul1
+         inc   <FACMO
+fastMul1
+*     B3A1
+         ldb   <ARGLO
+         beq   fastMul2
+         lda   <ARGLO+1
+         mul
+         addd  <FACLO
+         std   <FACLO
+         bcc   fastMul2
+         inc   <FACMO
+fastMul2
+*   B1A2
+         lda   <ARGLO+2
+         beq   fastMul3
+         ldb   <ARGHO
+         mul
+         addd  <FACMO
+         std   <FACMO
+         bcc   fastMul3
+         inc   <FACHO
+fastMul3
+*   B2A1
+         ldb   <ARGMO
+         beq   fastMul4
+         lda   <ARGLO+1
+         mul
+         addd  <FACMO
+         std   <FACMO
+         bcc   fastMul4
+         inc   <FACHO
+fastMul4         
+* B1A1                  FE01
+         lda   <ARGLO+1
+         ldb   <ARGHO           
+         mul                     
+         addd  <FACHO
+fastMul5
+         bmi   fastMul6
+         dec   <FACEXP
+         beq   fastMul6
+         lsl   <FACLO+1
+         rol   <FACLO
+         rolb
+         rola
+         bra   fastMul5
+fastMul6
+         std   <FACHO
+         rts
+      
 prtTime  lda   >STATUS
          ldb   >FORME
          pshs  d
@@ -611,7 +823,7 @@ prtTime  lda   >STATUS
          andb  >STATUS
          stb   >STATUS        ; arret timer
                   
-         ldd   >iTime
+         ldd   <iTime
          std   <ARGMO
 *         ldd   #36000
 *         bsr   idivmod
@@ -636,8 +848,9 @@ prtTime  lda   >STATUS
          rts
          
 prt100   pshs  d
-         lda   1,s
-         clrb
+*         lda   1,s
+*         clrb
+         exg   a,b
 prt100a  subd  #2559
          bcc   prt100a
          addd  #2559
@@ -648,7 +861,7 @@ prt100a  subd  #2559
 
 * print a decimal
 prt10    addb  #'0
-* fall through   
+*        bra   putc16
 
 * prints a char in bm16
 putc16   pshs  u,d,y
@@ -739,18 +952,20 @@ idivmod1 rol   <ARGMO+1
          
          endc
 
-* timer routine, called every 1/10 sec
-timert   inc   >iTime+1
-         bne   timert1
-         inc   >iTime+0
-timert1  jmp   KBIN
-
-
 * print a string   
 puts0    jsr   >PUTC
 puts     ldb   ,x+
          bne   puts0
          rts
+         
+         setdp $ff
+
+* timer routine, called every 1/10 sec
+timert   inc   >iTime+1
+         bne   timert1
+         inc   >iTime+0
+timert1  jmp   KBIN
+         
    
 inistr   fcb   $14      cursor off
          fcb   $1b,$5e  bm16
@@ -789,13 +1004,17 @@ vac      fdb   $7F88,$7F00,$7E80,$7E20
 cols     fcb   0,1,2,3,4,5,6,7
          fcb   0,8,9,10,11
          fcb   0,12,13,14,15
+
          
 c_m0p1   fdb   $7DCC,$CCCD       ; -.1
-c_3      fdb   $8240,$0000       ; 3
+c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
 
 c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_159p5  fdb   $881F,$8000       ; 159.5
 c_99p5   fdb   $8747,$0000       ; 99.5
+
+c_sph    fdb   110,145,$8100
+         fdb   210,48,$8180
 
 c_1      fdb   $8100,$0000       ; 1
 c_2      fdb   $8200,$0000       ; 2
@@ -805,12 +1024,17 @@ ground0  fdb   $8400,$0000       ; 8
 ground1  fdb   $8450,$0000       ; 13
 
 (info)
+*iTime    rmb   2
+*iRnd     rmb   2
+*iX       rmb   2
+*iY       rmb   2
+*i2X      rmb   2
 
-iTime    rmb   2
-iRnd     rmb   2
-iX       rmb   2
-iY       rmb   2
-i2X      rmb   2
+iTime    equ   $61A1
+iRnd     equ   $61A3
+iX       equ   $61A5
+iY       equ   $61A7
+i2X      equ   $61A9
 
 fX       rmb   4
 fY       rmb   4
@@ -820,7 +1044,8 @@ fU       rmb   4
 fV       rmb   4
 fW       rmb   4
 
-fI       rmb   4
+fI       equ   i2X+2
+*fI       rmb   4
 fE       rmb   4
 fF       rmb   4
 fP       rmb   4
