@@ -474,8 +474,8 @@ movam    ldd   ,x
          stb   <ARGSGN
          orb   #128
          std   <ARGEXP
-         ldd   2,x
-         std   <ARGMO
+         lda   2,x
+         sta   <ARGMO
          rts       
 
          ifne  1
@@ -483,8 +483,8 @@ movfm    ldd   ,x
          stb   <FACSGN
          orb   #128
          std   <FACEXP
-         ldd   2,x
-         std   <FACMO
+         lda   2,x
+         sta   <FACMO
          rts    
          else
 movfm    ldb   #62
@@ -498,8 +498,8 @@ movmf    lda   <FACEXP
          orb   #127
          andb  <FACHO
          std   ,x
-         ldd   <FACMO
-         std   2,x
+         lda   <FACMO
+         sta   2,x
          rts
 movmf0   sta   ,x
          rts
@@ -513,8 +513,8 @@ movmf    ldb   #63
 
 movaf    ldd   <FACEXP
          std   <ARGEXP
-         ldd   <FACMO
-         std   <ARGMO
+         lda   <FACMO
+         sta   <ARGMO
          ldb   <FACSGN
          stb   <ARGSGN
          rts
@@ -543,9 +543,13 @@ fsub     ldb   #55
 fmulm    bsr   fmula
          bra   movmf
 
-fmula    bsr   movam
+fmula    
+         ifne  1
+         jmp   fastMulA
+         else
+         bsr   movam
 *        bra   fmul       
-
+         endc
 fmul     
          ifne  1
          jmp   fastMul
@@ -571,8 +575,13 @@ fdiv     ldb   #57            ; 23:11
          jmp   >EXTRA
          endc
 
-fsqr     bsr   movaf         
+fsqr     
+         ifne  1
+         jmp   fastSqr
+         else
+         bsr   movaf         
          bra   fmul
+         endc
 
 itof     std   <FACMO
          ldd   #$0402
@@ -593,7 +602,6 @@ fastInvSqrt
          leax  4,s
          clra
          sta   <FACSGN
-         sta   <ARGSGN
          bsr   movmf
                
          ldd   <FACEXP
@@ -605,27 +613,24 @@ fastInvSqrt
          lsra           ; |
          rorb           ; |
          ror   <FACMO   ; | i>>1
-         ror   <FACLO   ; |
          std   <FACEXP  ; |
-      
-         ldd   #$5a86   ;  $5F375A86 - (i>>1)
-         subd  <FACMO
-         std   <FACMO
-         std   <ARGMO
-         ldd   #$5f37
+         
+         lda   #$5a    ;  $5F375A86 - (i>>1)
+         suba  <FACMO
+         sta   <FACMO
+         
+         ldd   #$6037
          sbcb  <FACHO
          sbca  <FACEXP
-      
-         inca           ; set bias back to 128
+
          addb  #128     ; extract msbit -> carry
          rola           ; move carry to a
          orb   #128     ; set msbit
          std   <FACEXP
-         std   <ARGEXP
   
          leax  ,s
          jsr   movmf    ; save y on stack
-         bsr   fmul     ; y*y
+         bsr   fsqr     ; y*y
          leax  4,s
          bsr   fmula    ; x*y*y
          ldx   #c_3
@@ -634,25 +639,8 @@ fastInvSqrt
          leax  ,s
          bsr   fmula    ; y*(1.5 - x*y*y/2)
 
-*         bsr   Newton
-*         bsr   Newton
-*         bsr   Newton
-
          leas  8,s
          puls  x,pc
-
-         ifne 0
-Newton   leax  2,s
-         jsr   movmf    ; save y on stack
-         bsr   fsqr     ; y*y
-         leax  6,s
-         bsr   fmula    ; x*y*y
-         ldx   #c_3
-         bsr   fsuba    ; 3 - x*y*y
-         dec   <FACEXP  ; 1.5 - y*y*x/2
-         leax  2,s
-         bra   fmula    ; y*(1.5 - x*y*y/2)
-         endc
 
          ifne  0
 fsqrt    ldb   #44      ; 23:57
@@ -669,30 +657,40 @@ fsqrt    pshs  x
          puls  x,pc
          endc
 
-fastDiv  pshs  x
-         lda   <ARGEXP
-         beq   fastDiv2
+fastDiv  lda   <ARGEXP
+         bne   fastDiv2
+         sta   <FACEXP
+         rts
+fastDiv2 pshs  x
          leas  -4,s
          ldb   <ARGSGN
          eorb  <FACSGN
          orb   #127
          andb  <ARGHO
          std   ,s
-         ldd   <ARGMO
-         std   2,S
+         lda   <ARGMO
+         sta   2,S
          bsr   fastInvSqrt
          jsr   fsqr
          leax  ,s
          jsr   fmula
-         lda   <FACEXP
-         leas  4,s         
-fastDiv2 sta   <FACEXP
+         leas  4,s       
          puls  x,pc
-            
+         
+* multiplication with 16 bit mantissa
 fastMulO tfr   a,b      ;
          sex   
 fastMul0 sta   <FACEXP
          rts
+         
+fastMulA ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+*        bra   fastMul
+
 fastMul  lda   <FACEXP
          beq   fastMul0+2
          suba  #$80
@@ -711,35 +709,61 @@ fastMul  lda   <FACEXP
          eora  <FACSGN
          sta   <FACSGN
          
-         lda   <FACMO    *   B1A2
+         lda   <FACMO
          ldb   <ARGHO
          mul
-         std   <FACMO
+         adca  #0
+         sta   <FACMO
 
-         ldb   <ARGMO    *   B2A1
+         ldb   <ARGMO
          lda   <FACHO
          mul
-         addd  <FACMO
-         std   <FACMO
+         adca  <FACMO
+         sta   <FACMO
       
-         ldb   #0        * get carry
-         rolb
-            
          lda   <FACHO
-         stb   <FACHO    * B1A1                  FE01
+         ldb   #0        * move carry to FACHO
+         rolb            
+         stb   <FACHO
+         
          ldb   <ARGHO           
          mul                     
          addd  <FACHO
          bmi   fastMul2
 fastMul1 dec   <FACEXP
-         beq   fastMul2
-         lsl   <FACLO
-         rolb
+         beq   fastMul2 ; underflow
+         lslb
          rola
          bpl   fastMul1
 fastMul2 std   <FACHO
          rts
-      
+
+* squaring a number with 16 bit mantissa
+fastSqr  lda   <FACEXP
+         beq   fastMul0+2
+         suba  #$80
+         asla
+         bvs   fastMulO
+         adda  #$80
+         sta   <FACEXP         
+         ldd   <FACHO
+         pshs  a
+         mul         
+         lslb
+         rola
+         sta   <FACMO
+         ldb   #0
+         stb   <FACSGN
+         rolb   
+         stb   <FACHO
+         ldb   ,s
+         puls  a
+         mul
+         addd  <FACHO
+         bmi   fastMul2
+         bra   fastMul1
+
+* affiche le temps mm:ss.d      
 prtTime  lda   >STATUS
          ldb   >FORME
          pshs  d
