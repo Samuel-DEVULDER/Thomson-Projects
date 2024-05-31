@@ -44,7 +44,7 @@ clrd     macro
 defusr   pshs  a,dp,x
          jsr   fastInvSqrt
          puls  a,dp,x,pc
-         
+
 ini      pshs  dp
 * init extramon + math         
          ldd   #$6104
@@ -213,7 +213,9 @@ calcUVW  ldd   <i2X
          
 *        bra   spheres
  
-
+sph_w    equ   48
+sph_h    equ   48
+ 
 spheres  ldx   #c_sph-6
          leax  6,x
          ldd   ,x
@@ -222,7 +224,7 @@ spheres  ldx   #c_sph-6
          subd  <i2X
          bge   *+3
          negb
-         cmpb  #50
+         cmpb  #sph_w
          bhi   spheres+3
          ldd   2,x
          bne   *+4
@@ -230,7 +232,7 @@ spheres  ldx   #c_sph-6
          subd  <iY
          bge   *+3
          negb
-         cmpb  #50
+         cmpb  #sph_h
          bhi   spheres+3
          ldd   4,x
          std   <fI         
@@ -520,8 +522,13 @@ movaf    ldd   <FACEXP
          stb   <ARGSGN
          rts
 
-floor    ldb   #42
+floor 
+         ifne  1
+         jmp   fastFloor
+         else
+         ldb   #42
          jmp   >EXTRA
+         endc
 
 faddm    bsr   fadda
          bra   movmf         
@@ -763,7 +770,93 @@ fastSqr  lda   <FACEXP
          addd  <FACHO
          bmi   fastMul2
          bra   fastMul1
+                  
+fastFloor
+         clra
+         sta   <FACLO
+ 
+         ldb   <FACEXP
+         bne   *+3
+         rts
+         
+         subb  #$81
+         bhs   fastFloor1
+         
+         ldb   <FACSGN  ; abs(num) <= 1
+         bpl   fastFloor0
+         sta   <FACMO   
+         ldd   #$8180   ; return -1         
+fastFloor0         
+         std   <FACEXP
+         rts
 
+fastFloor1
+         cmpb  #16
+         bcs   *+3
+         rts            ; too big to truncate
+         
+         pshs  x        ; $8000 >> b
+         ldx   #$8000
+         bsr   fastLSR
+         ldx   ,s
+            
+         std   ,s       ; save bit
+         subd  #1       ; make mask
+         anda  <FACHO   ; isolate fraction
+         andb  <FACMO
+         std   -2,s     ; fraction==0 ?
+         pshs  cc       ; save result on stack
+         
+         eora  <FACHO   ; mask out fraction
+         eorb  <FACMO
+         
+         puls  cc       ; fraction==0 ?
+         beq   fastFloor2  ; yes==>exact int, done
+         
+         tst   <FACSGN  ; no, num>0 ? 
+         bpl   fastFloor2  ; yes => done
+         addd ,s           ; no => add 1
+         bcc   fastFloor2
+         rora           ; overflow
+         lsrb           ; shift mantissa
+         inc   <FACEXP  ; fix exponent
+fastFloor2         
+         std   <FACHO   ; save mantissa
+         puls  d,pc
+
+* D = X>>B (logical shift)
+fastLSR  pshs  x
+         ldx   #fastLSR3
+         cmpb  #16
+         blt   fastLSR1
+         ldd   #0
+         jmp   ,x
+fastLSR1 negb
+         aslb
+         leax  b,x
+         cmpx  #fastLSR3-16
+         bhi   fastLSR2
+         clra
+         ldb   ,s
+         jmp   16,x
+fastLSR2 ldd   ,s
+         jmp   ,x
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+fastLSR3 puls  x,pc
+         
 * D = ARG / D and ARG = ARG % D
 
          ifne  1
@@ -997,8 +1090,8 @@ c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_159p5  fdb   $881F,$8000       ; 159.5
 c_99p5   fdb   $8747,$0000       ; 99.5
 
-c_sph    fdb   110,145,$8100
-         fdb   210,48,$8180
+c_sph    fdb   110,144,$8100
+         fdb   208,47,$8180
 
 c_1      fdb   $8100,$0000       ; 1
 c_2      fdb   $8200,$0000       ; 2
