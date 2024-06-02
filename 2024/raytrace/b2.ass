@@ -536,8 +536,13 @@ faddm    bsr   fadda
 fadda    bsr   movam
 *        bra   fadd
 
-fadd     ldb   #54
+fadd 
+         ifne  1
+         jmp   fastAdd
+         else
+         ldb   #54
          jmp   >EXTRA
+         endc
 
 fsubm    bsr   fsuba
          bra   movmf
@@ -545,8 +550,13 @@ fsubm    bsr   fsuba
 fsuba    bsr   movam
 *        bra   fsub
 
-fsub     ldb   #55
+fsub     
+         ifne  1
+         jmp   fastSub
+         else
+         ldb   #55
          jmp   >EXTRA
+         endc
                   
 fmulm    bsr   fmula
          bra   movmf
@@ -856,7 +866,89 @@ fastLSR2 ldd   ,s
          lsra
          rorb
 fastLSR3 puls  x,pc
+
+fastSub  com   <FACSGN     ; ARG - FAC
+*        bra   fastAdd
+   
+fastAdd  ldb   <ARGEXP     ; ARG + FAC
+         bne   *+3
+         rts
          
+         subb  <FACEXP     ; determine which is bigger
+         bne   fastAdd1
+         ldd   <ARGHO
+         subd  <FACHO
+         bne   fastAdd1
+
+* same expo and same mantissa
+         ldb   <FACSGN
+         eorb  <ARGSGN
+         bmi   fastAdd0    ; if not same sign => yield 0      
+         inc   <FACEXP     ; otherwise => yield 2FAC
+         rts
+fastAdd0 sta   <FACEXP     ; zero
+         rts
+
+* mantissa is different; C=1 indicates |FAC| > |ARG|
+fastAdd1 pshs  x
+         lda   <FACSGN
+         eora  <ARGSGN
+         sta   <ARGLO      ; add or sub ?
+         
+         ldx   <ARGHO
+         bcc   fastAddCpy
+         
+         ldb   <FACEXP     ; FAC is bigger
+         subb  <ARGEXP
+         cmpb  #16         ; expo diff >= 16
+         bcs   *+4
+         puls  x,pc        ; yes => done
+        
+fastAdd2 lda   <ARGLO      ; subtract ?
+         bmi   fastSub1    ; yes
+* add         
+         bsr   fastLSR     ; shift smaller mantissa
+         addd  <FACHO
+         bcc   fastAddDone ; msb not lost => done
+         rora              ; lost => shift right 
+         rorb              ; get it back
+         inc   <FACEXP     ; fix expo
+         bra   fastAddDone ; done
+* sub
+fastSub1 bsr   fastLSR     ; shift smaller mantissa
+         nega
+         negb
+         sbca #0
+         addd  <FACHO
+         bmi   fastAddDone ; msb set ? yes => done
+fastSub2 dec   <FACEXP     ; no => shift left
+         beq   fastAddDone ; underflow => done
+         lslb
+         rola
+         bpl   fastSub2    ; loop till msb set
+fastAddDone
+         std   <FACHO
+*        clr   <FACLO
+         puls  x,pc
+fastAddCpy
+         ldd   <FACHO      ; copy mantissa
+         stx   <FACHO      
+         tfr   d,x
+
+         lda   <ARGSGN     ; copy sign
+         sta   <FACSGN
+         
+         ldb   <ARGEXP     ; ARG is bige
+         subb  <FACEXP
+
+         lda   <ARGEXP     ; copy expo
+         sta   <FACEXP
+                  
+         cmpb  #16         ; expo diff >= 16
+         bcs   fastAdd2
+         puls  x,pc        ; yes => done
+        
+
 * D = ARG / D and ARG = ARG % D
 
          ifne  1
