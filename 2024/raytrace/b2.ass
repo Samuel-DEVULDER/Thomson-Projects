@@ -1,5 +1,7 @@
 (main)B2
 
+USE_XTRA equ   0
+
 TIMEPT   equ   $6027
 STATUS   equ   $6019
 FORME    equ   $6038
@@ -41,9 +43,9 @@ clrd     macro
 
          org   $9000
          
-defusr   pshs  a,dp,x
-         jsr   fastInvSqrt
-         puls  a,dp,x,pc
+*defusr   pshs  a,dp,x
+*         jsr   fastInvSqrt
+*         puls  a,dp,x,pc
 
 ini      pshs  dp
 * init extramon + math         
@@ -489,7 +491,7 @@ calcCOL  ldx   #vac
          clrd
          std   <FACMO
          ldx   #fV
-         bsr   faddm
+         jsr   faddm
          jsr   ftoi
          ldx   #cols
          ldb   b,X
@@ -506,7 +508,10 @@ movam    ldd   ,x
          sta   <ARGMO
          rts       
 
-         ifne  1
+         ifne  USE_XTRA
+movfm    ldb   #62
+         jmp   >EXTRA         
+         else
 movfm    ldd   ,x
          stb   <FACSGN
          orb   #128
@@ -514,14 +519,16 @@ movfm    ldd   ,x
          lda   2,x
          sta   <FACMO
          rts    
-         else
-movfm    ldb   #62
-         jmp   >EXTRA
          endc
 
-         ifne  1
+         ifne  USE_XTRA
+movmf    ldb   #63
+         jmp   >EXTRA
+         else
 movmf    lda   <FACEXP
-         beq   movmf0
+         bne   *+5
+         sta   ,x
+         rts
          ldb   <FACSGN
          orb   #127
          andb  <FACHO
@@ -529,117 +536,71 @@ movmf    lda   <FACEXP
          lda   <FACMO
          sta   2,x
          rts
-movmf0   sta   ,x
-         rts
-         else
-movmf    ldb   #63
-         jmp   >EXTRA
          endc
 
-*movaf    ldb   #64
-*         jmp   >EXTRA
-
+         ifne  USE_XTRA
+movaf    ldb   #64
+         jmp   >EXTRA
+         else
 movaf    ldd   <FACEXP
          std   <ARGEXP
          lda   <FACMO
          sta   <ARGMO
-         ldb   <FACSGN
-         stb   <ARGSGN
+         lda   <FACSGN
+         sta   <ARGSGN
          rts
-
-floor 
-         ifne  1
-         jmp   fastFloor
-         else
-         ldb   #42
-         jmp   >EXTRA
          endc
-
-faddm    bsr   fadda
-         bra   movmf         
-
-fadda    bsr   movam
-*        bra   fadd
-
-fadd 
-         ifne  1
-         jmp   fastAdd
-         else
-         ldb   #54
-         jmp   >EXTRA
-         endc
-
+   
 fsubm    bsr   fsuba
          bra   movmf
 
 fsuba    bsr   movam
-*        bra   fsub
+         jmp   fsub
+   
+faddm    bsr   fadda
+         bra   movmf         
 
-fsub     
-         ifne  1
-         jmp   fastSub
-         else
-         ldb   #55
-         jmp   >EXTRA
-         endc
+fadda    jsr   movam
+         jmp   fadd
                   
 fmulm    bsr   fmula
          bra   movmf
 
-fmula    
          ifne  1
-         jmp   fastMulA
+fmula    jmp   fastMulA
          else
-         bsr   movam
+fmula    bsr   movam
 *        bra   fmul       
          endc
-fmul     
-         ifne  1
-         jmp   fastMul
-         else
-         ldb   #56
-         jmp   >EXTRA
-         endc
          
-f1osqrt  
-         ifne  1
-         bra   fastInvSqrt    ; 23:11
+         ifne  USE_XTRA
+fmul     ldb   #56
+         jmp   >EXTRA
          else
-         bsr   fsqrt          ; 25:38
+fmul     jmp   fastMul
+         endc
+ 
+         ifne  USE_XTRA
+fdiv     ldb   #57            ; 23:11
+         jmp   >EXTRA
+         else
+fdiv     jmp   fastDiv        ; 24:19
+         endc
+
+         ifne  USE_XTRA
+fsqr     bsr   movaf         
+         bra   fmul
+         else
+fsqr     jmp   fastSqr
+         endc
+
+         ifne  USE_XTRA
+f1osqrt  bsr   fsqrt
          ldx   #c_1
          bsr   movam
          bra   fdiv        
-         endc
-
-         ifne  1
-fdiv     jmp   fastDiv        ; 24:19
          else
-fdiv     ldb   #57            ; 23:11
-         jmp   >EXTRA
-         endc
-
-fsqr     
-         ifne  1
-         jmp   fastSqr
-         else
-         bsr   movaf         
-         bra   fmul
-         endc
-
-ftoi
-         ifne  1
-         jmp   fastS2I
-         else
-         ldd   #$0232
-         jsr   >EXTRA
-         ldb   #4
-         stb   <VALTYP
-         ldd   <FACMO
-         rts
-         endc
-
-fastInvSqrt
-         pshs  x
+f1osqrt  pshs  x
          leas  -8,s         
          leax  4,s
          clra
@@ -683,8 +644,9 @@ fastInvSqrt
 
          leas  8,s
          puls  x,pc
+         endc
 
-         ifne  0
+         ifne  USE_XTRA
 fsqrt    ldb   #44      ; 23:57
          jmp   >EXTRA
          else
@@ -692,7 +654,7 @@ fsqrt    pshs  x
          leas  -4,s     ; 23:12
          leax  ,s
          jsr   movmf
-         bsr   fastInvSqrt
+         bsr   f1osqrt
          leax  ,s
          jsr   fmula
          leas  4,s
@@ -712,7 +674,7 @@ fastDiv2 pshs  x
          std   ,s
          lda   <ARGMO
          sta   2,S
-         bsr   fastInvSqrt
+         bsr   f1osqrt
          jsr   fsqr
          leax  ,s
          jsr   fmula
@@ -789,75 +751,22 @@ fastSqr  lda   <FACEXP
          adda  #$80
          sta   <FACEXP         
          ldd   <FACHO
-         pshs  a
          mul         
          lslb
          rola
          sta   <FACMO
+         lda   <FACHO
          ldb   #0
-         stb   <FACSGN
          rolb   
          stb   <FACHO
-         ldb   ,s
-         puls  a
+         stb   <FACSGN
+         tfr   a,b
          mul
          addd  <FACHO
-         bmi   fastMul2
-         bra   fastMul1
-                  
-fastFloor
-         clra
-         sta   <FACLO
- 
-         ldb   <FACEXP
-         bne   *+3
+         bpl   fastMul1
+         std   <FACHO
          rts
          
-         subb  #$81
-         bhs   fastFloor1
-         
-         ldb   <FACSGN  ; abs(num) <= 1
-         bpl   fastFloor0
-         sta   <FACMO   
-         ldd   #$8180   ; return -1         
-fastFloor0         
-         std   <FACEXP
-         rts
-
-fastFloor1
-         cmpb  #16
-         bcs   *+3
-         rts            ; too big to truncate
-         
-         pshs  x        ; $8000 >> b
-         ldx   #$8000
-         bsr   fastLSR
-         ldx   ,s
-            
-         std   ,s       ; save bit
-         subd  #1       ; make mask
-         anda  <FACHO   ; isolate fraction
-         andb  <FACMO
-         std   -2,s     ; fraction==0 ?
-         pshs  cc       ; save result on stack
-         
-         eora  <FACHO   ; mask out fraction
-         eorb  <FACMO
-         
-         puls  cc       ; fraction==0 ?
-         beq   fastFloor2  ; yes==>exact int, done
-         
-         tst   <FACSGN  ; no, num>0 ? 
-         bpl   fastFloor2  ; yes => done
-         addd ,s           ; no => add 1
-         bcc   fastFloor2
-         rora           ; overflow
-         lsrb           ; shift mantissa
-         inc   <FACEXP  ; fix exponent
-fastFloor2         
-         std   <FACHO   ; save mantissa
-         puls  d,pc
-
 * D = X>>B (logical shift)
 fastLSR  pshs  x
          ldx   #fastLSR3
@@ -891,92 +800,108 @@ fastLSR2 ldd   ,s
          rorb
 fastLSR3 puls  x,pc    
 
-fastSub  com   <FACSGN     ; ARG - FAC
-*        bra   fastAdd
-   
-fastAdd  ldb   <ARGEXP     ; ARG + FAC
+         ifne  USE_XTRA
+fsub     ldb   #55         
+         jmp   >EXTRA
+         else
+fsub     com   <FACSGN     ; ARG - FAC
+         endc
+
+         ifne  USE_XTRA
+fadd     ldb   #54
+         jmp   >EXTRA
+         else
+fadd     ldb   <ARGEXP     ; ARG + FAC
          bne   *+3
          rts
          
          subb  <FACEXP     ; determine which is bigger
-         bne   fastAdd1
+         bne   fadd1
          ldd   <ARGHO
          subd  <FACHO
-         bne   fastAdd1
+         bne   fadd1
 
 * same expo and same mantissa
          ldb   <FACSGN
          eorb  <ARGSGN
-         bmi   fastAdd0    ; if not same sign => yield 0      
+         bmi   fadd0       ; if not same sign => yield 0      
          inc   <FACEXP     ; otherwise => yield 2FAC
          rts
-fastAdd0 sta   <FACEXP     ; zero
+fadd0    sta   <FACEXP     ; zero
          rts
 
 * mantissa is different; C=1 indicates |FAC| > |ARG|
-fastAdd1 pshs  x
+fadd1    pshs  x
          lda   <FACSGN
          eora  <ARGSGN
          sta   <ARGLO      ; add or sub ?
          
          ldx   <ARGHO
-         bcc   fastAddCpy
+         bcc   fadd_cpy
          
          ldb   <FACEXP     ; FAC is bigger
          subb  <ARGEXP
+
          cmpb  #16         ; expo diff >= 16
          bcs   *+4
          puls  x,pc        ; yes => done
         
-fastAdd2 lda   <ARGLO      ; subtract ?
-         bmi   fastSub1    ; yes
+fadd2    lda   <ARGLO      ; subtract ?
+         bmi   fadds1      ; yes => goto fadds section
 * add         
          bsr   fastLSR     ; shift smaller mantissa
          addd  <FACHO
-         bcc   fastAddDone ; msb not lost => done
+         bcc   fadd_end    ; msb not lost => done
          rora              ; lost => shift right 
          rorb              ; get it back
          inc   <FACEXP     ; fix expo
-         bra   fastAddDone ; done
+         bra   fadd_end    ; done
 * sub
-fastSub1 bsr   fastLSR     ; shift smaller mantissa
+fadds1   bsr   fastLSR     ; shift smaller mantissa
          nega
          negb
-         sbca #0
+         sbca  #0
          addd  <FACHO
-         bmi   fastAddDone ; msb set ? yes => done
-fastSub2 dec   <FACEXP     ; no => shift left
-         beq   fastAddDone ; underflow => done
+         bmi   fadd_end    ; msb set ? yes => done
+fadds2   dec   <FACEXP     ; no => shift left
+         beq   fadd_end    ; underflow => done
          lslb
          rola
-         bpl   fastSub2    ; loop till msb set
-fastAddDone
-         std   <FACHO
-*        clr   <FACLO
+         bpl   fadds2     ; loop till msb set
+fadd_end std   <FACHO
          puls  x,pc
-fastAddCpy
-         ldd   <FACHO      ; copy mantissa
+         
+fadd_cpy ldd   <FACHO      ; copy mantissa
          stx   <FACHO      
          tfr   d,x
 
          lda   <ARGSGN     ; copy sign
          sta   <FACSGN
          
-         ldb   <ARGEXP     ; ARG is bige
+         ldb   <ARGEXP     ; ARG is biger
          subb  <FACEXP
 
          lda   <ARGEXP     ; copy expo
          sta   <FACEXP
-                  
+         
          cmpb  #16         ; expo diff >= 16
-         bcs   fastAdd2
-         puls  x,pc        ; yes => done
-
-fastS2I  ldd   #$8080
+         bcs   fadd2
+         puls  x,pc
+         endc
+         
+         ifne  USE_XTRA
+ftoi     ldd   #$0232
+         jsr   >EXTRA
+         ldb   #4
+         stb   <VALTYP
+         ldd   <FACMO
+         rts
+         else
+ftoi     ldd   #$8080
          std   <ARGEXP
          clr   <ARGSGN
-         bsr   fastAdd     ; adds .5
-         jsr   fastFloor
+         bsr   fadd        ; adds .5
+         bsr   floor
 
          ldb   <FACEXP
          bne   *+4
@@ -984,49 +909,86 @@ fastS2I  ldd   #$8080
          rts
          
          subb  #$80
-         bhs   fastS2I1
+         bhs   ftoi1
          
-         ldb   <FACSGN  ; abs(num) <= 1
+         ldb   <FACSGN     ; abs(num) <= 1
          sex
          tfr   a,b
-         rts            ; $FFFF or $0000
+         rts               ; $FFFF or $0000
 
-fastS2I1 subb  #16
-         bcs   fastS2I2
+ftoi1    subb  #16
+         bcs   ftoi2
          ldd   #$7FFF
          tst   <FACSGN  
          bpl   *+4
          comb
          coma
-         rts            ; $8000 or $7FFF
+         rts               ; $8000 or $7FFF
          
-fastS2I2 pshs  x        ; $8000 >> b
+ftoi2    pshs  x           ; MANTISSA >> b
          negb
          ldx   <FACHO
          jsr   fastLSR
          tst   <FACSGN
-         bpl   fastS2I3
+         bpl   ftoi3
          nega
          negb
          sbca  #0
-fastS2I3 puls  x,pc     
+ftoi3    puls  x,pc     
+         endc
 
-fastI2S  sta   <FACSGN
-         std   <FACHO
-         beq   fastI2S1
-         bpl   fastI2S2
-         nega
-         negb
-         sbca  #0
-         std   <FACHO
-fastI2S2 lda   #$90
-         ldb   <FACHO
-fastI2S5 deca
-         lsl   <FACMO
-         rolb
-         bpl   fastI2S5
-fastI2S1 std   <FACEXP
+         ifne  USE_XTRA
+floor    ldb   #42
+         jmp   >EXTRA
+         else
+floor    ldb   <FACEXP
+         bne   *+3
          rts
+         
+         subb  #$81
+         bhs   floor1
+         
+         clra
+         ldb   <FACSGN  ; abs(num) <= 1
+         bpl   floor0
+         sta   <FACMO   
+         ldd   #$8180   ; return -1         
+floor0   std   <FACEXP
+         rts
+
+floor1   cmpb  #16
+         bcs   *+3
+         rts            ; too big to truncate
+         
+         pshs  x        ; $8000 >> b
+         ldx   #floorT
+         lslb
+         abx
+         ldd   ,x
+            
+         subd  #1       ; make mask
+         anda  <FACHO   ; isolate fraction
+         andb  <FACMO
+         std   -2,s     ; fraction==0 ?
+         beq   floor3   ; yes==>exact int, done
+
+         eora  <FACHO   ; mask out fraction
+         eorb  <FACMO
+         
+         tst   <FACSGN  ; no, num>0 ? 
+         bpl   floor2   ; yes => done
+         addd  ,x       ; no => add 1
+         bcc   floor2
+         rora           ; overflow
+         lsrb           ; shift mantissa
+         inc   <FACEXP  ; fix exponent
+floor2   std   <FACHO   ; save mantissa
+floor3   puls  x,pc
+floorT   fdb   $8000,$4000,$2000,$1000
+         fdb   $0800,$0400,$0200,$0100
+         fdb   $0080,$0040,$0020,$0010
+         fdb   $0008,$0004,$0002,$0001
+         endc
          
 * D = ARG / D and ARG = ARG % D
 
