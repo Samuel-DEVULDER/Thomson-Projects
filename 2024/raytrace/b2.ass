@@ -607,12 +607,17 @@ itof     std   <FACMO
          ldb   #50
          jmp   >EXTRA
 
-ftoi     ldd   #$0232
+ftoi
+         ifne  1
+         jmp   fastS2I
+         else
+         ldd   #$0232
          jsr   >EXTRA
          ldb   #4
          stb   <VALTYP
          ldd   <FACMO
          rts
+         endc
 
 fastInvSqrt
          pshs  x
@@ -865,7 +870,7 @@ fastLSR2 ldd   ,s
          rorb
          lsra
          rorb
-fastLSR3 puls  x,pc
+fastLSR3 puls  x,pc    
 
 fastSub  com   <FACSGN     ; ARG - FAC
 *        bra   fastAdd
@@ -947,7 +952,45 @@ fastAddCpy
          cmpb  #16         ; expo diff >= 16
          bcs   fastAdd2
          puls  x,pc        ; yes => done
-        
+
+fastS2I  ldd   #$8080
+         std   <ARGEXP
+         clr   <ARGSGN
+         bsr   fastAdd     ; adds .5
+         jsr   fastFloor
+
+         ldb   <FACEXP
+         bne   *+4
+         clra
+         rts
+         
+         subb  #$80
+         bhs   fastS2I1
+         
+         ldb   <FACSGN  ; abs(num) <= 1
+         sex
+         tfr   a,b
+         rts            ; $FFFF or $0000
+
+fastS2I1 subb  #16
+         bcs   fastS2I2
+         ldd   #$7FFF
+         tst   <FACSGN  
+         bpl   *+4
+         comb
+         coma
+         rts            ; $8000 or $7FFF
+         
+fastS2I2 pshs  x        ; $8000 >> b
+         negb
+         ldx   <FACHO
+         jsr   fastLSR
+         tst   <FACSGN
+         bpl   fastS2I3
+         nega
+         negb
+         sbca  #0
+fastS2I3 puls  x,pc     
 
 * D = ARG / D and ARG = ARG % D
 
