@@ -59,6 +59,22 @@ ini      pshs  dp
          jsr   SETP
          ldx   #inistr
          jsr   puts        
+* init conversion entier->float
+         ldd   #319
+         ldx   #fCoord+320*2
+fCo1     pshs  d
+         std   ,--x
+         lda   #$90
+         ldb   ,x
+fCo2     deca
+         lsl   1,x
+         rolb
+         bpl   fCo2
+         std   ,x
+         puls  d 
+         subd  #1
+         bne   fCo1
+         std   ,--x
 * init timer         
          ldd   #timert
          std   >TIMEPT
@@ -171,7 +187,16 @@ calcXY9  exg   d,x
 
          bra   calcUVW
          
-calcUV_  jsr   itof
+calcUV_  pshs  x
+         ldx   #fCoord
+         lslb
+         rola
+         ldd   d,x
+         std   <FACEXP
+         clrd
+         std   <FACMO
+         sta   <FACSGN
+         puls  x
          jsr   fsuba
          ldx   #c_1o130
          jmp   fmula
@@ -601,12 +626,6 @@ fsqr
          bra   fmul
          endc
 
-itof     std   <FACMO
-         ldd   #$0402
-         stb   <VALTYP
-         ldb   #50
-         jmp   >EXTRA
-
 ftoi
          ifne  1
          jmp   fastS2I
@@ -992,6 +1011,23 @@ fastS2I2 pshs  x        ; $8000 >> b
          sbca  #0
 fastS2I3 puls  x,pc     
 
+fastI2S  sta   <FACSGN
+         std   <FACHO
+         beq   fastI2S1
+         bpl   fastI2S2
+         nega
+         negb
+         sbca  #0
+         std   <FACHO
+fastI2S2 lda   #$90
+         ldb   <FACHO
+fastI2S5 deca
+         lsl   <FACMO
+         rolb
+         bpl   fastI2S5
+fastI2S1 std   <FACEXP
+         rts
+         
 * D = ARG / D and ARG = ARG % D
 
          ifne  1
@@ -1262,5 +1298,7 @@ fE       rmb   4
 fF       rmb   4
 fP       rmb   4
 fT       rmb   4
+
+fCoord   rmb   2*320
 
          end   ini   
