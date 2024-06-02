@@ -647,11 +647,11 @@ f1osqrt  pshs  x
          endc
 
          ifne  USE_XTRA
-fsqrt    ldb   #44      ; 23:57
+fsqrt    ldb   #44
          jmp   >EXTRA
          else
 fsqrt    pshs  x
-         leas  -4,s     ; 23:12
+         leas  -4,s
          leax  ,s
          jsr   movmf
          bsr   f1osqrt
@@ -969,7 +969,8 @@ floor1   cmpb  #16
          subd  #1       ; make mask
          anda  <FACHO   ; isolate fraction
          andb  <FACMO
-         std   -2,s     ; fraction==0 ?
+*         std   -2,s     ; fraction==0 ?
+         addd  #0
          beq   floor3   ; yes==>exact int, done
 
          eora  <FACHO   ; mask out fraction
@@ -992,7 +993,7 @@ floorT   fdb   $8000,$4000,$2000,$1000
          
 * D = ARG / D and ARG = ARG % D
 
-         ifne  1
+         ifne  0
          
 idivmod  pshs  x,u         
          ldx   #1
