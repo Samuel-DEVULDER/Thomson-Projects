@@ -562,37 +562,6 @@ faddm    bsr   fadda
 
 fadda    jsr   movam
          jmp   fadd
-                  
-fmulm    bsr   fmula
-         bra   movmf
-
-         ifne  1
-fmula    jmp   fastMulA
-         else
-fmula    bsr   movam
-*        bra   fmul       
-         endc
-         
-         ifne  USE_XTRA
-fmul     ldb   #56
-         jmp   >EXTRA
-         else
-fmul     jmp   fastMul
-         endc
- 
-         ifne  USE_XTRA
-fdiv     ldb   #57            ; 23:11
-         jmp   >EXTRA
-         else
-fdiv     jmp   fastDiv        ; 24:19
-         endc
-
-         ifne  USE_XTRA
-fsqr     bsr   movaf         
-         bra   fmul
-         else
-fsqr     jmp   fastSqr
-         endc
 
          ifne  USE_XTRA
 f1osqrt  bsr   fsqrt
@@ -661,11 +630,15 @@ fsqrt    pshs  x
          puls  x,pc
          endc
 
-fastDiv  lda   <ARGEXP
-         bne   fastDiv2
+         ifne  USE_XTRA
+fdiv     ldb   #57            ; 23:11
+         jmp   >EXTRA
+         else
+fdiv     lda   <ARGEXP
+         bne   fdiv2
          sta   <FACEXP
          rts
-fastDiv2 pshs  x
+fdiv2    pshs  x
          leas  -4,s
          ldb   <ARGSGN
          eorb  <FACSGN
@@ -680,32 +653,69 @@ fastDiv2 pshs  x
          jsr   fmula
          leas  4,s       
          puls  x,pc
-         
-* multiplication with 16 bit mantissa
-fastMulO tfr   a,b      ;
-         sex   
-fastMul0 sta   <FACEXP
+         endc
+
+         ifne  USE_XTRA
+fsqr     bsr   movaf         
+         bra   fmul
+         else
+fsqr     lda   <FACEXP
+         beq   fmul0+2
+         suba  #$80
+         asla
+         bvs   fmulOvf
+         adda  #$80
+         sta   <FACEXP         
+         ldd   <FACHO
+         mul         
+         lslb
+         rola
+         sta   <FACMO
+         lda   <FACHO
+         ldb   #0
+         rolb   
+         stb   <FACHO
+         stb   <FACSGN
+         tfr   a,b
+         mul
+         addd  <FACHO
+         bpl   fmul1
+         std   <FACHO
          rts
+         endc
+                  
+fmulm    bsr   fmula
+         jmp   movmf
          
-fastMulA ldd   ,x
+         ifne  USE_XTRA
+fmula    jsr   movam
+*        bra   fmul
+fmul     ldb   #56
+         jmp   >EXTRA
+         else
+fmulOvf  tfr   a,b      ;
+         sex   
+fmul0    sta   <FACEXP
+         rts         
+* multiplication with 16 bit mantissa
+fmula    ldd   ,x
          stb   <ARGSGN
          orb   #128
          std   <ARGEXP
          lda   2,x
          sta   <ARGMO
-*        bra   fastMul
-
-fastMul  lda   <FACEXP
-         beq   fastMul0+2
+*        bra   fmul
+fmul     lda   <FACEXP
+         beq   fmul0+2
          suba  #$80
          sta   <FACEXP
 
          lda   <ARGEXP
-         beq   fastMul0
+         beq   fmul0
 
          suba  #$80
          adda  <FACEXP
-         bvs   fastMulO
+         bvs   fmulOvf
          adda  #$80
          sta   <FACEXP
          
@@ -733,39 +743,15 @@ fastMul  lda   <FACEXP
          ldb   <ARGHO           
          mul                     
          addd  <FACHO
-         bmi   fastMul2
-fastMul1 dec   <FACEXP
-         beq   fastMul2 ; underflow
+         bmi   fmul2
+fmul1    dec   <FACEXP
+         beq   fmul2    ; underflow
          lslb
          rola
-         bpl   fastMul1
-fastMul2 std   <FACHO
+         bpl   fmul1
+fmul2    std   <FACHO
          rts
-
-* squaring a number with 16 bit mantissa
-fastSqr  lda   <FACEXP
-         beq   fastMul0+2
-         suba  #$80
-         asla
-         bvs   fastMulO
-         adda  #$80
-         sta   <FACEXP         
-         ldd   <FACHO
-         mul         
-         lslb
-         rola
-         sta   <FACMO
-         lda   <FACHO
-         ldb   #0
-         rolb   
-         stb   <FACHO
-         stb   <FACSGN
-         tfr   a,b
-         mul
-         addd  <FACHO
-         bpl   fastMul1
-         std   <FACHO
-         rts
+         endc
          
 * D = X>>B (logical shift)
 fastLSR  pshs  x
@@ -969,8 +955,7 @@ floor1   cmpb  #16
          subd  #1       ; make mask
          anda  <FACHO   ; isolate fraction
          andb  <FACMO
-*         std   -2,s     ; fraction==0 ?
-         addd  #0
+         addd  #0       ; fraction==0 ?
          beq   floor3   ; yes==>exact int, done
 
          eora  <FACHO   ; mask out fraction
