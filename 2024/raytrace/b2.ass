@@ -48,16 +48,18 @@ clrd     macro
 *         puls  a,dp,x,pc
 
 ini      pshs  dp
+         ifne  USE_XTRA
 * init extramon + math         
          ldd   #$6104
          tfr   a,dp
          stb   <VALTYP
          clr   <DBLFLG         
-         ldab   $ff,1
+         ldb   #1
          jsr   EXTRA
+         endc
 * init screen
          ldx   #palette
-*         lda   #$FF
+         lda   #$FF
          jsr   SETP
          ldx   #inistr
          jsr   puts        
@@ -550,18 +552,6 @@ movaf    ldd   <FACEXP
          sta   <ARGSGN
          rts
          endc
-   
-fsubm    bsr   fsuba
-         bra   movmf
-
-fsuba    bsr   movam
-         jmp   fsub
-   
-faddm    bsr   fadda
-         bra   movmf         
-
-fadda    jsr   movam
-         jmp   fadd
 
          ifne  USE_XTRA
 f1osqrt  bsr   fsqrt
@@ -684,9 +674,6 @@ fsqr     lda   <FACEXP
          rts
          endc
                   
-fmulm    bsr   fmula
-         jmp   movmf
-         
          ifne  USE_XTRA
 fmula    jsr   movam
 *        bra   fmul
@@ -752,45 +739,28 @@ fmul1    dec   <FACEXP
 fmul2    std   <FACHO
          rts
          endc
+
+fsubm    bsr   fsuba
+         jmp   movmf
+
+faddm    bsr   fadda
+         jmp   movmf         
+            
+fadda    jsr   movam
+         bra   fadd
          
-* D = X>>B (logical shift)
-fastLSR  pshs  x
-         ldx   #fastLSR3
-         cmpb  #16
-         blt   fastLSR1
-         ldd   #0
-         jmp   ,x
-fastLSR1 negb
-         aslb
-         leax  b,x
-         cmpx  #fastLSR3-16
-         bhi   fastLSR2
-         clra
-         ldb   ,s
-         jmp   16,x
-fastLSR2 ldd   ,s
-         jmp   ,x
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-fastLSR3 puls  x,pc    
+fmulm    bsr   fmula
+         jmp   movmf
+         
+fsuba    jsr   movam
+*        jmp   fsub
 
          ifne  USE_XTRA
 fsub     ldb   #55         
          jmp   >EXTRA
          else
 fsub     com   <FACSGN     ; ARG - FAC
+*        bra   fadd
          endc
 
          ifne  USE_XTRA
@@ -874,7 +844,7 @@ fadd_cpy ldd   <FACHO      ; copy mantissa
          bcs   fadd2
          puls  x,pc
          endc
-         
+
          ifne  USE_XTRA
 ftoi     ldd   #$0232
          jsr   >EXTRA
@@ -921,6 +891,41 @@ ftoi2    pshs  x           ; MANTISSA >> b
          negb
          sbca  #0
 ftoi3    puls  x,pc     
+         endc
+
+         ifeq  USE_XTRA
+* D = X>>B (logical shift)
+fastLSR  pshs  x
+         ldx   #fastLSR3
+         cmpb  #16
+         blt   fastLSR1
+         ldd   #0
+         jmp   ,x
+fastLSR1 negb
+         aslb
+         leax  b,x
+         cmpx  #fastLSR3-16
+         bhi   fastLSR2
+         clra
+         ldb   ,s
+         jmp   16,x
+fastLSR2 ldd   ,s
+         jmp   ,x
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+         lsra
+         rorb
+fastLSR3 puls  x,pc    
          endc
 
          ifne  USE_XTRA
