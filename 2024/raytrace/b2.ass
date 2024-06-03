@@ -204,11 +204,15 @@ calcUV_  pshs  x
          jsr   fsuba
          ldx   #c_1o130
          jmp   fmula
+
+fneg     macro
+         com  <FACSGN
+         endm
          
 calcUVW  ldd   <i2X
          ldx   #c_159p5
          bsr   calcUV_
-         jsr   fneg
+         fneg
          ldx   #fU
          jsr   movmf    ; U = (2M-159.5)/130
          
@@ -346,7 +350,7 @@ sphere_bounce
          jsr   fsqrt
          ldx   #fP
          jsr   fadda 
-         jsr   fneg
+         fneg
          ldx   #fT
          jsr   movmf    ; T = -(P + SQR(T))
          
@@ -465,7 +469,7 @@ ground
          
          ldx   #fV
          jsr   movfm
-         bsr   fneg
+         fneg
          jsr   fsqrt
          ldb   <FACEXP
 *        beq   *+6
@@ -498,9 +502,6 @@ calcCOL  ldx   #vac
          ldx   #cols
          ldb   b,X
          jmp   drwpx
-
-fneg     com  <FACSGN
-         rts
                   
 movam    ldd   ,x
          stb   <ARGSGN
@@ -1224,6 +1225,7 @@ c_7      fdb   $8360,$0000       ; 7
 ground0  fdb   $8400,$0000       ; 8
 ground1  fdb   $8450,$0000       ; 13
 
+         echo  Size = &(*-ini) bytes
 (info)
 *iTime    rmb   2
 *iRnd     rmb   2
