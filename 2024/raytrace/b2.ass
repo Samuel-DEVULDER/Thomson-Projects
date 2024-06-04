@@ -34,9 +34,9 @@ ldab     macro
          endm
 
 clrd     macro
-         clrb
-         clra
-*         ldab  0,0
+*         clrb
+*         clra
+         ldab  0,0
          endm
          
          setdp $61
@@ -578,7 +578,7 @@ f1osqrt  pshs  x
          ror   <FACMO   ; | i>>1
          std   <FACEXP  ; |
          
-         lda   #$5a    ;  $5F375A86 - (i>>1)
+         lda   #$5b    ;  $5F375A86 - (i>>1)
          suba  <FACMO
          sta   <FACMO
          
@@ -647,7 +647,7 @@ fdiv2    pshs  x
          endc
 
          ifne  USE_XTRA
-fsqr     bsr   movaf         
+fsqr     jsr   movaf         
          bra   fmul
          else
 fsqr     lda   <FACEXP
@@ -684,7 +684,7 @@ fmul     ldb   #56
 fmulOvf  tfr   a,b      ;
          sex   
 fmul0    sta   <FACEXP
-         rts         
+         rts       
 * multiplication with 16 bit mantissa
 fmula    ldd   ,x
          stb   <ARGSGN
