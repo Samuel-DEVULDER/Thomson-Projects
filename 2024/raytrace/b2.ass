@@ -1,6 +1,7 @@
 (main)B2
 
 USE_XTRA equ   0
+INL_MOV  equ   1
 
 TIMEPT   equ   $6027
 STATUS   equ   $6019
@@ -307,12 +308,11 @@ sphere_EFP
          ldx   #fP
          jmp   fsubm    ; P=V*F + U*E - W*Z
 
-ftst     pshs  b
-         ldb   <FACEXP
-         beq   ftstx
+ftst     ldb   <FACEXP
+         beq   ftst1
          ldb   <FACSGN
          orb   #127
-ftstx    puls  b,pc
+ftst1    rts
 
 sphere_bounce
          bsr   sphere_EFP
