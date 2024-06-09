@@ -1,7 +1,16 @@
 (main)B2
+**************************************
+* Raytraced scene featuring a
+* green/yellow checkerboard ground,
+* blue sky, and two reflective sphres
+*
+* Inspired from!
+*     https://bbcmic.ro/?t=9ctpk
+*
+* (c) Samuel DEVULDER, 2024
+**************************************
 
 USE_XTRA equ   0
-INL_MOV  equ   1
 
 TIMEPT   equ   $6027
 STATUS   equ   $6019
@@ -10,10 +19,11 @@ CHDRAW   equ   $6041
 PTGENE   equ   $60CF
 
 PUTC     equ   $E803
-EXTRA    equ   $EC0C
-SETP     equ   $EC00
+KTST     equ   $E809
 *PLOT     equ   $E80F
 KBIN     equ   $E830
+SETP     equ   $EC00
+EXTRA    equ   $EC0C
 
 DBLFLG   equ   $6103
 VALTYP   equ   $6105
@@ -30,6 +40,8 @@ ARGMO    equ   $615B
 ARGLO    equ   $615C
 ARGSGN   equ   $6161
 
+**************************************
+
 ldab     macro
          ldd   #(\0)*256+\1
          endm
@@ -40,19 +52,220 @@ clrd     macro
          ldab  0,0
          endm
          
-         setdp $61
+negd     macro
+         nega
+         negb
+         sbca  #0
+         endm
+
+lsrd     macro
+         lsra
+         rorb
+         endm
+         
+lsld     macro
+         lslb
+         rola
+         endm
+         
+absb     macro
+         bge   *+3
+         negb
+         endm
+
+**************************************
+* floating point pseudo instructions
+**************************************
+
+* enter fpu section
+f_beg    macro
+         ldu   #*+6
+         fcb   $7E   ; jmp
+         endm
+         
+* exit fpu section
+f_end    macro
+         fdb   fend
+         endm
+
+* jump
+f_jmp    macro
+         fdb   fjmp,\0
+         endm
+
+* jump to subroutine
+f_jsr    macro
+         fdb   fjsr,\0
+         endm
+
+* return from subroutine
+f_rts    macro
+         fdb   frts
+         endm
+
+* load FAC
+f_ld0    macro
+         fdb   movfm,\0
+         endm
+
+* load ARG
+f_ld1    macro
+         fdb   movam,\0
+         endm
+         
+* load ARG,FAC
+f_ld2    macro
+         ifeq  USE_XTRA
+         fdb   movafm,\1,\0
+         else
+         f_ld1 \0
+         f_ld0 \1
+         endc
+         endm
+         
+* store         
+f_sto    macro
+         fdb   movmf,\0
+         endm
+
+* tfr FAC --> ARG
+f_tfr    macro
+         fdb   movaf
+         endm
+
+f_mul4   macro
+         fdb   fastMul4
+         endm
+
+f_mul2   macro
+         fdb   fastMul2
+         endm
+         
+f_div2   macro
+         fdb   fastDiv2
+         endm
+         
+* addition
+f_add    macro
+         fdb   fadd
+         endm
+         
+* subtraction
+f_sub    macro
+         fdb   fsub
+         endm
+         
+* multiplication
+f_mul    macro
+         fdb   fmul
+         endm
+         
+* division
+f_div    macro
+         ifne  USE_XTRA
+         fdb   fdiv
+         else
+         fdb   fDivEnt
+         f_isqrt
+         f_sqr
+         f_ld1 fDivX
+         f_mul 
+         endc
+         endm
+
+* memory operation 
+f_mop    macro
+         ifne  0
+         fdb   ld_op_st,\0,\1
+         else
+         f_ld1 \1
+         fdb   \0
+         f_sto \1
+         endc
+         endm
+
+m_add    macro
+         f_mop fadd,\0
+         endm
+
+m_sub    macro
+         f_mop fsub,\0
+         endm
+
+m_mul    macro
+         f_mop fmul,\0
+         endm
+
+* greatest integer below or equal
+f_floor  macro
+         fdb   floor
+         endm
+
+* negate
+f_neg    macro
+         fdb   fneg
+         endm
+         
+* square
+f_sqr    macro
+         ifne  USE_XTRA
+         fdb   movaf,fmul
+         else
+         fdb   fsqr
+         endc
+         endm
+         
+* square root 
+f_sqrt   macro
+         ifne  USE_XTRA
+         fdb   fsqrt
+         else
+         f_sto fSqrtX
+         f_isqrt
+         f_ld1 fSqrtX
+         f_mul
+         endc
+         endm
+         
+* inverse square root
+f_isqrt  macro
+         ifne  USE_XTRA
+         f_sqrt
+         f_ld1 c_1
+         f_div
+         else
+         f_sto fISqrtX
+         fdb   fInvSqrtMagic
+         f_sto fIsqrtY  
+         f_sqr
+         f_ld1 fISqrtX
+         f_mul          ; x*y*y
+         f_ld1 c_3
+         f_sub          ; 3 - x*y*y
+         f_div2         ; 1.5 - 0.5*y*y
+         f_ld1 fIsqrtY
+         f_mul          ; y*(1.5 - 0.5*x*y*y)
+         endc
+         endm
+         
+* cast to int 
+f_int    macro
+         f_ld1 c_0p5
+         f_add
+         f_floor
+         fdb   ftoi
+         endm
+
+**************************************
 
          org   $9000
-         
-*defusr   pshs  a,dp,x
-*         jsr   fastInvSqrt
-*         puls  a,dp,x,pc
+         setdp $61
 
 ini      pshs  dp
-         ifne  USE_XTRA
-* init extramon + math         
          ldd   #$6104
          tfr   a,dp
+         ifne  USE_XTRA
+* init extramon + math         
          stb   <VALTYP
          clr   <DBLFLG         
          ldb   #1
@@ -94,30 +307,36 @@ fCo2     deca
          
 * init pseudo-random point generator         
          std   <iRnd
-newpx    jmp   calcXY
+newpx    bra   calcXY
+
 drwpx    stb   FORME
          ldx   <iX
          ldy   <iY
          jsr   PLOT        
+         
 nxtpx    ldd   <iRnd
-nxrnd    lslb
-         rola
-         lslb
-         rola
-         addd  <iRnd
-         addd  #1
-         anda  #127
-         std   <iRnd
+nxrnd    set   *
+         lsld           ; 2*iRnd
+         lsld           ; 4*iRnd
+         addd  <iRnd    ; 5*iRnd
+         addd  #1       ; 5*iRnd+1
+         anda  #127 
+         std   <iRnd    ; iRnd = (5*iRnd+1) and 32767
          beq   done
+         
          cmpd  #32000
-         bcc   nxrnd
-         bra   newpx
+         bcs   newpx
+         bra   nxrnd    ; loop if >= 32000
 
-done     ldx   #0
-         leay  ,x
-         jsr   prtTime
+done     ldx   #0       ; x=0
+         leay  ,x       ; y=0
+         jsr   prtTime  
 
-loop     jmp   loop
+         ldb   #7
+         jsr   PUTC     ; beep
+         
+wait_key jsr   KTST     ; wait key press
+         bcc   wait_key
    
          puls  dp,pc
 
@@ -128,11 +347,9 @@ calcXY
          ldd   #200
          jsr   idivmod
          std   <iX
-         lslb
-         rola
+         lsld
          std   <i2X
          ldd   <ARGMO
-         std   <iY
          
          else
 * fait gagner 15sec environ
@@ -171,14 +388,13 @@ calcXY8  cmpd  #200
          leax  1,x
 calcXY9  exg   d,x
          std   <iX
-         lslb
-         rola
+         lsld
          std   <i2X
          tfr   x,d
-         std   <iY         
          
          endc
-         
+        
+         std   <iY         
          sta   fX
          
          ldu   #c_m0p1
@@ -192,297 +408,242 @@ calcXY9  exg   d,x
 
          bra   calcUVW
          
-calcUV_  pshs  x
-         ldx   #fCoord
-         lslb
-         rola
+itof     ldx   #fCoord
+         lsld
          ldd   d,x
          std   <FACEXP
          clrd
          std   <FACMO
          sta   <FACSGN
-         puls  x
-         jsr   fsuba
-         ldx   #c_1o130
-         jmp   fmula
-
-fneg     macro
-         com  <FACSGN
-         endm
+         rts
          
 calcUVW  ldd   <i2X
-         ldx   #c_159p5
-         bsr   calcUV_
-         fneg
-         ldx   #fU
-         jsr   movmf    ; U = (2M-159.5)/130
+         bsr   itof
+         f_beg
+         f_ld1 c_m159p5
+         f_add
+         f_ld1 c_1o130
+         f_mul 
+         f_sto fU       ; U = (2M-159.5)/130
+         f_end
          
          ldd   <iY
-         ldx   #c_99p5
-         bsr   calcUV_
-         ldx   #fV
-         jsr   movmf    ; V = (99.5-N)/130
+         bsr   itof
+         f_beg
+         f_ld1 c_99p5
+         f_sub
+         f_ld1 c_1o130
+         f_mul
+         f_sto fV       ; V = (99.5-N)/130
          
-         jsr   fsqr
-         ldx   #fT
-         jsr   movmf    ; T=V*V
-         ldx   #fU
-         jsr   movfm
-         jsr   fsqr     
-         ldx   #fT
-         jsr   fadda    ; FAC=V*V+U*U
-         ldx   #c_1
-         jsr   fadda    ; FAC=V*V+U*U+1
-         jsr   f1osqrt
-         ldx   #fW
-         jsr   movmf    ; W = 1/sqrt(1+U*U+V*V)
+         f_sqr 
+         f_sto fT       ; T = V*V
          
-         ldx   #fV
-         jsr   fmulm    ; V=V*W
+         f_ld0 fU
+         f_sqr          ; U*U
+         f_ld1 fT
+         f_add          ; U*U + V*V
+         f_ld1 c_1
+         f_add          ; U*U + V*V + 1
          
-         ldx   #fW
-         jsr   movfm
-         ldx   #fU
-         jsr   fmulm    ; U=U*W
+         f_isqrt 
+         f_sto fW       ; W = 1/sqrt(1+U*U+V*V)
+         
+         m_mul fV       ; V=V*W
+         f_ld0 fW     
+         m_mul fU       ; U=U*W
+         f_end
          
 *        bra   spheres
  
 sph_w    equ   48
 sph_h    equ   48
  
-spheres  ldx   #c_sph-6
+* speedup : use sphere bounding_box to 
+* decide if we do the full sphere computation
+* or directly go to sky or ground
+chk_spheres  
+         ldx   #c_sph-6
+nxt_sphere
          leax  6,x
          ldd   ,x
-         bge   *+4
-         bra   no_sphere
-         subd  <i2X
-         bge   *+3
-         negb
-         cmpb  #sph_w
-         bhi   spheres+3
-         ldd   2,x
-         bne   *+4
-         bra   no_sphere
-         subd  <iY
-         bge   *+3
-         negb
-         cmpb  #sph_h
-         bhi   spheres+3
-         ldd   4,x
-         std   <fI         
-         bra   sphere_bounce
-no_sphere
+         bge   bb_sphere
+no_sphere         
          jmp   ground_or_sky
+bb_sphere
+         subd  <i2X
+         absb
+         cmpb  #sph_w
+         bhi   nxt_sphere
+         ldd   2,x
+         beq   no_sphere
+         subd  <iY
+         absb
+         cmpb  #sph_h
+         bhi   nxt_sphere
+         ldd   4,x
+         std   <fI      ; I = +/- 1 depending on the bounding-box
+         bra   sphere_bounce
                   
 sphere_EFP
-         ldx   #fI
-         jsr   movfm
-         ldx   #fX
-         jsr   fadda
-         ldx   #fE
-         jsr   movmf    ; E=X+I
+         f_ld2 fX,fI
+         f_add 
+         f_sto fE       ; E=X+I
          
-         ldx   #fI
-         jsr   movfm
-         ldx   #fY
-         jsr   fadda
-         ldx   #fF
-         jsr   movmf    ; F=Y+I
+         f_ld2 fY,fI
+         f_add 
+         f_sto fF       ; F=Y+I
 
-         ldx   #fV
-         jsr   fmula
-         ldx   #fP
-         jsr   movmf    ; P=V*F
+         f_ld1 fV
+         f_mul 
+         f_sto fP       ; P=V*F
          
-         ldx   #fU
-         jsr   movfm
-         ldx   #fE
-         jsr   fmula
-         ldx   #fP
-         jsr   faddm    ; P += U*E
+         f_ld2 fU,fE
+         f_mul          ; U*E
+         m_add fP       ; P = U*E + V*F
          
-         ldx   #fW
-         jsr   movfm
-         ldx   #fZ
-         jsr   fmula    ; FAC=W*Z
-         ldx   #fP
-         jmp   fsubm    ; P=V*F + U*E - W*Z
+         f_ld2 fW,fZ
+         f_mul          ; W*Z
+         m_sub fP       ; P=V*F + U*E - W*Z
+         
+         f_rts
 
-ftst     ldb   <FACEXP
-         beq   ftst1
+if_le0_then_ground_or_sky
+         ldb   <FACEXP  ; IF T>0 THEN
+         beq   *+8
          ldb   <FACSGN
-         orb   #127
-ftst1    rts
+         bmi   *+4
+         pulu  pc
+         jmp   ground_or_sky
 
 sphere_bounce
-         bsr   sphere_EFP
-         
-         jsr   fsqr
-         ldx   #fT
-         jsr   movmf    ; T=P*P
-         
-         ldx   #fE
-         jsr   movfm
-         jsr   fsqr
-         ldx   #fT
-         jsr   fsubm    ; T -= E*E
-         
-         ldx   #fF
-         jsr   movfm
-         jsr   fsqr
-         ldx   #fT
-         jsr   fsubm    ; T -= F*F
-         
-         ldx   #fZ
-         jsr   movfm
-         jsr   fsqr
+         f_beg
+         f_jsr sphere_EFP
 
-         ldx   #c_1
-         jsr   fsuba    ; 1 - Z*Z
+         f_sqr 
+         f_sto fT       ; T=P*P
+         
+         f_ld0 fE
+         f_sqr         
+         m_sub fT       ; T -= E*E
+         
+         f_ld0 fF
+         f_sqr         
+         m_sub fT       ; T -= F*F  
 
-         ldx   #fT
-         jsr   faddm    ; T = P*P - E*E - F*F - Z*Z + 1
+         f_ld0 fZ
+         f_sqr
+         f_ld1 c_1
+         f_sub          ; 1 - Z*Z
          
-         bsr   ftst     
-         bgt   *+5      ; IF T>0 THEN
-         jmp   ground_or_sky
+         f_ld1 fT
+         f_add          ; P*P - E*E - F*F - Z*Z + 1
+         
+         fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
+         
+         f_sqrt
+         f_ld1 fP
+         f_add 
+         f_neg          ; -(P + SQR(T))
+         
+         fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
+                  
+         f_sto fT
+         f_ld1 fU
+         f_mul
+         m_add fX       ; X=X+U*T
 
-         jsr   fsqrt
-         ldx   #fP
-         jsr   fadda 
-         fneg
-         ldx   #fT
-         jsr   movmf    ; T = -(P + SQR(T))
-         
-         bsr   ftst   
-         bgt   *+5      ; IF T>0 THEN
-         jmp   ground_or_sky
-         
-         ldx   #fU
-         jsr   fmula
-         ldx   #fX
-         jsr   faddm    ; X=X+U*T
+         f_ld2 fT,fV
+         f_mul 
+         m_add fY       ; Y=Y+V*T
 
-         ldx   #fT
-         jsr   movfm
- 
-         ldx   #fV
-         jsr   fmula
-         ldx   #fY
-         jsr   faddm    ; Y=Y+V*T
-
-         ldx   #fT
-         jsr   movfm
+         f_ld2 fT,fW
+         f_mul 
+         m_sub fZ       ; Z=Z-W*T
          
-         ldx   #fW
-         jsr   fmula
-         ldx   #fZ
-         jsr   fsubm    ; Z=Z-W*T
+         f_jsr sphere_EFP
          
-         jsr   sphere_EFP
+         fdb   f2Pld    ; P=2P; f_ld0 P
+         f_ld1 fE
+         f_mul
+         m_sub fU       ; U=U-P*E
          
-         ldx   #fP
-*         ldb   ,x
-*         beq   *+4
-         inc   ,x      ; P=2*P
+         f_ld2 fP,fF
+         f_mul 
+         m_sub fV       ; V=V-P*F
          
-         jsr   movfm
-         ldx   #fE
-         jsr   fmula
-         ldx   #fU
-         jsr   fsubm    ; U=U-P*E
+         f_ld2 fP,fZ
+         f_mul
+         m_add fW       ; W=W+P*Z
          
-         ldx   #fP
-         jsr   movfm
-         ldx   #fF
-         jsr   fmula
-         ldx   #fV
-         jsr   fsubm    ; V=V-P*F
-         
-         ldx   #fP
-         jsr   movfm
-         ldx   #fZ
-         jsr   fmula
-         ldx   #fW
-         jsr   faddm    ; W=W+P*Z
-         
-         ldx   #fI+1
+         f_end
          ldb   #128
-         eorb  ,x
-         stb   ,x       ; I=-I
+         eorb  <fI+1
+         stb   <fI+1    ; I=-I
          jmp   sphere_bounce         
 
 ground_or_sky         
          ldb   fV+1
          bmi   ground
 sky
-         ldx   #fV
-         jsr   movfm
-         jsr   fsqrt
-         ldx   #c_7
-         jsr   fmula     
-         ldx   #fV
-         jsr   movmf    ; V=7*sqrt(V)
-         bra   calcCOL
-ground         
-         ldx   #fY
-         jsr   movfm
-         ldx   #c_2
-         jsr   fadda
-         jsr   movaf
-         ldx   #fV
-         jsr   movfm
-         jsr   fdiv     
-         ldx   #fP
-         jsr   movmf    ; P=(Y+2)/V
+         f_beg
+         f_ld0 fV
+         f_sqrt 
+         f_ld1 c_7
+         f_mul  
+         f_sto fV       ; V=7*sqrt(V)
+         f_jmp calcCOL
+
+ground        
+         f_beg
+         f_ld2 c_2,fY
+         f_add 
+         f_tfr
+         f_ld0 fV
+         f_div 
+         f_sto fP       ; P=(Y+2)/V
          
-         ldx   #fU
-         jsr   fmula
-         ldx   #fX
-         jsr   fsuba
-         jsr   floor
-*         jsr   ftoi     ; d = int(X-U*P)
-*         stb   ,-s
-         ldx   #fT
-         jsr   movmf
+         f_ld1 fU
+         f_mul          ; U*P
+         f_ld1 fX
+         f_sub          ; X-U*P
+         f_floor        ; T=floor(X-U*P)
+         f_sto fT
          
-         ldx   #fP
-         jsr   movfm
+         f_ld2 fP,fW
+         f_mul          ;  W*P
+         f_ld1 fZ
+         f_sub          ; Z-W*P
+         f_floor
+
+         f_ld1 fT
+         f_add
+         f_int
          
-         ldx   #fW
-         jsr   fmula
-         ldx   #fZ
-         jsr   fsuba
-         jsr   floor
-*         jsr   ftoi     ; d = int(X-W*Z)
-*         eorb  ,s
-*         andb  #1
-*         stb   ,s
-         ldx   #fT
-         jsr   fadda
-         jsr   ftoi
-         ldx   #ground0
-         lsrb
-         bcc   *+5
-         ldx   #ground1
-         stx   <dalle+1,pcr
+         fdb   setDalle
          
-         ldx   #fV
-         jsr   movfm
-         fneg
-         jsr   fsqrt
-         ldb   <FACEXP
-*        beq   *+6
-         addb  #2
-         stb   <FACEXP  ; FAC=4*SQRT(-V)
+         f_ld0 fV
+         f_neg 
+         f_sqrt
+         f_mul4      ; 4*SQR(-V)
+
+* V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
+         f_ld1 ground0
+dalle    set   *-2  
+         f_add
+         f_sto fV
+*        f_jmp calcCOL
+
+calcCOL  fdb   dither
+         f_ld1 fV
+         f_add
+         f_int
+         f_end
+         ldx   #cols
+         ldb   b,X
+         jmp   drwpx    
          
-dalle    ldx   #ground0
-         jsr   fadda
-         ldx   #fV      
-         jsr   movmf    ; V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
-*         bra   calcCOL
-         
-calcCOL  ldx   #vac
+dither   ldx   #vac
          ldb   <iY+1
          andb  #7
          lslb
@@ -494,87 +655,158 @@ calcCOL  ldx   #vac
          stb   <FACSGN
          orb   #128
          std   <FACEXP
-         clrd
-         std   <FACMO
-         ldx   #fV
-         jsr   faddm
-         jsr   ftoi
-         ldx   #cols
-         ldb   b,X
-         jmp   drwpx
-                  
-movam    ldd   ,x
-         stb   <ARGSGN
-         orb   #128
-         std   <ARGEXP
-         lda   2,x
-         sta   <ARGMO
-         rts       
+         clra
+         sta   <FACMO
+         pulu  pc
 
-         ifne  USE_XTRA
-movfm    ldb   #62
-         jmp   >EXTRA         
-         else
-movfm    ldd   ,x
+setDalle ldx   #ground0
+         lsrb
+         bcc   *+5
+         ldx   #ground1
+         stx   >dalle
+         pulu  pc
+
+fend     jmp   ,u
+
+fjmp     ldu   ,u
+         pulu  pc
+
+fjsr     pulu  x
+         pshs  u
+         leau  ,x
+         pulu  pc
+         
+frts     puls  u
+         pulu  pc
+         
+movafm   pulu  x,y
+         ldd   ,x
          stb   <FACSGN
          orb   #128
          std   <FACEXP
          lda   2,x
          sta   <FACMO
-         rts    
+         ldd   ,y
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,y
+         sta   <ARGMO
+         pulu  pc
+             
+movam    pulu  x,y
+         ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+         jmp   ,y 
+
+f2Pld    ldx   #fP
+*         ldb   ,x
+*         beq   *+4
+         inc   ,x      ; P=2*P
+         pulu  y
+         bra   movfm+2
+
+movfm    pulu  x,y
+         ifne  USE_XTRA
+         ldb   #62
+         bra   xtra_y
+         else
+         ldd   ,x
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         lda   2,x
+         sta   <FACMO
+         jmp   ,y
          endc
 
+movmf    pulu  x,y
          ifne  USE_XTRA
-movmf    ldb   #63
-         jmp   >EXTRA
+         ldb   #63
+         bra   xtra_y
          else
-movmf    lda   <FACEXP
-         bne   *+5
-         sta   ,x
-         rts
-         ldb   <FACSGN
+         lda   <FACEXP
+*         bne   movmf1
+*         sta   ,x
+*         jmp   ,y
+movmf1   ldb   <FACSGN
          orb   #127
          andb  <FACHO
          std   ,x
          lda   <FACMO
          sta   2,x
-         rts
+         jmp   ,y
          endc
 
+movaf    set   *     
          ifne  USE_XTRA
-movaf    ldb   #64
-         jmp   >EXTRA
+         ldb   #64
+         bra   xtra
          else
-movaf    ldd   <FACEXP
+         ldd   <FACEXP
          std   <ARGEXP
          lda   <FACMO
          sta   <ARGMO
          lda   <FACSGN
          sta   <ARGSGN
-         rts
+         pulu  pc
          endc
 
-         ifne  USE_XTRA
-f1osqrt  bsr   fsqrt
-         ldx   #c_1
-         bsr   movam
-         bra   fdiv        
-         else
-f1osqrt  pshs  x
-         leas  -8,s         
-         leax  4,s
+* op,source,nxt
+ld_op_st ldx   2,u
+         stx   los+1
+
+         ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+         
+         ldx   #los
+         stx   2,u
+         pulu  pc
+los      ldx   #0
+         pshu  x
+         bra   movmf
+
+fastMul4 ldb   <FACEXP
+*        beq   *+6
+         addb  #2
+         stb   <FACEXP  ; FAC=4*FAC
+         pulu  pc
+
+fastMul2 
+         inc   <FACEXP
+*        ldb   <FACEXP
+*        beq   *+5
+*        incb
+*        stb   <FACEXP
+         pulu  pc
+
+fastDiv2 
+         dec   <FACEXP
+*        ldb   <FACEXP
+*        beq   *+5
+*        decb
+*        stb   <FACEXP
+         pulu  pc
+         
+         ifeq  USE_XTRA
+fInvSqrtMagic
          clra
          sta   <FACSGN
-         bsr   movmf
                
          ldd   <FACEXP
          suba  #2       ; make bias = 127
          lslb           ; |
-         lsra           ; | make ieee
-         rorb           ; | 
-      
-         lsra           ; |
-         rorb           ; |
+         lsrd           ; | make ieee
+         
+         lsrd           ; |
          ror   <FACMO   ; | i>>1
          std   <FACEXP  ; |
          
@@ -590,66 +822,31 @@ f1osqrt  pshs  x
          rola           ; move carry to a
          orb   #128     ; set msbit
          std   <FACEXP
-  
-         leax  ,s
-         jsr   movmf    ; save y on stack
-         bsr   fsqr     ; y*y
-         leax  4,s
-         bsr   fmula    ; x*y*y
-         ldx   #c_3
-         jsr   fsuba    ; 3 - x*y*y
-         dec   <FACEXP  ; 1.5 - y*y*x/2
-         leax  ,s
-         bsr   fmula    ; y*(1.5 - x*y*y/2)
-
-         leas  8,s
-         puls  x,pc
+         pulu  pc
          endc
 
          ifne  USE_XTRA
 fsqrt    ldb   #44
-         jmp   >EXTRA
-         else
-fsqrt    pshs  x
-         leas  -4,s
-         leax  ,s
-         jsr   movmf
-         bsr   f1osqrt
-         leax  ,s
-         jsr   fmula
-         leas  4,s
-         puls  x,pc
+         bra   xtra
          endc
 
          ifne  USE_XTRA
-fdiv     ldb   #57            ; 23:11
-         jmp   >EXTRA
+fdiv     ldb   #57
+         bra   xtra
          else
-fdiv     lda   <ARGEXP
-         bne   fdiv2
-         sta   <FACEXP
-         rts
-fdiv2    pshs  x
-         leas  -4,s
-         ldb   <ARGSGN
+fDivEnt  ldb   <ARGSGN
          eorb  <FACSGN
          orb   #127
          andb  <ARGHO
-         std   ,s
+         lda   <ARGEXP
+         std   fDivX
          lda   <ARGMO
-         sta   2,S
-         bsr   f1osqrt
-         jsr   fsqr
-         leax  ,s
-         jsr   fmula
-         leas  4,s       
-         puls  x,pc
+         sta   fDivX+2
+         clr   <FACSGN  ; make FAC>0
+         pulu  pc
          endc
 
-         ifne  USE_XTRA
-fsqr     jsr   movaf         
-         bra   fmul
-         else
+         ifeq  USE_XTRA
 fsqr     lda   <FACEXP
          beq   fmul0+2
          suba  #$80
@@ -659,40 +856,36 @@ fsqr     lda   <FACEXP
          sta   <FACEXP         
          ldd   <FACHO
          mul         
-         lslb
-         rola
+         lsld
          sta   <FACMO
          lda   <FACHO
          ldb   #0
          rolb   
          stb   <FACHO
-         stb   <FACSGN
+         stb   <FACSGN     ; make result>0
          tfr   a,b
          mul
          addd  <FACHO
          bpl   fmul1
          std   <FACHO
-         rts
+         pulu  pc
          endc
                   
          ifne  USE_XTRA
-fmula    jsr   movam
-*        bra   fmul
+xtra_y   jsr   >EXTRA
+         jmp   ,y
+         
+xtra     jsr   >EXTRA
+         pulu  pc
+         
 fmul     ldb   #56
-         jmp   >EXTRA
+         bra   xtra
          else
 fmulOvf  tfr   a,b      ;
          sex   
 fmul0    sta   <FACEXP
-         rts       
+         pulu  pc       
 * multiplication with 16 bit mantissa
-fmula    ldd   ,x
-         stb   <ARGSGN
-         orb   #128
-         std   <ARGEXP
-         lda   2,x
-         sta   <ARGMO
-*        bra   fmul
 fmul     lda   <FACEXP
          beq   fmul0+2
          suba  #$80
@@ -734,31 +927,18 @@ fmul     lda   <FACEXP
          bmi   fmul2
 fmul1    dec   <FACEXP
          beq   fmul2    ; underflow
-         lslb
-         rola
-         bpl   fmul1
+         lsld
+*         bpl   fmul1
 fmul2    std   <FACHO
-         rts
+         pulu  pc
          endc
 
-fsubm    bsr   fsuba
-         jmp   movmf
-
-faddm    bsr   fadda
-         jmp   movmf         
-            
-fadda    jsr   movam
-         bra   fadd
-         
-fmulm    bsr   fmula
-         jmp   movmf
-         
-fsuba    jsr   movam
-*        jmp   fsub
+fneg     com   <FACSGN
+         pulu  pc
 
          ifne  USE_XTRA
 fsub     ldb   #55         
-         jmp   >EXTRA
+         bra   xtra
          else
 fsub     com   <FACSGN     ; ARG - FAC
 *        bra   fadd
@@ -766,11 +946,11 @@ fsub     com   <FACSGN     ; ARG - FAC
 
          ifne  USE_XTRA
 fadd     ldb   #54
-         jmp   >EXTRA
+         bra   xtra
          else
 fadd     ldb   <ARGEXP     ; ARG + FAC
-         bne   *+3
-         rts
+         bne   *+4
+         pulu  pc
          
          subb  <FACEXP     ; determine which is bigger
          bne   fadd1
@@ -783,13 +963,12 @@ fadd     ldb   <ARGEXP     ; ARG + FAC
          eorb  <ARGSGN
          bmi   fadd0       ; if not same sign => yield 0      
          inc   <FACEXP     ; otherwise => yield 2FAC
-         rts
+         pulu  pc
 fadd0    sta   <FACEXP     ; zero
-         rts
+         pulu  pc
 
 * mantissa is different; C=1 indicates |FAC| > |ARG|
-fadd1    pshs  x
-         lda   <FACSGN
+fadd1    lda   <FACSGN
          eora  <ARGSGN
          sta   <ARGLO      ; add or sub ?
          
@@ -801,11 +980,11 @@ fadd1    pshs  x
 
          cmpb  #16         ; expo diff >= 16
          bcs   *+4
-         puls  x,pc        ; yes => done
+         pulu  pc          ; yes => done
         
 fadd2    lda   <ARGLO      ; subtract ?
          bmi   fadds1      ; yes => goto fadds section
-* add         
+* same sign => add
          bsr   fastLSR     ; shift smaller mantissa
          addd  <FACHO
          bcc   fadd_end    ; msb not lost => done
@@ -813,20 +992,17 @@ fadd2    lda   <ARGLO      ; subtract ?
          rorb              ; get it back
          inc   <FACEXP     ; fix expo
          bra   fadd_end    ; done
-* sub
+* sign differ => sub
 fadds1   bsr   fastLSR     ; shift smaller mantissa
-         nega
-         negb
-         sbca  #0
+         negd
          addd  <FACHO
          bmi   fadd_end    ; msb set ? yes => done
 fadds2   dec   <FACEXP     ; no => shift left
          beq   fadd_end    ; underflow => done
-         lslb
-         rola
+         lsld
          bpl   fadds2     ; loop till msb set
 fadd_end std   <FACHO
-         puls  x,pc
+         pulu  pc
          
 fadd_cpy ldd   <FACHO      ; copy mantissa
          stx   <FACHO      
@@ -843,7 +1019,7 @@ fadd_cpy ldd   <FACHO      ; copy mantissa
          
          cmpb  #16         ; expo diff >= 16
          bcs   fadd2
-         puls  x,pc
+         pulu  pc
          endc
 
          ifne  USE_XTRA
@@ -852,115 +1028,118 @@ ftoi     ldd   #$0232
          ldb   #4
          stb   <VALTYP
          ldd   <FACMO
-         rts
+         pulu  pc
          else
-ftoi     ldd   #$8080
-         std   <ARGEXP
-         clr   <ARGSGN
-         bsr   fadd        ; adds .5
-         bsr   floor
-
-         ldb   <FACEXP
-         bne   *+4
+ftoi     ldb   <FACEXP
+         bne   ftoi0
          clra
-         rts
+         pulu  pc
          
-         subb  #$80
+ftoi0    subb  #$80
          bhs   ftoi1
          
          ldb   <FACSGN     ; abs(num) <= 1
          sex
          tfr   a,b
-         rts               ; $FFFF or $0000
+         pulu  pc         ; $FFFF or $0000
 
 ftoi1    subb  #16
          bcs   ftoi2
          ldd   #$7FFF
          tst   <FACSGN  
-         bpl   *+4
+         bpl   ftoi1x
          comb
          coma
-         rts               ; $8000 or $7FFF
+ftoi1x   pulu  pc          ; $8000 or $7FFF
          
-ftoi2    pshs  x           ; MANTISSA >> b
-         negb
+ftoi2    negb              ; MANTISSA >> -b
          ldx   <FACHO
-         jsr   fastLSR
+         bsr   fastLSR
          tst   <FACSGN
          bpl   ftoi3
-         nega
-         negb
-         sbca  #0
-ftoi3    puls  x,pc     
+         negd
+ftoi3    pulu  pc
          endc
 
          ifeq  USE_XTRA
 * D = X>>B (logical shift)
 fastLSR  pshs  x
          ldx   #fastLSR3
-         cmpb  #16
-         blt   fastLSR1
+         bitb  #$F0
+         beq   fastLSR1
          ldd   #0
          jmp   ,x
-fastLSR1 negb
-         aslb
+         
+fastLSR1 bitb  #$F8
+         beq   fastLSR2
+         
+         negb
+         addb  #fastLSR4-fastLSR3+8
          leax  b,x
-         cmpx  #fastLSR3-16
-         bhi   fastLSR2
          clra
          ldb   ,s
-         jmp   16,x
-fastLSR2 ldd   ,s
          jmp   ,x
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
-         lsra
-         rorb
+
+         lsrb
+         lsrb
+         lsrb
+         lsrb
+         lsrb
+         lsrb
+         lsrb
+fastLSR4 puls  x,pc             
+
+fastLSR2 aslb
+         negb
+         leax  b,x
+         ldd   ,s
+         jmp   ,x
+         
+         lsrd
+         lsrd
+         lsrd
+         lsrd
+         lsrd
+         lsrd
+         lsrd
 fastLSR3 puls  x,pc    
+         
          endc
+
+xtra     jsr   >EXTRA
+         pulu  pc
 
          ifne  USE_XTRA
 floor    ldb   #42
-         jmp   >EXTRA
+         bra   xtra
          else
 floor    ldb   <FACEXP
-         bne   *+3
-         rts
+         beq   floor0+2 ; zero
          
          subb  #$81
          bhs   floor1
          
-         clra
-         ldb   <FACSGN  ; abs(num) <= 1
-         bpl   floor0
+         clra           ; here abs(num)<1
+         ldb   <FACSGN  
+         bpl   floor0   ; num>0 rounds to 0
          sta   <FACMO   
          ldd   #$8180   ; return -1         
 floor0   std   <FACEXP
-         rts
+         pulu  pc
 
-floor1   cmpb  #16
-         bcs   *+3
-         rts            ; too big to truncate
+floor1   cmpb  #16      ; abs(num)>=1
+         bcc   floor3   ; too big to truncate
          
-         pshs  x        ; $8000 >> b
-         ldx   #floorT
+         ldx   #floor4  ; $8000 >> b
          lslb
          abx
          ldd   ,x
             
          subd  #1       ; make mask
+
          anda  <FACHO   ; isolate fraction
          andb  <FACMO
+
          addd  #0       ; fraction==0 ?
          beq   floor3   ; yes==>exact int, done
 
@@ -975,12 +1154,48 @@ floor1   cmpb  #16
          lsrb           ; shift mantissa
          inc   <FACEXP  ; fix exponent
 floor2   std   <FACHO   ; save mantissa
-floor3   puls  x,pc
-floorT   fdb   $8000,$4000,$2000,$1000
+floor3   pulu  pc
+floor4   fdb   $8000,$4000,$2000,$1000
          fdb   $0800,$0400,$0200,$0100
          fdb   $0080,$0040,$0020,$0010
          fdb   $0008,$0004,$0002,$0001
          endc
+
+MOVAM    macro
+         ldd   \0
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   \0+2
+         sta   <ARGMO
+         pulu  pc
+         endm
+
+MOVMF    macro
+         lda   <FACEXP
+         ldb   <FACSGN
+         orb   #127
+         andb  <FACHO
+         std   \0
+         lda   <FACMO
+         sta   \0+2
+         pulu  pc
+         endm
+
+movam_T
+         MOVAM fT
+
+movam_U
+         MOVAM fU
+
+movam_V
+         MOVAM fV
+
+movmf_T  
+         MOVMF fT
+
+movmf_V
+         MOVMF fV
          
 * D = ARG / D and ARG = ARG % D
 
@@ -995,8 +1210,7 @@ idivmod_ tsta
          exg   a,b
          bra   idivmod_
 idivmod0 leax  1,x
-         lslb
-         rola
+         lsld
          bpl   idivmod0
 idivmod1 std   <FACMO
          ldd   <ARGMO
@@ -1212,12 +1426,13 @@ c_m0p1   fdb   $7DCC,$CCCD       ; -.1
 c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
 
 c_1o130  fdb   $797C,$0FC1       ; 1/130
-c_159p5  fdb   $881F,$8000       ; 159.5
+c_m159p5 fdb   $889F,$8000       ; -159.5
 c_99p5   fdb   $8747,$0000       ; 99.5
 
 c_sph    fdb   110,144,$8100
          fdb   208,47,$8180
 
+c_0p5    fdb   $8000,$0000       ; 0.5 (important: must habe MSB set)
 c_1      fdb   $8100,$0000       ; 1
 c_2      fdb   $8200,$0000       ; 2
 c_7      fdb   $8360,$0000       ; 7
@@ -1247,12 +1462,19 @@ fU       rmb   4
 fV       rmb   4
 fW       rmb   4
 
+         ifne  USE_XTRA*0
+fI       rmb   4
+         else
 fI       equ   i2X+2
-*fI       rmb   4
+         endc
 fE       rmb   4
 fF       rmb   4
 fP       rmb   4
 fT       rmb   4
+fISqrtX  rmb   4
+fIsqrtY  rmb   4
+fSqrtX   rmb   4
+fDivX    rmb   4
 
 fCoord   rmb   2*320
 
