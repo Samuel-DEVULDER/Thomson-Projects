@@ -166,7 +166,6 @@ f_div    macro
          fdb   fdiv
          else
          fdb   fDivEnt
-*         f_isqrt
          f_newton
          f_sqr
          f_ld1 fDivX
@@ -217,9 +216,8 @@ f_sqrt   macro
          ifne  USE_XTRA
          fdb   fsqrt
          else
-         f_sto fSqrtX
          f_isqrt
-         f_ld1 fSqrtX
+         f_ld1 fISqrtX
          f_mul
          endc
          endm
@@ -1462,7 +1460,6 @@ fP       rmb   4
 fT       rmb   4
 fISqrtX  rmb   4
 fIsqrtY  rmb   4
-fSqrtX   rmb   4
 fDivX    rmb   4
 
 fCoord   rmb   2*320
