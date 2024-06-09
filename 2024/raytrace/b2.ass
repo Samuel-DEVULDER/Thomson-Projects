@@ -166,7 +166,8 @@ f_div    macro
          fdb   fdiv
          else
          fdb   fDivEnt
-         f_isqrt
+*         f_isqrt
+         f_newton
          f_sqr
          f_ld1 fDivX
          f_mul 
@@ -175,25 +176,21 @@ f_div    macro
 
 * memory operation 
 f_mop    macro
-         ifne  0
-         fdb   ld_op_st,\0,\1
-         else
          f_ld1 \1
          fdb   \0
-         f_sto \1
-         endc
+         f_sto \2
          endm
 
 m_add    macro
-         f_mop fadd,\0
+         f_mop fadd,\0,\0
          endm
 
 m_sub    macro
-         f_mop fsub,\0
+         f_mop fsub,\0,\0
          endm
 
 m_mul    macro
-         f_mop fmul,\0
+         f_mop fmul,\0,\0
          endm
 
 * greatest integer below or equal
@@ -234,10 +231,14 @@ f_isqrt  macro
          f_ld1 c_1
          f_div
          else
-         f_sto fISqrtX
          fdb   fInvSqrtMagic
-         f_sto fIsqrtY  
-         f_sqr
+*         f_sto fIsqrtY ; inlined in fInvSqrtMagic
+*         f_sqr         ; ditto
+         f_newton
+         endc
+         endm
+         
+f_newton macro
          f_ld1 fISqrtX
          f_mul          ; x*y*y
          f_ld1 c_3
@@ -245,7 +246,6 @@ f_isqrt  macro
          f_div2         ; 1.5 - 0.5*y*y
          f_ld1 fIsqrtY
          f_mul          ; y*(1.5 - 0.5*x*y*y)
-         endc
          endm
          
 * cast to int 
@@ -671,9 +671,9 @@ fend     jmp   ,u
 fjmp     ldu   ,u
          pulu  pc
 
-fjsr     pulu  x
-         pshs  u
-         leau  ,x
+fjsr     leax  2,u
+         ldu   ,u
+         pshs  x
          pulu  pc
          
 frts     puls  u
@@ -756,24 +756,6 @@ movaf    set   *
          pulu  pc
          endc
 
-* op,source,nxt
-ld_op_st ldx   2,u
-         stx   los+1
-
-         ldd   ,x
-         stb   <ARGSGN
-         orb   #128
-         std   <ARGEXP
-         lda   2,x
-         sta   <ARGMO
-         
-         ldx   #los
-         stx   2,u
-         pulu  pc
-los      ldx   #0
-         pshu  x
-         bra   movmf
-
 fastMul4 ldb   <FACEXP
 *        beq   *+6
          addb  #2
@@ -796,40 +778,6 @@ fastDiv2
 *        stb   <FACEXP
          pulu  pc
          
-         ifeq  USE_XTRA
-fInvSqrtMagic
-         clra
-         sta   <FACSGN
-               
-         ldd   <FACEXP
-         suba  #2       ; make bias = 127
-         lslb           ; |
-         lsrd           ; | make ieee
-         
-         lsrd           ; |
-         ror   <FACMO   ; | i>>1
-         std   <FACEXP  ; |
-         
-         lda   #$5b    ;  $5F375A86 - (i>>1)
-         suba  <FACMO
-         sta   <FACMO
-         
-         ldd   #$6037   ; includes bias correction
-         sbcb  <FACHO
-         sbca  <FACEXP
-
-         addb  #128     ; extract msbit -> carry
-         rola           ; move carry to a
-         orb   #128     ; set msbit
-         std   <FACEXP
-         pulu  pc
-         endc
-
-         ifne  USE_XTRA
-fsqrt    ldb   #44
-         bra   xtra
-         endc
-
          ifne  USE_XTRA
 fdiv     ldb   #57
          bra   xtra
@@ -842,11 +790,47 @@ fDivEnt  ldb   <ARGSGN
          std   fDivX
          lda   <ARGMO
          sta   fDivX+2
-         clr   <FACSGN  ; make FAC>0
-         pulu  pc
-         endc
 
-         ifeq  USE_XTRA
+fInvSqrtMagic
+         lda   <FACMO
+         sta   fISqrtX+2
+               
+         ldd   <FACEXP
+         andb  #127     ; clr msbit
+         std   fISqrtX
+         
+         suba  #2       ; make bias = 127
+         lslb           ; |
+         lsrd           ; | make ieee
+         
+         lsrd           ; |
+         ror   <FACMO   ; | i>>1
+         std   <FACEXP  ; |
+         
+         lda   #$5b    ;  $5F375A86 - (i>>1)
+         suba  <FACMO
+         sta   <FACMO
+         sta   fIsqrtY+2
+         
+         ldd   #$6037   ; includes bias correction
+         sbcb  <FACHO
+         sbca  <FACEXP
+
+         addb  #128     ; extract msbit -> carry
+         rola           ; move carry to a
+         
+         andb  #127     ; clr msbit
+         std   fIsqrtY
+         
+         orb   #128     ; set msbit
+
+         asla
+         adda  #$80
+         std   <FACEXP
+         lda   <FACMO
+
+         bra   fsqr1
+     
 fsqr     lda   <FACEXP
          beq   fmul0+2
          suba  #$80
@@ -855,7 +839,7 @@ fsqr     lda   <FACEXP
          adda  #$80
          sta   <FACEXP         
          ldd   <FACHO
-         mul         
+fsqr1    mul         
          lsld
          sta   <FACMO
          lda   <FACHO
@@ -869,6 +853,11 @@ fsqr     lda   <FACEXP
          bpl   fmul1
          std   <FACHO
          pulu  pc
+         endc
+
+         ifne  USE_XTRA
+fsqrt    ldb   #44
+         bra   xtra
          endc
                   
          ifne  USE_XTRA
