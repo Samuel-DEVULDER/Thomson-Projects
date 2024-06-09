@@ -136,15 +136,7 @@ f_tfr    macro
 f_mul4   macro
          fdb   fastMul4
          endm
-
-f_mul2   macro
-         fdb   fastMul2
-         endm
-         
-f_div2   macro
-         fdb   fastDiv2
-         endm
-         
+   
 * addition
 f_add    macro
          fdb   fadd
@@ -218,7 +210,7 @@ f_sqrt   macro
          else
          f_isqrt
          f_ld1 fISqrtX
-         f_mul
+         fdb   fmul_2
          endc
          endm
          
@@ -230,8 +222,6 @@ f_isqrt  macro
          f_div
          else
          fdb   fInvSqrtMagic
-*         f_sto fIsqrtY ; inlined in fInvSqrtMagic
-*         f_sqr         ; ditto
          f_newton
          endc
          endm
@@ -239,9 +229,8 @@ f_isqrt  macro
 f_newton macro
          f_ld1 fISqrtX
          f_mul          ; x*y*y
-         f_ld1 c_3
-         f_sub          ; 3 - x*y*y
-         f_div2         ; 1.5 - 0.5*y*y
+         f_ld1 c_1p5
+         f_sub          ; 1.5 - x*y*y
          f_ld1 fIsqrtY
          f_mul          ; y*(1.5 - 0.5*x*y*y)
          endm
@@ -760,22 +749,6 @@ fastMul4 ldb   <FACEXP
          stb   <FACEXP  ; FAC=4*FAC
          pulu  pc
 
-fastMul2 
-         inc   <FACEXP
-*        ldb   <FACEXP
-*        beq   *+5
-*        incb
-*        stb   <FACEXP
-         pulu  pc
-
-fastDiv2 
-         dec   <FACEXP
-*        ldb   <FACEXP
-*        beq   *+5
-*        decb
-*        stb   <FACEXP
-         pulu  pc
-         
          ifne  USE_XTRA
 fdiv     ldb   #57
          bra   xtra
@@ -795,9 +768,10 @@ fInvSqrtMagic
                
          ldd   <FACEXP
          andb  #127     ; clr msbit
+         deca
          std   fISqrtX
          
-         suba  #2       ; make bias = 127
+         deca           ; make bias = 127
          lslb           ; |
          lsrd           ; | make ieee
          
@@ -827,7 +801,21 @@ fInvSqrtMagic
          std   <FACEXP
          lda   <FACMO
 
-         bra   fsqr1
+ *       bra fsqr1
+         mul         
+         lsld
+         sta   <FACMO
+         lda   <FACHO
+         ldb   #0
+         rolb   
+         stb   <FACHO
+         stb   <FACSGN     ; make result>0
+         tfr   a,b
+         mul
+         addd  <FACHO
+         bpl   fmul1
+         std   <FACHO
+         pulu  pc
      
 fsqr     lda   <FACEXP
          beq   fmul0+2
@@ -872,6 +860,7 @@ fmulOvf  tfr   a,b      ;
          sex   
 fmul0    sta   <FACEXP
          pulu  pc       
+fmul_2   inc   <FACEXP      
 * multiplication with 16 bit mantissa
 fmul     lda   <FACEXP
          beq   fmul0+2
@@ -1411,6 +1400,7 @@ vac      fdb   $7F88,$7F00,$7E80,$7E20
                   
 c_m0p1   fdb   $7DCC,$CCCD       ; -.1
 c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
+c_1p5    fdb   $8140,$0000       ; 1.5
 
 c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_m159p5 fdb   $889F,$8000       ; -159.5
