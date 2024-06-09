@@ -231,7 +231,7 @@ f_newton macro
          f_mul          ; x*y*y
          f_ld1 c_1p5
          f_sub          ; 1.5 - x*y*y
-         f_ld1 fIsqrtY
+         f_ld1 fISqrtY
          f_mul          ; y*(1.5 - 0.5*x*y*y)
          endm
          
@@ -764,12 +764,12 @@ fDivEnt  ldb   <ARGSGN
 
 fInvSqrtMagic
          lda   <FACMO
-         sta   fISqrtX+2
+         sta   <fISqrtX+2
                
          ldd   <FACEXP
          andb  #127     ; clr msbit
          deca
-         std   fISqrtX
+         std   <fISqrtX
          
          deca           ; make bias = 127
          lslb           ; |
@@ -782,7 +782,7 @@ fInvSqrtMagic
          lda   #$5b    ;  $5F375A86 - (i>>1)
          suba  <FACMO
          sta   <FACMO
-         sta   fIsqrtY+2
+         sta   <fISqrtY+2
          
          ldd   #$6037   ; includes bias correction
          sbcb  <FACHO
@@ -792,7 +792,7 @@ fInvSqrtMagic
          rola           ; move carry to a
          
          andb  #127     ; clr msbit
-         std   fIsqrtY
+         std   <fISqrtY
          
          orb   #128     ; set msbit
 
@@ -1448,8 +1448,15 @@ fE       rmb   4
 fF       rmb   4
 fP       rmb   4
 fT       rmb   4
+
+         ifne  USE_XTRA
 fISqrtX  rmb   4
-fIsqrtY  rmb   4
+fISqrtY  rmb   4
+         else
+fISqrtX  equ   fI+4         
+fISqrtY  equ   fI+8
+         endc
+         
 fDivX    rmb   4
 
 fCoord   rmb   2*320
