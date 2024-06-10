@@ -775,23 +775,45 @@ fInvSqrtMagic
          
          andb  #127     ; clr msbit
          std   <fISqrtY
-         
+         stb   <FACSGN  ; make result>0
          orb   #128     ; set msbit
 
-         asla
+         asla           ; compute square   
          adda  #$80
          std   <FACEXP
          lda   <FACMO
+         ifne  0
          bra   fsqr1
-         
+         else
+         mul         
+         lsld
+         sta   <FACMO
+         lda   <FACHO
+         ldb   <FACHO
+         bcc   fInvSqrtMagic1
+         mul
+         addb  <FACMO
+         adca  #1
+         bpl   fmul1
+         std   <FACHO
+         pulu  pc
+fInvSqrtMagic1
+         mul
+         addb  <FACMO
+         adca  #0
+         bpl   fmul1
+         std   <FACHO
+         pulu  pc
+         endc
+           
 fsqr     lda   <FACEXP
          beq   fmul0+2
-         suba  #$80
+*         suba  #$80
          asla
-         bvs   fmulOvf
+*         bvs   fmulOvf
          adda  #$80
          sta   <FACEXP         
-         ldd   <FACHO
+         ldd   <FACHO         
 fsqr1    mul         
          lsld
          sta   <FACMO
@@ -823,8 +845,8 @@ xtra     jsr   >EXTRA
 fmul     ldb   #56
          bra   xtra
          else
-fmulOvf  tfr   a,b      ;
-         sex   
+*fmulOvf  tfr   a,b      ;
+*         sex   
 fmul0    sta   <FACEXP
          pulu  pc  
          
@@ -1369,7 +1391,6 @@ vac      fdb   $7F88,$7F00,$7E80,$7E20
                   
 c_m0p1   fdb   $7DCC,$CCCD       ; -.1
 c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
-c_1p5    fdb   $8140,$0000       ; 1.5
 
 c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_m159p5 fdb   $889F,$8000       ; -159.5
