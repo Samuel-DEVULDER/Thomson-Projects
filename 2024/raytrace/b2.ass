@@ -85,7 +85,7 @@ f_beg    macro
          
 * exit fpu section
 f_end    macro
-         fdb   fend
+         fdb   *+2
          endm
 
 * jump
@@ -618,8 +618,6 @@ setDalle ldx   #ground0
          ldx   #ground1
          stx   >dalle
          pulu  pc
-
-fend     jmp   ,u
 
 fjmp     ldu   ,u
          pulu  pc
