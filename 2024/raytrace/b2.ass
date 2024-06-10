@@ -113,10 +113,29 @@ f_ld1    macro
          fdb   movam,\0
          endm
 
+MOVMF    macro
+         lda   <FACEXP
+         ldb   <FACSGN
+         orb   #127
+         andb  <FACHO
+         std   \0
+         lda   <FACMO
+         sta   \0+2
+         pulu  pc
+         endm
+
 * store         
 f_sto    macro
          fdb   movmf,\0
          endm
+         
+* store & load FAC
+f_sl0    macro
+*         f_sto \0
+*         f_ld0 \1
+         fdb   movmfm,\0,\1
+         endm
+         
 
 * tfr FAC --> ARG
 f_tfr    macro
@@ -164,22 +183,6 @@ f_div    macro
          f_sqr
          f_ml1 fDivX
          endc
-         endm
-
-* memory operation 
-m_add    macro
-         f_ad1 \0
-         f_sto \0
-         endm
-
-m_sub    macro
-         f_sb1 \0
-         f_sto \0
-         endm
-
-m_mul    macro
-         f_ml1 \0
-         f_sto \0
          endm
 
 * greatest integer below or equal
@@ -414,9 +417,8 @@ calcUVW  ldd   <i2X
          f_sto fV       ; V = (99.5-N)/130
          
          f_sqr 
-         f_sto fT       ; T = V*V
-         
-         f_ld0 fU
+         f_sl0 fT,fU    ; T = V*V
+
          f_sqr          ; U*U
          f_ad1 fT       ; U*U + V*V
          f_ad1 c_1      ; U*U + V*V + 1
@@ -424,9 +426,11 @@ calcUVW  ldd   <i2X
          f_isqrt 
          f_sto fW       ; W = 1/sqrt(1+U*U+V*V)
          
-         m_mul fV       ; V=V*W
-         f_ld0 fW     
-         m_mul fU       ; U=U*W
+         f_ml1 fV       ; V=V*W
+         f_sl0 fV,fW
+         
+         f_ml1 fU       ; U=U*W
+         f_sto fU
          f_end
          
 *        bra   spheres
@@ -463,22 +467,18 @@ bb_sphere
 sphere_EFP
          f_ld0 fI
          f_ad1 fX
-         f_sto fE       ; E=X+I
-         
-         f_ld0 fI
+         f_sl0 fE,fI    ; E=X+I
          f_ad1 fY
          f_sto fF       ; F=Y+I
 
          f_ml1 fV
-         f_sto fP       ; P=V*F
-         
-         f_ld0 fU
+         f_sl0 fP,fU    ; P=V*F
          f_ml1 fE       ; U*E
-         m_add fP       ; P = U*E + V*F
-         
-         f_ld0 fW
+         f_ad1 fP       ; P = U*E + V*F
+         f_sl0 fP,fW
          f_ml1 fZ       ; W*Z
-         m_sub fP       ; P=V*F + U*E - W*Z
+         f_sb1 fP       ; P=V*F + U*E - W*Z
+         f_sto fP
          
          f_rts
 
@@ -495,17 +495,13 @@ sphere_bounce
          f_jsr sphere_EFP
 
          f_sqr 
-         f_sto fT       ; T=P*P
-         
-         f_ld0 fE
+         f_sl0 fT,fE    ; T=P*P         
          f_sqr         
-         m_sub fT       ; T -= E*E
-         
-         f_ld0 fF
+         f_sb1 fT       ; T -= E*E
+         f_sl0 fT,fF
          f_sqr         
-         m_sub fT       ; T -= F*F  
-
-         f_ld0 fZ
+         f_sb1 fT       ; T -= F*F  
+         f_sl0 fT,fZ
          f_sqr
          f_sb1 c_1      ; 1 - Z*Z
          
@@ -521,29 +517,27 @@ sphere_bounce
                   
          f_sto fT
          f_ml1 fU
-         m_add fX       ; X=X+U*T
-
-         f_ld0 fT
+         f_ad1 fX       ; X=X+U*T
+         f_sl0 fX,fT
          f_ml1 fV
-         m_add fY       ; Y=Y+V*T
-
-         f_ld0 fT
+         f_ad1 fY       ; Y=Y+V*T
+         f_sl0 fY,fT
          f_ml1 fW
-         m_sub fZ       ; Z=Z-W*T
+         f_sb1 fZ       ; Z=Z-W*T
+         f_sto fZ
          
          f_jsr sphere_EFP
          
          fdb   f2Pld    ; P=2P; f_ld0 P
          f_ml1 fE
-         m_sub fU       ; U=U-P*E
-         
-         f_ld0 fP
+         f_sb1 fU       ; U=U-P*E
+         f_sl0 fU,fP
          f_ml1 fF
-         m_sub fV       ; V=V-P*F
-         
-         f_ld0 fP
+         f_sb1 fV      ; V=V-P*F
+         f_sl0 fV,fP
          f_ml1 fZ
-         m_add fW       ; W=W+P*Z
+         f_ad1 fW       ; W=W+P*Z
+         f_sto fW
          
          f_end
          ldb   #128
@@ -574,9 +568,7 @@ ground
          f_ml1 fU       ; U*P
          f_sb1 fX       ; X-U*P
          f_floor        ; T=floor(X-U*P)
-         f_sto fT
-         
-         f_ld0 fP
+         f_sl0 fT,fP
          f_ml1 fW       ; W*P
          f_sb1 fZ       ; Z-W*P
          f_floor
@@ -672,6 +664,7 @@ f2Pld    ldx   #fP
          pulu  y
          bra   movfm+2
 
+
 movfm    pulu  x,y
          ifne  USE_XTRA
          ldb   #62
@@ -717,6 +710,22 @@ movaf    set   *
          sta   <ARGSGN
          pulu  pc
          endc
+
+movmfm   pulu  x,y
+         lda   <FACEXP
+         ldb   <FACSGN
+         orb   #127
+         andb  <FACHO
+         std   ,x
+         lda   <FACMO
+         sta   2,x
+         ldd   ,y
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         lda   2,y
+         sta   <FACMO
+         pulu  pc  
 
 fastMul4 ldb   <FACEXP
 *        beq   *+6
@@ -1137,32 +1146,6 @@ MOVAM    macro
          pulu  pc
          endm
 
-MOVMF    macro
-         lda   <FACEXP
-         ldb   <FACSGN
-         orb   #127
-         andb  <FACHO
-         std   \0
-         lda   <FACMO
-         sta   \0+2
-         pulu  pc
-         endm
-
-movam_T
-         MOVAM fT
-
-movam_U
-         MOVAM fU
-
-movam_V
-         MOVAM fV
-
-movmf_T  
-         MOVMF fT
-
-movmf_V
-         MOVMF fV
-         
 * D = ARG / D and ARG = ARG % D
 
          ifne  0
