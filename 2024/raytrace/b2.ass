@@ -377,17 +377,17 @@ calcXY9  stx   <iX
          endc
         
          std   <iY         
-         sta   fX
+         sta   <fX
+         clr   <fZ+2
 
-         ldd   #$7DCC   ; -.1
-         std   fY
+         ldd   #$7DCC   ; Y=-.1
+         std   <fY
 *         incb
-         stb   fY+2
+         stb   <fY+2
          
-         ldd   #$8240   ; 3
-         std   fZ
-         clr   fZ+2
-
+         ldd   #$8240   ; Z=3
+         std   <fZ
+         
 *         bra   calcUVW
          
 calcUVW  ldd   <i2X
@@ -1417,10 +1417,6 @@ iX       equ   $61A5
 iY       equ   $61A7
 i2X      equ   $61A9
 
-fX       rmb   4
-fY       rmb   4
-fZ       rmb   4
-
 fU       rmb   4
 fV       rmb   4
 fW       rmb   4
@@ -1442,6 +1438,17 @@ fISqrtY  rmb   4
 fISqrtX  equ   fI+4         
 fISqrtY  equ   fI+8
          endc
+
+         ifne  USE_XTRA
+fX       rmb   4
+fY       rmb   4
+fZ       rmb   4
+         else
+fX       equ   fI+12
+fY       equ   fI+16
+fZ       equ   fI+20
+         endc
+
          
 fDivX    rmb   4
 
