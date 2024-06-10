@@ -112,17 +112,7 @@ f_ld0    macro
 f_ld1    macro
          fdb   movam,\0
          endm
-         
-* load ARG,FAC
-f_ld2    macro
-         ifeq  USE_XTRA
-         fdb   movafm,\1,\0
-         else
-         f_ld1 \0
-         f_ld0 \1
-         endc
-         endm
-         
+
 * store         
 f_sto    macro
          fdb   movmf,\0
@@ -141,15 +131,27 @@ f_mul4   macro
 f_add    macro
          fdb   fadd
          endm
+
+f_ad1    macro
+         fdb   fad1,\0
+         endm
          
 * subtraction
 f_sub    macro
          fdb   fsub
          endm
-         
+
+f_sb1    macro
+         fdb   fsb1,\0
+         endm
+
 * multiplication
 f_mul    macro
          fdb   fmul
+         endm
+
+f_ml1    macro
+         fdb   fml1,\0
          endm
          
 * division
@@ -160,28 +162,24 @@ f_div    macro
          fdb   fDivEnt
          f_newton
          f_sqr
-         f_ld1 fDivX
-         f_mul 
+         f_ml1 fDivX
          endc
          endm
 
 * memory operation 
-f_mop    macro
-         f_ld1 \1
-         fdb   \0
-         f_sto \2
-         endm
-
 m_add    macro
-         f_mop fadd,\0,\0
+         f_ad1 \0
+         f_sto \0
          endm
 
 m_sub    macro
-         f_mop fsub,\0,\0
+         f_sb1 \0
+         f_sto \0
          endm
 
 m_mul    macro
-         f_mop fmul,\0,\0
+         f_ml1 \0
+         f_sto \0
          endm
 
 * greatest integer below or equal
@@ -227,18 +225,14 @@ f_isqrt  macro
          endm
          
 f_newton macro
-         f_ld1 fISqrtX
-         f_mul          ; x*y*y
-         f_ld1 c_1p5
-         f_sub          ; 1.5 - x*y*y
-         f_ld1 fISqrtY
-         f_mul          ; y*(1.5 - 0.5*x*y*y)
+         f_ml1 fISqrtX  ; x*y*y
+         f_sb1 c_1p5    ; 1.5 - 0.5*x*y*y
+         f_ml1 fISqrtY  ; y*(1.5 - 0.5*x*y*y)
          endm
          
 * cast to int 
 f_int    macro
-         f_ld1 c_0p5
-         f_add
+         f_ad1 c_0p5
          f_floor
          fdb   ftoi
          endm
@@ -407,20 +401,16 @@ itof     ldx   #fCoord
 calcUVW  ldd   <i2X
          bsr   itof
          f_beg
-         f_ld1 c_m159p5
-         f_add
-         f_ld1 c_1o130
-         f_mul 
+         f_ad1 c_m159p5
+         f_ml1 c_1o130
          f_sto fU       ; U = (2M-159.5)/130
          f_end
          
          ldd   <iY
          bsr   itof
          f_beg
-         f_ld1 c_99p5
-         f_sub
-         f_ld1 c_1o130
-         f_mul
+         f_sb1 c_99p5
+         f_ml1 c_1o130
          f_sto fV       ; V = (99.5-N)/130
          
          f_sqr 
@@ -428,10 +418,8 @@ calcUVW  ldd   <i2X
          
          f_ld0 fU
          f_sqr          ; U*U
-         f_ld1 fT
-         f_add          ; U*U + V*V
-         f_ld1 c_1
-         f_add          ; U*U + V*V + 1
+         f_ad1 fT       ; U*U + V*V
+         f_ad1 c_1      ; U*U + V*V + 1
          
          f_isqrt 
          f_sto fW       ; W = 1/sqrt(1+U*U+V*V)
@@ -473,24 +461,23 @@ bb_sphere
          bra   sphere_bounce
                   
 sphere_EFP
-         f_ld2 fX,fI
-         f_add 
+         f_ld0 fI
+         f_ad1 fX
          f_sto fE       ; E=X+I
          
-         f_ld2 fY,fI
-         f_add 
+         f_ld0 fI
+         f_ad1 fY
          f_sto fF       ; F=Y+I
 
-         f_ld1 fV
-         f_mul 
+         f_ml1 fV
          f_sto fP       ; P=V*F
          
-         f_ld2 fU,fE
-         f_mul          ; U*E
+         f_ld0 fU
+         f_ml1 fE       ; U*E
          m_add fP       ; P = U*E + V*F
          
-         f_ld2 fW,fZ
-         f_mul          ; W*Z
+         f_ld0 fW
+         f_ml1 fZ       ; W*Z
          m_sub fP       ; P=V*F + U*E - W*Z
          
          f_rts
@@ -520,47 +507,42 @@ sphere_bounce
 
          f_ld0 fZ
          f_sqr
-         f_ld1 c_1
-         f_sub          ; 1 - Z*Z
+         f_sb1 c_1      ; 1 - Z*Z
          
-         f_ld1 fT
-         f_add          ; P*P - E*E - F*F - Z*Z + 1
+         f_ad1 fT       ; P*P - E*E - F*F - Z*Z + 1
          
          fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
          
          f_sqrt
-         f_ld1 fP
-         f_add 
+         f_ad1 fP 
          f_neg          ; -(P + SQR(T))
          
          fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
                   
          f_sto fT
-         f_ld1 fU
-         f_mul
+         f_ml1 fU
          m_add fX       ; X=X+U*T
 
-         f_ld2 fT,fV
-         f_mul 
+         f_ld0 fT
+         f_ml1 fV
          m_add fY       ; Y=Y+V*T
 
-         f_ld2 fT,fW
-         f_mul 
+         f_ld0 fT
+         f_ml1 fW
          m_sub fZ       ; Z=Z-W*T
          
          f_jsr sphere_EFP
          
          fdb   f2Pld    ; P=2P; f_ld0 P
-         f_ld1 fE
-         f_mul
+         f_ml1 fE
          m_sub fU       ; U=U-P*E
          
-         f_ld2 fP,fF
-         f_mul 
+         f_ld0 fP
+         f_ml1 fF
          m_sub fV       ; V=V-P*F
          
-         f_ld2 fP,fZ
-         f_mul
+         f_ld0 fP
+         f_ml1 fZ
          m_add fW       ; W=W+P*Z
          
          f_end
@@ -576,35 +558,30 @@ sky
          f_beg
          f_ld0 fV
          f_sqrt 
-         f_ld1 c_7
-         f_mul  
+         f_ml1 c_7
          f_sto fV       ; V=7*sqrt(V)
          f_jmp calcCOL
 
 ground        
          f_beg
-         f_ld2 c_2,fY
-         f_add 
+         f_ld0 c_2
+         f_ad1 fY 
          f_tfr
          f_ld0 fV
          f_div 
          f_sto fP       ; P=(Y+2)/V
          
-         f_ld1 fU
-         f_mul          ; U*P
-         f_ld1 fX
-         f_sub          ; X-U*P
+         f_ml1 fU       ; U*P
+         f_sb1 fX       ; X-U*P
          f_floor        ; T=floor(X-U*P)
          f_sto fT
          
-         f_ld2 fP,fW
-         f_mul          ;  W*P
-         f_ld1 fZ
-         f_sub          ; Z-W*P
+         f_ld0 fP
+         f_ml1 fW       ; W*P
+         f_sb1 fZ       ; Z-W*P
          f_floor
 
-         f_ld1 fT
-         f_add
+         f_ad1 fT
          f_int
          
          fdb   setDalle
@@ -615,15 +592,13 @@ ground
          f_mul4      ; 4*SQR(-V)
 
 * V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
-         f_ld1 ground0
-dalle    set   *-2  
-         f_add
+         f_ad1 ground0
+dalle    set   *-2           
          f_sto fV
 *        f_jmp calcCOL
 
 calcCOL  fdb   dither
-         f_ld1 fV
-         f_add
+         f_ad1 fV
          f_int
          f_end
          ldx   #cols
@@ -800,23 +775,8 @@ fInvSqrtMagic
          adda  #$80
          std   <FACEXP
          lda   <FACMO
-
- *       bra fsqr1
-         mul         
-         lsld
-         sta   <FACMO
-         lda   <FACHO
-         ldb   #0
-         rolb   
-         stb   <FACHO
-         stb   <FACSGN     ; make result>0
-         tfr   a,b
-         mul
-         addd  <FACHO
-         bpl   fmul1
-         std   <FACHO
-         pulu  pc
-     
+         bra   fsqr1
+         
 fsqr     lda   <FACEXP
          beq   fmul0+2
          suba  #$80
@@ -859,8 +819,20 @@ fmul     ldb   #56
 fmulOvf  tfr   a,b      ;
          sex   
 fmul0    sta   <FACEXP
-         pulu  pc       
+         pulu  pc  
+         
 fmul_2   inc   <FACEXP      
+         bra   fmul
+
+fml1     pulu  x
+         ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+*        bra   fmul
+
 * multiplication with 16 bit mantissa
 fmul     lda   <FACEXP
          beq   fmul0+2
@@ -883,7 +855,7 @@ fmul     lda   <FACEXP
          lda   <FACMO
          ldb   <ARGHO
          mul
-         adca  #0
+*        adca  #0       ; a += b7
          sta   <FACMO
 
          ldb   <ARGMO
@@ -912,13 +884,31 @@ fmul2    std   <FACHO
 fneg     com   <FACSGN
          pulu  pc
 
+fsb1     pulu  x
+         ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+*         bra   fsub
+         
          ifne  USE_XTRA
 fsub     ldb   #55         
          bra   xtra
          else
 fsub     com   <FACSGN     ; ARG - FAC
-*        bra   fadd
+         bra   fadd
          endc
+
+fad1     pulu  x
+         ldd   ,x
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   2,x
+         sta   <ARGMO
+*         bra   fadd
 
          ifne  USE_XTRA
 fadd     ldb   #54
