@@ -369,11 +369,10 @@ calcXY8  cmpd  #200
          bcs   calcXY9
          subd  #200
          leax  1,x
-calcXY9  exg   d,x
-         std   <iX
-         lsld
-         std   <i2X
-         tfr   x,d
+calcXY9  stx   <iX
+         stx   <i2X
+         lsl   <i2X+1
+         rol   <i2X
          
          endc
         
