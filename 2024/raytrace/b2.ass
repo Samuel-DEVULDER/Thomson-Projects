@@ -379,26 +379,17 @@ calcXY9  exg   d,x
         
          std   <iY         
          sta   fX
-         
-         ldu   #c_m0p1
-         pulu  d,x
-         std   fY
-         stx   fY+2
-         
-         pulu  d,x      ; c_3
-         std   fZ
-         stx   fZ+2
 
-         bra   calcUVW
+         ldd   #$7DCC   ; -.1
+         std   fY
+*         incb
+         stb   fY+2
          
-itof     ldx   #fCoord
-         lsld
-         ldd   d,x
-         std   <FACEXP
-         clrd
-         std   <FACMO
-         sta   <FACSGN
-         rts
+         ldd   #$8240   ; 3
+         std   fZ
+         clr   fZ+2
+
+*         bra   calcUVW
          
 calcUVW  ldd   <i2X
          bsr   itof
@@ -448,6 +439,16 @@ nxt_sphere
          bge   bb_sphere
 no_sphere         
          jmp   ground_or_sky
+
+itof     ldx   #fCoord
+         lsld
+         ldd   d,x
+         std   <FACEXP
+         clrd
+         std   <FACMO
+         sta   <FACSGN
+         rts
+
 bb_sphere
          subd  <i2X
          absb
@@ -462,7 +463,7 @@ bb_sphere
          ldd   4,x
          std   <fI      ; I = +/- 1 depending on the bounding-box
          bra   sphere_bounce
-                  
+                           
 sphere_EFP
          f_ld0 fI
          f_ad1 fX
@@ -1388,10 +1389,8 @@ vac      fdb   $7F88,$7F00,$7E80,$7E20
 
          fdb   $7B00,$7F60,$7D00,$7FE0
          fdb   $7F80,$7F68,$7ED0,$7E50
-                  
-c_m0p1   fdb   $7DCC,$CCCD       ; -.1
-c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
 
+c_3      fdb   $8240,$0000       ; 3 must follow c_m0p1
 c_1o130  fdb   $797C,$0FC1       ; 1/130
 c_m159p5 fdb   $889F,$8000       ; -159.5
 c_99p5   fdb   $8747,$0000       ; 99.5
@@ -1399,7 +1398,7 @@ c_99p5   fdb   $8747,$0000       ; 99.5
 c_sph    fdb   110,144,$8100
          fdb   208,47,$8180
 
-c_0p5    fdb   $8000,$0000       ; 0.5 (important: must habe MSB set)
+c_0p5    fdb   $8000,$0000       ; 0.5 (important: must have MSB set)
 c_1      fdb   $8100,$0000       ; 1
 c_2      fdb   $8200,$0000       ; 2
 c_7      fdb   $8360,$0000       ; 7
