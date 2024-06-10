@@ -836,15 +836,15 @@ fml1     pulu  x
 * multiplication with 16 bit mantissa
 fmul     lda   <FACEXP
          beq   fmul0+2
-         suba  #$80
-         sta   <FACEXP
+*         suba  #$80
+*         sta   <FACEXP
 
          lda   <ARGEXP
          beq   fmul0
 
-         suba  #$80
+*         suba  #$80
          adda  <FACEXP
-         bvs   fmulOvf
+*         bvs   fmulOvf
          adda  #$80
          sta   <FACEXP
          
@@ -855,7 +855,7 @@ fmul     lda   <FACEXP
          lda   <FACMO
          ldb   <ARGHO
          mul
-*        adca  #0       ; a += b7
+*        adca  #0       ; a += b7 (seem unnecessary)
          sta   <FACMO
 
          ldb   <ARGMO
@@ -865,7 +865,7 @@ fmul     lda   <FACEXP
          sta   <FACMO
       
          lda   <FACHO
-         ldb   #0        * move carry to FACHO
+         ldb   #0       ; move carry to FACHO
          rolb            
          stb   <FACHO
          
