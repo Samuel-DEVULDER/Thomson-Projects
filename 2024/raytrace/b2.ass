@@ -762,9 +762,6 @@ fInvSqrtMagic
          adda  #$80
          std   <FACEXP
          lda   <FACMO
-         ifne  0
-         bra   fsqr1
-         else
          mul         
          lsld
          sta   <FACMO
@@ -798,7 +795,6 @@ fInvSqrtMagic3
          lda   <fISqrtX+2
          sta   <ARGMO
          bra   fmul
-         endc
            
 fsqr     lda   <FACEXP
          beq   fmul0+2
@@ -1031,13 +1027,13 @@ ftoi0    subb  #$80
          pulu  pc         ; $FFFF or $0000
 
 ftoi1    subb  #16
-         bcs   ftoi2
-         ldd   #$7FFF
-         tst   <FACSGN  
-         bpl   ftoi1x
-         comb
-         coma
-ftoi1x   pulu  pc          ; $8000 or $7FFF
+*         bcs   ftoi2
+*         ldd   #$7FFF
+*         tst   <FACSGN  
+*         bpl   ftoi1x
+*         comb
+*         coma
+*ftoi1x   pulu  pc          ; $8000 or $7FFF
          
 ftoi2    negb              ; MANTISSA >> -b
          ldx   <FACHO
@@ -1051,22 +1047,23 @@ ftoi3    pulu  pc
          ifeq  USE_XTRA
 * D = X>>B (logical shift)
 fastLSR  pshs  x
-         ldx   #fastLSR3
-         bitb  #$F0
-         beq   fastLSR1
-         ldd   #0
-         jmp   ,x
-         
-fastLSR1 bitb  #$F8
+         bitb  #$F8
          beq   fastLSR2
+  
+* unneeded since in this app 0<b<16  
+*         bitb  #$F0
+*         beq   fastLSR1
+*         ldd   #0
+*         bra   fastLSR4
          
-         negb
-         addb  #fastLSR4-fastLSR3+8
+fastLSR1 negb
+         ldx   #fastLSR4+8
          leax  b,x
-         clra
          ldb   ,s
+         clra
          jmp   ,x
 
+         lsrb
          lsrb
          lsrb
          lsrb
@@ -1078,6 +1075,7 @@ fastLSR4 puls  x,pc
 
 fastLSR2 aslb
          negb
+         ldx   #fastLSR3
          leax  b,x
          ldd   ,s
          jmp   ,x
