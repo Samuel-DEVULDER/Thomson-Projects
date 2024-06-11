@@ -527,8 +527,8 @@ sphere_bounce
          
          f_jsr sphere_EFP
          
-         fdb   f2Pld    ; P=2P; f_ld0 P
-         f_ml1 fE
+         fdb   f2Pld    ; P=2P; f_ld0 P; fml1 fE
+         fdb   fE
          f_sb1 fU       ; U=U-P*E
          f_sl0 fU,fP
          f_ml1 fF
@@ -654,13 +654,15 @@ movam    pulu  x,y
          sta   <ARGMO
          jmp   ,y 
 
-f2Pld    ldx   #fP
-*         ldb   ,x
-*         beq   *+4
-         inc   ,x      ; P=2*P
-         pulu  y
-         bra   movfm+2
-
+f2Pld    ldd   <fP
+         inca           ; P=2*P
+         sta   <fP
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         lda   <fP+2
+         sta   <FACMO
+         jmp   fml1
 
 movfm    pulu  x,y
          ifne  USE_XTRA
@@ -1428,7 +1430,6 @@ fI       equ   i2X+2
          endc
 fE       rmb   4
 fF       rmb   4
-fP       rmb   4
 fT       rmb   4
 
          ifne  USE_XTRA
@@ -1443,10 +1444,12 @@ fISqrtY  equ   fI+8
 fX       rmb   4
 fY       rmb   4
 fZ       rmb   4
+fP       rmb   4
          else
 fX       equ   fI+12
 fY       equ   fI+16
 fZ       equ   fI+20
+fP       equ   fI+24
          endc
 
          
