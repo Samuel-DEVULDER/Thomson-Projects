@@ -93,16 +93,6 @@ f_jmp    macro
          fdb   fjmp,\0
          endm
 
-* jump to subroutine
-f_jsr    macro
-         fdb   fjsr,\0
-         endm
-
-* return from subroutine
-f_rts    macro
-         fdb   frts
-         endm
-
 * load FAC
 f_ld0    macro
          fdb   movfm,\0
@@ -576,11 +566,11 @@ ground
          f_int
          
          fdb   setDalle
-         
-         f_ld0 fV
-         f_neg 
-         f_sqrt
-         f_mul4      ; 4*SQR(-V)
+*         f_ld0 fV
+*         f_neg 
+*         f_mul4
+*         f_mul4
+         f_sqrt         ; 4*SQR(-V)
 
 * V=8+5*((INT(X-U*P)+INT(Z-W*P))AND1)+4*SQR(-V)
          f_ad1 ground0
@@ -588,8 +578,8 @@ dalle    set   *-2
          f_sto fV
 *        f_jmp calcCOL
 
-calcCOL  fdb   dither
-         f_ad1 fV
+calcCOL  fdb   dither,fV
+*         f_ad1 fV
          f_int
          f_end
          ldx   #cols
@@ -610,26 +600,28 @@ dither   ldx   #vac
          std   <FACEXP
          clra
          sta   <FACMO
-         pulu  pc
+         jmp   fad1
 
 setDalle ldx   #ground0
          lsrb
          bcc   *+5
          ldx   #ground1
          stx   >dalle
+         
+         ldd   fV
+         adda  #4    ; mul 16
+         eorb  #128  ; neg
+         stb   <FACSGN
+         orb   #128
+         std   <FACEXP
+         lda   fV+2
+         sta   <FACMO
+         
          pulu  pc
 
 fjmp     ldu   ,u
          pulu  pc
 
-fjsr     leax  2,u
-         ldu   ,u
-         pshs  x
-         pulu  pc
-         
-frts     puls  u
-         pulu  pc
-         
 movafm   pulu  x,y
          ldd   ,x
          stb   <FACSGN
