@@ -131,10 +131,6 @@ f_sl0    macro
 f_tfr    macro
          fdb   movaf
          endm
-
-f_mul4   macro
-         fdb   fastMul4
-         endm
    
 * addition
 f_add    macro
@@ -217,7 +213,6 @@ f_isqrt  macro
          endm
          
 f_newton macro
-         f_ml1 fISqrtX       ; x*y*y
          f_sb1 c_3           ; 3 - x*y*y
          fdb   fml05,fISqrtY ; y*(1.5 - 0.5*x*y*y)
          endm
@@ -717,12 +712,6 @@ movmfm   pulu  x,y
          sta   <FACMO
          pulu  pc  
 
-fastMul4 ldb   <FACEXP
-*        beq   *+6
-         addb  #2
-         stb   <FACEXP  ; FAC=4*FAC
-         pulu  pc
-
          ifne  USE_XTRA
 fdiv     ldb   #57
          bra   xtra
@@ -785,16 +774,30 @@ fInvSqrtMagic
          mul
          addb  <FACMO
          adca  #1
-         bpl   fmul1
+         bpl   fInvSqrtMagic2
          std   <FACHO
-         pulu  pc
+         bra   fInvSqrtMagic3
 fInvSqrtMagic1
          mul
          addb  <FACMO
          adca  #0
-         bpl   fmul1
+         bpl   fInvSqrtMagic2
          std   <FACHO
-         pulu  pc
+         bra   fInvSqrtMagic3
+fInvSqrtMagic2         
+         dec   <FACEXP
+         beq   fInvSqrtMagic3
+         lsld
+         std   <FACHO
+         bra   fInvSqrtMagic3
+fInvSqrtMagic3     
+         ldd   <fISqrtX
+         stb   <ARGSGN
+         orb   #128
+         std   <ARGEXP
+         lda   <fISqrtX+2
+         sta   <ARGMO
+         bra   fmul
          endc
            
 fsqr     lda   <FACEXP
