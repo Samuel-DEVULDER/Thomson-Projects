@@ -282,7 +282,9 @@ fCo2     deca
          std   <iRnd
 newpx    bra   calcXY
 
-drwpx    stb   FORME
+drwpx    ldx   #cols
+         ldb   b,X
+         stb   FORME
          ldx   <iX
          ldy   <iY
          jsr   PLOT        
@@ -581,10 +583,7 @@ dalle    set   *-2
 calcCOL  fdb   dither,fV
 *         f_ad1 fV
          f_int
-         f_end
-         ldx   #cols
-         ldb   b,X
-         jmp   drwpx    
+         fdb   drwpx    
          
 dither   ldx   #vac
          ldb   <iY+1
