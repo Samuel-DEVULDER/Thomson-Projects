@@ -463,7 +463,7 @@ bb_sphere
          std   <fI      ; I = +/- 1 depending on the bounding-box
          bra   sphere_bounce
                            
-sphere_EFP
+sphere_EFP macro
          f_ld0 fI
          f_ad1 fX
          f_sl0 fE,fI    ; E=X+I
@@ -478,9 +478,10 @@ sphere_EFP
          f_ml1 fZ       ; W*Z
          f_sb1 fP       ; P=V*F + U*E - W*Z
          f_sto fP
-         
-         f_rts
+         endm
 
+neg_if_le0_then_ground_or_sky
+         com   <FACSGN
 if_le0_then_ground_or_sky
          ldb   <FACEXP  ; IF T>0 THEN
          beq   *+8
@@ -491,7 +492,7 @@ if_le0_then_ground_or_sky
 
 sphere_bounce
          f_beg
-         f_jsr sphere_EFP
+         sphere_EFP
 
          f_sqr 
          f_sl0 fT,fE    ; T=P*P         
@@ -509,11 +510,10 @@ sphere_bounce
          fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
          
          f_sqrt
-         f_ad1 fP 
-         f_neg          ; -(P + SQR(T))
+         f_ad1 fP       ; (P + SQR(T))
          
-         fdb   if_le0_then_ground_or_sky  ; IF T>0 THEN
-                  
+         fdb   neg_if_le0_then_ground_or_sky  ; IF T>0 THEN
+
          f_sto fT
          f_ml1 fU
          f_ad1 fX       ; X=X+U*T
@@ -525,7 +525,7 @@ sphere_bounce
          f_sb1 fZ       ; Z=Z-W*T
          f_sto fZ
          
-         f_jsr sphere_EFP
+         sphere_EFP
          
          fdb   f2Pld    ; P=2P; f_ld0 P; fml1 fE
          fdb   fE
