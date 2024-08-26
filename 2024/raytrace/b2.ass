@@ -1232,11 +1232,6 @@ prtTime  lda   >STATUS
                   
          ldd   <iTime
          std   <ARGMO
-*         ldd   #36000
-*         bsr   idivmod
-*         bsr   prt10
-*         ldb   #':
-*         bsr   putc16
          ldd   #600
          bsr   idivmod
          bsr   prt10
@@ -1305,8 +1300,7 @@ PLOT     pshs  d,x
          lda   #40
          mul
          adda  #$40
-         tfr   d,x
-         ldb   3,s
+         exg   d,x
          lsrb
          lsrb
          abx
