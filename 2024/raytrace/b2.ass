@@ -501,7 +501,7 @@ sphere_bounce
          
          fdb   neg_if_le0_then_ground_or_sky  ; IF T>0 THEN
 
-         f_sto fT
+         f_sto fT       ; T = -(P + SQR(T))
          f_ml1 fU
          f_ad1 fX       ; X=X+U*T
          f_sl0 fX,fT
@@ -615,22 +615,8 @@ setDalle ldx   #ground0
 
 fjmp     ldu   ,u
          pulu  pc
-
-movafm   pulu  x,y
-         ldd   ,x
-         stb   <FACSGN
-         orb   #128
-         std   <FACEXP
-         lda   2,x
-         sta   <FACMO
-         ldd   ,y
-         stb   <ARGSGN
-         orb   #128
-         std   <ARGEXP
-         lda   2,y
-         sta   <ARGMO
-         pulu  pc
-             
+       
+* moves param to ARG
 movam    pulu  x,y
          ldd   ,x
          stb   <ARGSGN
@@ -640,17 +626,8 @@ movam    pulu  x,y
          sta   <ARGMO
          jmp   ,y 
 
-f2Pld    ldd   <fP
-         inca           ; P=2*P
-         sta   <fP
-         stb   <FACSGN
-         orb   #128
-         std   <FACEXP
-         lda   <fP+2
-         sta   <FACMO
-         jmp   fml1
-
-movfm    pulu  x,y
+* moves 1st param to FAC
+movfm    pulu  x,y      ; get 1st param & next instruction
          ifne  USE_XTRA
          ldb   #62
          bra   xtra_y
@@ -661,15 +638,17 @@ movfm    pulu  x,y
          std   <FACEXP
          lda   2,x
          sta   <FACMO
-         jmp   ,y
+         jmp   ,y       ; execute next instruction
          endc
 
-movmf    pulu  x,y
+*  moves FAC to param
+movmf    pulu  x,y      ; get param & next instruction
          ifne  USE_XTRA
          ldb   #63
-         bra   xtra_y
+         bra   xtra_y   ; call extra and jump to next
          else
          lda   <FACEXP
+* it is faster not to test for zero here         
 *         bne   movmf1
 *         sta   ,x
 *         jmp   ,y
@@ -682,6 +661,7 @@ movmf1   ldb   <FACSGN
          jmp   ,y
          endc
 
+* moves FAC to ARG
 movaf    set   *     
          ifne  USE_XTRA
          ldb   #64
@@ -696,6 +676,8 @@ movaf    set   *
          pulu  pc
          endc
 
+* saves FAC to 1st param, then 
+* loads FAC with 2nd param.
 movmfm   pulu  x,y
          lda   <FACEXP
          ldb   <FACSGN
@@ -716,6 +698,8 @@ movmfm   pulu  x,y
 fdiv     ldb   #57
          bra   xtra
          else
+* saves ARG in fDivX, then prepare fInvSqrt
+* by invoking the magick step
 fDivEnt  ldb   <ARGSGN
          eorb  <FACSGN
          orb   #127
@@ -724,14 +708,18 @@ fDivEnt  ldb   <ARGSGN
          std   fDivX
          lda   <ARGMO
          sta   fDivX+2
+*        bra   fInvSqrtMagic
 
+* saves X (input)
+* does the Carmack magic bit operation -> y
+* computes x*y*y
 fInvSqrtMagic
          lda   <FACMO
          sta   <fISqrtX+2
                
          ldd   <FACEXP
          andb  #127     ; clr msbit
-         std   <fISqrtX
+         std   <fISqrtX ; save X
          
          suba  #2       ; make bias = 127
          lslb           ; |
@@ -758,8 +746,8 @@ fInvSqrtMagic
          stb   <FACSGN  ; make result>0
          orb   #128     ; set msbit
 
-         asla           ; compute square   
-         adda  #$80
+         asla           ; compute square (inlined 
+         adda  #$80     ; for speedup)
          std   <FACEXP
          lda   <FACMO
          mul         
@@ -788,13 +776,13 @@ fInvSqrtMagic2
          std   <FACHO
          bra   fInvSqrtMagic3
 fInvSqrtMagic3     
-         ldd   <fISqrtX
+         ldd   <fISqrtX    ; load ARG with X
          stb   <ARGSGN
          orb   #128
          std   <ARGEXP
          lda   <fISqrtX+2
          sta   <ARGMO
-         bra   fmul
+         bra   fmul        ; and multiply
            
 fsqr     lda   <FACEXP
          beq   fmul0+2
@@ -824,6 +812,12 @@ fsqr1    mul
 fsqrt    ldb   #44
          bra   xtra
          endc
+
+f2Pld    lda   <FACEXP
+         inca           ; FAC=P=2*P
+         sta   <fP
+         sta   <FACEXP
+         bra   fml1
                   
          ifne  USE_XTRA
 xtra_y   jsr   >EXTRA
@@ -840,10 +834,11 @@ fmul     ldb   #56
 fmul0    sta   <FACEXP
          pulu  pc  
          
-fml05    dec   <FACEXP      ; 
-fml1     pulu  x
+fml05    dec   <FACEXP     ; mul FAC by param/2
+
+fml1     pulu  x           ; mul FAC by pc
          ldd   ,x
-         stb   <ARGSGN
+         stb   <ARGSGN     ; move param to ARG
          orb   #128
          std   <ARGEXP
          lda   2,x
@@ -993,16 +988,16 @@ fadd_cpy ldd   <FACHO      ; copy mantissa
 
          lda   <ARGSGN     ; copy sign
          sta   <FACSGN
-         
+
          ldb   <ARGEXP     ; ARG is biger
          subb  <FACEXP
 
          lda   <ARGEXP     ; copy expo
          sta   <FACEXP
-         
+                  
          cmpb  #16         ; expo diff >= 16
-         bcs   fadd2
-         pulu  pc
+         bcs   fadd2       ; no => continue addition
+         pulu  pc          ; yes => done (nothing to add)
          endc
 
          ifne  USE_XTRA
