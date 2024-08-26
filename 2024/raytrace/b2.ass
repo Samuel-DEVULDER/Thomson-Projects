@@ -89,9 +89,9 @@ f_end    macro
          endm
 
 * jump
-f_jmp    macro
-         fdb   fjmp,\0
-         endm
+* f_jmp    macro
+*         fdb   fjmp,\0
+*         endm
 
 * load FAC
 f_ld0    macro
@@ -468,7 +468,12 @@ sphere_EFP macro
          endm
 
 neg_if_le0_then_ground_or_sky
+         ldb   <FACEXP  ; IF T>0 THEN
+         beq   *+8
          com   <FACSGN
+         bmi   *+4
+         pulu  pc
+         jmp   ground_or_sky
 if_le0_then_ground_or_sky
          ldb   <FACEXP  ; IF T>0 THEN
          beq   *+8
@@ -540,7 +545,10 @@ sky
          f_sqrt 
          f_ml1 c_7
          f_sto fV       ; V=7*sqrt(V)
-         f_jmp calcCOL
+*         f_jmp calcCOL
+         fdb   *+2
+         ldu   #calcCOL+2
+         bra   dither
 
 ground        
          f_beg
@@ -581,19 +589,19 @@ calcCOL  fdb   dither,fV
          fdb   drwpx    
          
 dither   ldx   #vac
-         ldb   <iY+1
-         andb  #7
+         ldab  7,7
+         anda  <iX+1
+         andb  <iY+1
          lslb
          abx
-         ldab  16,7
-         andb  <iX+1
+         ldb   #16
          mul
-         ldd   d,x
+         abx
+         sta   <FACMO ; A=0 car 7*16<256
+         ldd   ,x
          stb   <FACSGN
          orb   #128
          std   <FACEXP
-         clra
-         sta   <FACMO
          jmp   fad1
 
 setDalle ldx   #ground0
@@ -613,8 +621,8 @@ setDalle ldx   #ground0
          
          pulu  pc
 
-fjmp     ldu   ,u
-         pulu  pc
+*fjmp     ldu   ,u
+*         pulu  pc
        
 * moves param to ARG
 movam    pulu  x,y
@@ -705,9 +713,9 @@ fDivEnt  ldb   <ARGSGN
          orb   #127
          andb  <ARGHO
          lda   <ARGEXP
-         std   fDivX
+         std   <fDivX
          lda   <ARGMO
-         sta   fDivX+2
+         sta   <fDivX+2
 *        bra   fInvSqrtMagic
 
 * saves X (input)
@@ -1051,11 +1059,12 @@ fastLSR  pshs  x
 *         ldd   #0
 *         bra   fastLSR4
          
-fastLSR1 negb
-         ldx   #fastLSR4+8
-         leax  b,x
-         ldb   ,s
+fastLSR1 eorb  #15
+         ldx   #fastLSR4-7
+         abx
+
          clra
+         ldb   ,s
          jmp   ,x
 
          lsrb
@@ -1065,13 +1074,13 @@ fastLSR1 negb
          lsrb
          lsrb
          lsrb
-         lsrb
 fastLSR4 puls  x,pc             
 
-fastLSR2 aslb
-         negb
-         ldx   #fastLSR3
-         leax  b,x
+fastLSR2 eorb  #7
+         lslb
+         ldx   #fastLSR3-14
+         abx
+         
          ldd   ,s
          jmp   ,x
          
@@ -1085,9 +1094,6 @@ fastLSR2 aslb
 fastLSR3 puls  x,pc    
          
          endc
-
-xtra     jsr   >EXTRA
-         pulu  pc
 
          ifne  USE_XTRA
 floor    ldb   #42
@@ -1233,7 +1239,7 @@ prtTime  lda   >STATUS
 *         bsr   putc16
          ldd   #600
          bsr   idivmod
-         bsr   prt100
+         bsr   prt10
          ldb   #'m
          bsr   putc16
          ldd   #10
@@ -1437,10 +1443,10 @@ fX       equ   fI+12
 fY       equ   fI+16
 fZ       equ   fI+20
 fP       equ   fI+24
+fDivX    equ   fI+28
          endc
 
          
-fDivX    rmb   4
 
 fCoord   rmb   2*320
 
