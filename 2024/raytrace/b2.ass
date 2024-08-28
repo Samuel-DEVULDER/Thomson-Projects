@@ -87,6 +87,10 @@ f_beg    macro
 f_end    macro
          fdb   *+2
          endm
+         
+f_ldi    macro
+         fdb   itof,\0
+         endm
 
 * jump
 * f_jmp    macro
@@ -377,17 +381,14 @@ calcXY9  stx   <iX
          
 *         bra   calcUVW
          
-calcUVW  ldd   <i2X
-         bsr   itof
+calcUVW  
          f_beg
+         f_ldi i2X
          f_ad1 c_m159p5
          f_ml1 c_1o130
          f_sto fU       ; U = (2M-159.5)/130
-         f_end
          
-         ldd   <iY
-         bsr   itof
-         f_beg
+         f_ldi iY
          f_sb1 c_99p5
          f_ml1 c_1o130
          f_sto fV       ; V = (99.5-N)/130
@@ -426,14 +427,16 @@ nxt_sphere
 no_sphere         
          jmp   ground_or_sky
 
-itof     ldx   #fCoord
+itof     pulu  x,y
+         ldd   ,x
+         ldx   #fCoord
          lsld
          ldd   d,x
          std   <FACEXP
          clrd
          std   <FACMO
          sta   <FACSGN
-         rts
+         jmp   ,y
 
 bb_sphere
          subd  <i2X
@@ -468,19 +471,17 @@ sphere_EFP macro
          endm
 
 neg_if_le0_then_ground_or_sky
-         ldb   <FACEXP  ; IF T>0 THEN
-         beq   *+8
          com   <FACSGN
-         bmi   *+4
-         pulu  pc
-         jmp   ground_or_sky
+         bpl   if_T_eq_0
+goto_ground_or_sky         
+         jmp   ground_or_sky         
 if_le0_then_ground_or_sky
-         ldb   <FACEXP  ; IF T>0 THEN
-         beq   *+8
          ldb   <FACSGN
-         bmi   *+4
+         bmi   goto_ground_or_sky
+if_T_eq_0
+         ldb   <FACEXP  ; IF T>0 THEN
+         beq   if_le0_then_ground_or_sky-3
          pulu  pc
-         jmp   ground_or_sky
 
 sphere_bounce
          f_beg
@@ -546,7 +547,7 @@ sky
          f_ml1 c_7
          f_sto fV       ; V=7*sqrt(V)
 *         f_jmp calcCOL
-         fdb   *+2
+         f_end 
          ldu   #calcCOL+2
          bra   dither
 
