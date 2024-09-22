@@ -25,9 +25,7 @@ https://forums.parallax.com/discussion/119711/zog-a-zpu-processor-core-for-the-p
 
 # Compiler
 
-GCC is avaiable for the ZPU:
-https://github.com/zylin/zpugcc/
-https://github.com/zylin/zpugcc/blob/master/toolchain/gcc/libgloss/zpu/crt0.S
+[GCC](https://github.com/zylin/zpugcc/) is avaiable for the ZPU. The [crt0.S](https://github.com/zylin/zpugcc/blob/master/toolchain/gcc/libgloss/zpu/crt0.S) contains interresting code for emulated instructions. Fans of Stack-Based architectures (as well as Forth fans) might like to peek an eye on it.
 
 # Demo
 
