@@ -29,7 +29,7 @@ https://forums.parallax.com/discussion/119711/zog-a-zpu-processor-core-for-the-p
 
 # Demo
 
-Here is a video showing ZPU running the Dhrystone benchmark on the TO8.
+Here is a [YT video](https://youtu.be/9T5YM5CkrV0) showing ZPU running the Dhrystone benchmark on the TO8 (click on the image below).
 [![Dhrystone runiing on TO8](https://img.youtube.com/vi/9T5YM5CkrV0/0.jpg)](https://www.youtube.com/watch?v=9T5YM5CkrV0)
 
 # Misc
