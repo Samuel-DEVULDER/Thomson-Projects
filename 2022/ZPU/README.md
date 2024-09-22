@@ -28,6 +28,11 @@ https://forums.parallax.com/discussion/119711/zog-a-zpu-processor-core-for-the-p
 https://github.com/zylin/zpugcc/
 https://github.com/zylin/zpugcc/blob/master/toolchain/gcc/libgloss/zpu/crt0.S
 
+# Demo ?
+
+Here is a video showing ZPU running the Dhrystone benchmark on the TO8.
+[![Dhrystone runiing on TO8](https://img.youtube.com/vi/9T5YM5CkrV0/0.jpg)](https://www.youtube.com/watch?v=9T5YM5CkrV0)
+
 # Misc?
 
 https://github.com/pdsmart/zSoft
