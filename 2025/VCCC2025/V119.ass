@@ -1,0 +1,79 @@
+(main)VCCC2025
+  org    $9000
+
+* 119 bytes long
+
+main
+   LDU   #REGS
+   PULU  D,X,Y
+L1 STA   ,U+
+   DECB
+   BNE   L1
+L2 LDA   -21,U
+   STA   ,U+
+   CMPU  #TABEND
+   BNE   L2
+
+   LDA   #9
+   BSR   H8
+   BSR   H2
+
+   LDD   #$0707
+   BSR   D8
+   
+   LDD   #$0705
+   BSR   H2
+   
+   LDD   #$0802
+   BSR   D2
+
+   LDD   #$0502
+   BSR   D2
+
+L3 LDB   ,-U
+   JSR   $E803
+   CMPU  #TAB-2
+   BNE   L3
+   RTS
+
+D8 BSR   D4
+D4 BSR   D2
+D2 BSR   D1
+D1 BSR   H1
+   DECB
+   RTS
+
+H8 BSR   H4
+H4 BSR   H2
+H2 BSR   H1
+H1 BSR   P1
+   DECA
+   RTS
+
+P1 EXG   A,B   
+   BSR   P2
+   EXG   A,B
+P2 PSHS  D,X
+   LDA   #21
+   MUL
+   LEAY  D,X
+   NEGA
+   NEGB
+   SBCA  #0
+   LEAX  D,X
+   LDA   ,S
+   LDB   #'*
+   STB   A,X
+   STB   A,Y
+   NEGA
+   STB   A,X
+   STB   A,Y
+   PULS  D,X,PC
+REGS
+   FDB   $2013,TAB+9+(19+2)*9,$0D0A
+   echo  SIZE=&(*-main)
+TAB
+  RMB    (19+2)*19-2
+TABEND
+  end main
+			

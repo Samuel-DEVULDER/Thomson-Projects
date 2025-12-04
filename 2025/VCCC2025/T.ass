@@ -1,0 +1,75 @@
+(main)VCCC2025
+   ORG   $9000
+
+* 106 bytes long
+
+MAIN
+   LDU   #REGS
+   PULU  D,X,Y
+L1 STB   ,U+
+   LEAY  -1,Y
+   BNE   L1
+
+   CLRB
+   BSR   H8
+   BSR   H2
+
+   LDD   #$0707
+   BSR   D8
+   
+   LDD   #$0705
+   BSR   H2
+   
+   LDD   #$0802
+   BSR   D2
+
+   LDD   #$0502
+   BSR   D2
+   
+   LDB    #12  
+L2 JSR   $E803
+   LDB   ,-U
+   BPL   L2
+   RTS
+
+D8 BSR   D4
+D4 BSR   D2
+D2 BSR   D1
+D1 BSR   H1
+   DECB
+   RTS
+
+H8 BSR   H4
+H4 BSR   H2
+H2 BSR   H1
+H1 BSR   P1
+   DECA
+   RTS
+
+P1 EXG   A,B   
+   BSR   P2
+   EXG   A,B
+P2 PSHS  D,X
+   LDA   #40
+   MUL
+   LEAY  D,X
+   NEGA
+   NEGB
+   SBCA  #0
+   LEAX  D,X
+   LDA   ,S
+   LDB   #'*
+   STB   A,X
+   STB   A,Y
+   NEGA
+   STB   A,X
+   STB   A,Y
+   PULS  D,X,PC
+REGS
+   FDB   $0920,TAB+40*11+20,40*23
+   echo  SIZE=&(*-MAIN)
+TAB 
+   RMB   40*23
+
+   END   MAIN
+			
