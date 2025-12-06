@@ -1,7 +1,7 @@
 (main)VCCC2025
    ORG   $9000
 
-* 98 bytes long
+* 96 bytes long
 
 MAIN
    LEAU  <REGS,PCR
@@ -10,7 +10,7 @@ L1 STB   ,U+
    LEAY  -1,Y
    BNE   L1
 
-   COMB
+   COMB           ; CC=1
    TFR   A,B
    BSR   R8
    LDD   #$0903
@@ -18,15 +18,14 @@ L1 STB   ,U+
    LDD   #$0603
    BSR   R2
 
-   CLRB
+   CLRB           ; CC=0
    LDA   #$0A
    BSR   R8
    BSR   R2
 
    LDD   #$0805
    BSR   R2
-
-   LDB    #12  
+   
 L2 JSR   $E803
    LDB   ,-U
    BPL   L2
