@@ -4,14 +4,14 @@
 * 96 bytes long
 
 MAIN
-   LEAU  <REGS,PCR
-   PULU  D,X,Y
-L1 STB   ,U+
-   LEAY  -1,Y
+   LDX   #TAB
+   LDD   #$2008
+L1 STA   ,X+
+   CMPX  #TABEND
    BNE   L1
 
-   COMB           ; CC=1
-   TFR   A,B
+   COMA           ; CC=1
+   LDA   #$08
    BSR   R8
    LDD   #$0903
    BSR   R2
@@ -22,12 +22,11 @@ L1 STB   ,U+
    LDA   #$0A
    BSR   R8
    BSR   R2
-
    LDD   #$0805
    BSR   R2
    
 L2 JSR   $E803
-   LDB   ,-U
+   LDB   ,-X
    BPL   L2
    RTS
 
@@ -44,6 +43,7 @@ P1 DECA
    EXG   A,B
    
 P2 PSHS  CC,D,X,Y
+   LDX   #TAB+40*11+20
    LDA   #40
    MUL
    LEAY  D,X
@@ -61,9 +61,6 @@ P2 PSHS  CC,D,X,Y
    STB   A,X
    STB   A,Y
    PULS  CC,D,X,Y,PC
-
-REGS
-   FDB   $820,TAB+40*11+20,40*23
    echo  SIZE=&(*-MAIN)
 TAB 
    RMB   40*23
