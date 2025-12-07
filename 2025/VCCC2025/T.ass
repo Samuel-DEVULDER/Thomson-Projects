@@ -1,33 +1,28 @@
 (main)VCCC2025
-   ORG   $9000
+*   ORG   $9000
+   
+   ORG   $DC31-40
 
 * 96 bytes long
 
 MAIN
    LDX   #TAB
+   LEAU  X8-TAB,X
    LDD   #$2008
 L1 STA   ,X+
    CMPX  #TABEND
    BNE   L1
 
    COMA           ; CC=1
-   LDA   #$08
-   BSR   R8
-   LDD   #$0903
-   BSR   R2
-   LDD   #$0603
-   BSR   R2
+   BSR   X8
 
    CLRB           ; CC=0
-   LDA   #$0A
-   BSR   R8
-   BSR   R2
-   LDD   #$0805
-   BSR   R2
-   
+   BSR   X8
+
+* B=0 printing $0 prints nothing
 L2 JSR   $E803
    LDB   ,-X
-   BPL   L2
+   BPL   L2       ; stops because BRA R2 in the end is a negative byte
    RTS
 
 R8 BSR   R4
@@ -40,10 +35,10 @@ D1 DECB
 P1 DECA
    EXG   A,B   
    BSR   P2
-   EXG   A,B
+   EXG     A,B
    
 P2 PSHS  CC,D,X,Y
-   LDX   #TAB+40*11+20
+   LDX   #TAB+40*10+20
    LDA   #40
    MUL
    LEAY  D,X
@@ -61,9 +56,21 @@ P2 PSHS  CC,D,X,Y
    STB   A,X
    STB   A,Y
    PULS  CC,D,X,Y,PC
+DATA
+   FDB   $0805   
+   FDB   $0200
+   FCB   $0A
+   FDB   $0603
+   FDB   $0903
+   FCB   $08
+X8 LDA   ,-U
+   BSR   R8
+   BSR   X2
+X2 LDD   ,--U
+   BRA   R2
    echo  SIZE=&(*-MAIN)
 TAB 
-   RMB   40*23
+   RMB   40*22
 TABEND
 
    END   MAIN
