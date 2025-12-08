@@ -1,0 +1,71 @@
+(main)VCCC2025
+   ORG   $9000
+
+* 95 bytes long
+
+MAIN
+   LDX   #TAB
+   LDD   #$2008
+L1 STA   ,X+
+   CMPX  #TABEND
+   BNE   L1
+
+   COMA           ; CC=1 (diag move)
+   LDA   #$08
+   BSR   R8
+   LDD   #$0903
+   BSR   R2
+   LDD   #$0603
+   BSR   R2
+
+   CLRB           ; CC=0 (hoiz move)
+   LDA   #$0A
+   BSR   R8
+   BSR   R2
+   LDD   #$0805
+   BSR   R2
+   
+L2 JSR   $E803    ; printing $0 does nothing
+   LDB   ,-X
+   BPL   L2       ; works because PULS at TAB-1 has MSBit set
+   RTS
+
+R8 BSR   R4       ; draw 16 stars
+R4 BSR   R2       ; draw 8 stars
+R2 BSR   R1       ; draw 4 stars
+R1 BCC   P1       ; CC=1 moves diagonally, else horiz
+
+D1 DECB           ; moves backward verti
+
+P1 DECA           ; moves backward horiz 
+   EXG   A,B      ; swap horiz/verti
+   BSR   P2       ; draw 4 stars
+   EXG   A,B      ; swap horiz/verti
+   
+P2 PSHS  CC,D,X,Y ; prints 4 stars at (A,B),(-A,B),(A,-B),(-A,-B)
+   LDX   #TAB+40*10+20
+   LDA   #40
+   MUL
+   LEAY  D,X
+
+   NEGA
+   NEGB
+   SBCA  #0
+   LEAX  D,X
+   
+   LDA   1,S
+   LDB   #'*
+   STB   A,X
+   STB   A,Y
+   NEGA
+   STB   A,X
+   STB   A,Y
+   PULS  CC,D,X,Y,PC
+
+   echo  SIZE=&(*-MAIN)
+TAB 
+   RMB   40*21
+TABEND
+
+   END   MAIN
+			
