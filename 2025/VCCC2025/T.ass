@@ -1,77 +1,83 @@
 (main)VCCC2025
-*   ORG   $9000
-   
-   ORG   $DC31-40
+   ORG   $9000
 
-* 96 bytes long
+* 125 bytes long
 
 MAIN
-   LDX   #TAB
-   LEAU  X8-TAB,X
-   LDD   #$2008
-L1 STA   ,X+
-   CMPX  #TABEND
-   BNE   L1
+   LDD   #12
+   BSR   PR
+   BSR   M10
+   LDA   #8
 
-   COMA           ; CC=1
-   BSR   X8
-
-   CLRB           ; CC=0
-   BSR   X8
-
-* B=0 printing $0 prints nothing
-L2 JSR   $E803
-   LDB   ,-X
-   BPL   L2       ; stops because BRA R2 in the end is a negative byte
-   RTS
-
-R8 BSR   R4
 R4 BSR   R2
 R2 BSR   R1
-R1 BCC   P1
+R1 BSR   M4
+   BSR   T3
+   BSR   T3
+   ADDA  #8
+   BSR   M10
+   ADDA  #6
+   BSR   M5
+   BSR   T3
+   LDB   #32
+   BSR   CH
+   ADDA  #8
+   BSR   M4
+   BSR   M4
+   ADDA  #6
+   RTS
 
-D1 DECB
+T3 BSR   T1
+   ADDA  #-2
+   BSR   T1
+   ADDA  #6
+   BRA   M3
 
-P1 DECA
-   EXG   A,B   
-   BSR   P2
-   EXG     A,B
-   
-P2 PSHS  CC,D,X,Y
-   LDX   #TAB+40*10+20
-   LDA   #40
-   MUL
-   LEAY  D,X
-   
-   NEGA
-   NEGB
-   SBCA  #0
-   LEAX  D,X
-   
-   LDA   1,S
+T1 ADDA  #-2
+   BSR   M2
+   ADDA  #8
+   BRA   M2
+
+M10
+   BSR   M5
+M5 BSR   M1
+M4 BSR   M1
+M3 BSR   M1
+M2 BSR   M1
+M1 ANDA  #$E
+   LDX   #TAB
+   JSR   [A,X]
    LDB   #'*
-   STB   A,X
-   STB   A,Y
-   NEGA
-   STB   A,X
-   STB   A,Y
-   PULS  CC,D,X,Y,PC
-DATA
-   FDB   $0805   
-   FDB   $0200
-   FCB   $0A
-   FDB   $0603
-   FDB   $0903
-   FCB   $08
-X8 LDA   ,-U
-   BSR   R8
-   BSR   X2
-X2 LDD   ,--U
-   BRA   R2
-   echo  SIZE=&(*-MAIN)
-TAB 
-   RMB   40*22
-TABEND
+CH BSR   PR
+   BRA   LF
+
+DR BSR   RT
+   FCB   $8c   
+DL BSR   LF
+   BRA   DN
+UL BSR   LF
+   FCB   $8c
+UR BSR   RT
+UP LDB   #11
+   FCB   $8c
+DN LDB   #10
+   FCB   $8c
+RT LDB   #9
+   FCB   $8c
+LF LDB   #8
+PR JMP   $E803
+
+TAB   
+   FDB   RT
+   FDB   UR
+   FDB   UP
+   FDB   UL
+   FDB   LF
+   FDB   DL
+   FDB   DN
+   FDB   DR
+
+   ECHO  SIZE=&(*-MAIN)
 
    END   MAIN
 			
