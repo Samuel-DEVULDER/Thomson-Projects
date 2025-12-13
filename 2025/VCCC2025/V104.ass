@@ -1,0 +1,112 @@
+(main)VCCC2025
+
+* MSBit must be set 
+   ORG   $9000
+   SETDP */256
+
+* 104 bytes long
+
+MOVE MACRO
+   FCB   (7&(\0))+(15&(\1))*8
+   ENDM
+DO MACRO
+   FCB   -((\0)&127)
+   ENDM
+DONE MACRO
+   FCB   $80
+   ENDM
+NATIVE MACRO
+   FCB   $00
+   ENDM
+   
+SKIP2 MACRO
+   FCB   $8C         ; CMPX #nnnn (skips 2 bytes)   
+   ENDM
+ 
+MAIN
+   PSHS  CC,D,DP,X,Y,U
+   LDU   #REGS
+   PULU  D,DP,X,Y
+L1 STB   ,X+
+   CMPX  #TABEND   
+   BNE   L1
+
+   BSR   TURTLE
+   DO    FLAKE4
+   NATIVE            
+
+   LDX   <L1+3       ; X=TABEND and B=0 here because NATIVE=0
+L2 JSR   $E803       ; printing 0 does nothing => no initial garbage on screen
+   LDB   ,-X
+   BPL   L2          ; stobs beacause last dir offset is <0
+
+   PULS  CC,D,DP,X,Y,U,PC
+   
+FLAKE4
+   DO    FLAKE2
+FLAKE2
+   DO    FLAKE1
+FLAKE1
+   MOVE  -3,3
+   DO    EAR
+   MOVE  0,1
+   DO    EAR
+   MOVE  0,1
+   MOVE  4,9      
+   MOVE  -3,5
+   DO    EAR
+   MOVE  -4,7
+   DONE
+
+EAR
+   MOVE  -1,2
+   MOVE  4,2
+   MOVE  -2,2
+   MOVE  4,2
+   MOVE  3,2
+   DONE
+
+DOCALL
+   EXG   A,DP
+   PSHS  A,B,X
+   EXG   A,DP
+TURTLE
+   PULS  X
+NEXT
+   LDB   ,X+
+   BGT   DRAW        ; B=%0ddddrrr
+   NEGB              ; negate
+   BMI   TURTLE      ; B=$80 (only number still negatived after negation)
+   BNE   DOCALL      ; B=%0xxxxxxx
+   JMP   ,X          ; B=$00
+DRAW
+   ADDB  #3          ; actual rotation
+   ANDB  #7          ; mod 8
+   STB   <DRAW+1     ; ! self-modifying codeB
+   LDB   B,U         ; convert angle to offset
+   STB   <STEP+2     ; ! self-modifying code
+   LDB  -1,X
+LOOP
+   SUBB  #8
+   BMI   NEXT
+STEP   
+   LEAY  <127,Y
+   STA   ,Y
+   BRA   LOOP
+
+REGS
+   FDB   $20+256*'*
+   FCB   */256
+   FDB   TAB
+   FDB   TAB+40*11+20
+DIR
+   FCB   1,41,40,39,-1,-41,-40,-39
+
+   ECHO  SIZE=&(*-MAIN)
+
+TAB
+   RMB   40*22
+TABEND
+
+   END   MAIN
+			
