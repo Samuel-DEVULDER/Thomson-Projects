@@ -1,0 +1,85 @@
+(main)VCCC2025
+
+   ORG   $9000
+
+* 85 bytes long
+ 
+MAIN
+   LDX   #DATAEND-1
+LINE
+   LDA   #19
+LOOP
+   LSR   ,X
+   BNE   OUTC
+   ROR   ,-X
+OUTC
+   LDB   #32
+   BCC   PRC
+   LDB   #'*
+PRC   
+   BSR   PR   
+   DECA
+   BNE   LOOP
+   LDB   #10
+   BSR   PR
+   LDB   #13
+   BSR   PR
+   CMPX  #DATA
+   BNE   LINE
+   RTS
+
+PR JMP   $E803   
+
+DATA
+*   RMB   (19*19+7)/8
+   FCB   $00,$40,$00,$2A
+   FCB   $00,$A3,$8A,$0C
+   FCB   $21,$83,$95,$38
+   FCB   $09,$C8,$00,$92
+   FCB   $02,$4A,$92,$24
+   FCB   $E4,$9F,$FF,$FC
+   FCB   $93,$92,$24,$A9
+   FCB   $20,$24,$80,$09
+   FCB   $C8,$0E,$54,$E0
+   FCB   $C2,$18,$28,$E2
+   FCB   $80,$2A,$00,$01
+   FCB   $00,$02   
+
+DATAEND
+   ECHO  SIZE=&(*-MAIN)
+   
+   END   MAIN
+   
+-- LUA
+s = "         9         " ..
+    "       * 8 *       " ..
+    "  * *   *7*   * *  " ..
+    "   **    6    **   " ..
+    "  ***  * 5 *  ***  " ..
+    "     *  *4*  *     " ..
+    "      *  3  *      " ..
+    " *  *  * 2 *  *  * " ..
+    "  *  *  *1*  *  *  " ..
+    "9876543210123456789" ..
+    "  *  *  *1*  *  *  " ..
+    " *  *  * 2 *  *  * " ..
+    "      *  3  *      " ..
+    "     *  *4*  *     " ..
+    "  ***  * 5 *  ***  " ..
+    "   **    6    **   " ..
+    "  * *   *7*   * *  " ..
+    "       * 8 *       " ..
+	 "         9         "		
+
+function out(a, c)
+   if a>=256 then
+      io.stdout:write(string.format("$%02X,",a%256))
+      a=1
+   end
+   return a*2 + (c==' ' and 0 or 1)
+end
+a = 1
+for i=s:len(),1,-1 do
+   a = out(a, s:sub(i,i))
+end
+io.stdout:write(string.format("$%02X\n",a))
