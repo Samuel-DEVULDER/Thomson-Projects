@@ -1,83 +1,85 @@
 (main)VCCC2025
+
    ORG   $9000
 
-* 125 bytes long
-
+* 85 bytes long
+ 
 MAIN
-   LDD   #12
-   BSR   PR
-   BSR   M10
-   LDA   #8
-
-R4 BSR   R2
-R2 BSR   R1
-R1 BSR   M4
-   BSR   T3
-   BSR   T3
-   ADDA  #8
-   BSR   M10
-   ADDA  #6
-   BSR   M5
-   BSR   T3
+   LDX   #DATAEND-1
+LINE
+   LDA   #19
+LOOP
+   LSR   ,X
+   BNE   OUTC
+   ROR   ,-X
+OUTC
    LDB   #32
-   BSR   CH
-   ADDA  #8
-   BSR   M4
-   BSR   M4
-   ADDA  #6
+   BCC   PRC
+   LDB   #'*
+PRC   
+   BSR   PR   
+   DECA
+   BNE   LOOP
+   LDB   #10
+   BSR   PR
+   LDB   #13
+   BSR   PR
+   CMPX  #DATA
+   BNE   LINE
    RTS
 
-T3 BSR   T1
-   ADDA  #-2
-   BSR   T1
-   ADDA  #6
-   BRA   M3
+PR JMP   $E803   
 
-T1 ADDA  #-2
-   BSR   M2
-   ADDA  #8
-   BRA   M2
+DATA
+*   RMB   (19*19+7)/8
+   FCB   $00,$40,$00,$2A
+   FCB   $00,$A3,$8A,$0C
+   FCB   $21,$83,$95,$38
+   FCB   $09,$C8,$00,$92
+   FCB   $02,$4A,$92,$24
+   FCB   $E4,$9F,$FF,$FC
+   FCB   $93,$92,$24,$A9
+   FCB   $20,$24,$80,$09
+   FCB   $C8,$0E,$54,$E0
+   FCB   $C2,$18,$28,$E2
+   FCB   $80,$2A,$00,$01
+   FCB   $00,$02   
 
-M10
-   BSR   M5
-M5 BSR   M1
-M4 BSR   M1
-M3 BSR   M1
-M2 BSR   M1
-M1 ANDA  #$E
-   LDX   #TAB
-   JSR   [A,X]
-   LDB   #'*
-CH BSR   PR
-   BRA   LF
-
-DR BSR   RT
-   FCB   $8c   
-DL BSR   LF
-   BRA   DN
-UL BSR   LF
-   FCB   $8c
-UR BSR   RT
-UP LDB   #11
-   FCB   $8c
-DN LDB   #10
-   FCB   $8c
-RT LDB   #9
-   FCB   $8c
-LF LDB   #8
-PR JMP   $E803
-
-TAB   
-   FDB   RT
-   FDB   UR
-   FDB   UP
-   FDB   UL
-   FDB   LF
-   FDB   DL
-   FDB   DN
-   FDB   DR
-
+DATAEND
    ECHO  SIZE=&(*-MAIN)
-
+   
    END   MAIN
-			
+   
+-- LUA
+s = "         9         " ..
+    "       * 8 *       " ..
+    "  * *   *7*   * *  " ..
+    "   **    6    **   " ..
+    "  ***  * 5 *  ***  " ..
+    "     *  *4*  *     " ..
+    "      *  3  *      " ..
+    " *  *  * 2 *  *  * " ..
+    "  *  *  *1*  *  *  " ..
+    "9876543210123456789" ..
+    "  *  *  *1*  *  *  " ..
+    " *  *  * 2 *  *  * " ..
+    "      *  3  *      " ..
+    "     *  *4*  *     " ..
+    "  ***  * 5 *  ***  " ..
+    "   **    6    **   " ..
+    "  * *   *7*   * *  " ..
+    "       * 8 *       " ..
+	 "         9         "		
+
+function out(a, c)
+   if a>=256 then
+      io.stdout:write(string.format("$%02X,",a%256))
+      a=1
+   end
+   return a*2 + (c==' ' and 0 or 1)
+end
+a = 1
+for i=s:len(),1,-1 do
+   a = out(a, s:sub(i,i))
+end
+io.stdout:write(string.format("$%02X\n",a))
