@@ -1,0 +1,51 @@
+VCCC2025 entry for TO8
+
+Author: __sam__
+Category: Christmas Challenge
+System:   Squale Apollo 7
+Language: Assembler 
+
+Len source code: 1843 bytes (incl. comments)
+Len exe file:    140 bytes (on disk)
+Len code only:   133 bytes (in RAM)
+
+Instructions:
+=============
+1) Download Mame.
+   https://www.mamedev.org/
+2) Add Squale Apollo 7 emulation roms.
+   http://hxc2001.free.fr/Squale/
+3) Launch the squale emulator
+   $ mame squale -window -cart <path/to/>VCCC2025.rom
+   Flex9 will boot.
+4) Enter the date, eg. 25/12/2025
+   Note: you might have to press the shift key
+   a couple of times in order for the digit keys
+   to work.
+5) The "+++" Flex prompt appears.
+6) Type VCCC2025 (case insensitive), and press ENTER.
+7) Enjoy the snowflake being drawn char by char.
+
+Description:
+============
+This is version is inspired by turtle moves in the logo 
+language (relative rotation and motion), all with ascii 
+control chars.
+
+The code is loaded at $0000 but is relocatable. It should
+work on any 6809-based Flex9 systems (Squale, Goupil G3, 
+many SBCs).
+
+Comments:
+=========
+I, had trouble finding a compiler working correcly with 
+macros, so I quickly re-implemented the algorithm in an
+other way.
+
+I might be off delay, sorry guys.
+
+Used tools:
+* https://github.com/Arakula/A09 
+* https://github.com/Samuel-DEVULDER/flextools
+
+Note: the +++ appearing in the end is the flex prompt.
