@@ -1,0 +1,77 @@
+(main)VCCC2025
+      ORG   $8000 ; free ram zone
+
+PUTC  EQU   $E803 ; put char (ROM)
+
+LF    EQU   10    ; line feed
+CR    EQU   13    ; carriage return
+SP    EQU   32    ; space
+ST    EQU   '*    ; star
+
+* VC3-2025/TO8 by __sam__ (85 bytes)
+
+START LEAX  <STOP,PCR ; init stream
+LINE  LDA   #19   ; 19 lines in total
+NEXT  LSR   ,X    ; extract next bit
+      BNE   CONT  ; ok-> continue
+      ROR   ,-X   ; ko-> next in stream
+CONT  LDB   #ST   ; load B reg with
+      BCS   STAR  ; ..CC=1 -> star
+      LDB   #SP   ; ..CC=0 -> space
+STAR  BSR   PRINT ; prints character
+      DECA        ; end of line?
+      BNE   NEXT  ; ..no  -> loop back
+      BSR   CRLF  ; ..yes -> cr/lf
+      CMPX  #DATA ; end of stream?
+      BNE   LINE  ; ..no  -> new line
+      RTS         ; ..yes -> all done
+CRLF  LDB   #CR   ; prints CR
+      BSR   PRINT ; .. and ..
+      LDB   #LF   ; prints LF 
+PRINT JMP   PUTC  ; call monitor
+
+DATA  FCB   $00,$40,$00,$2A,$00,$A3,$8A
+      FCB   $0C,$21,$83,$95,$38,$09,$C8
+      FCB   $00,$92,$02,$4A,$92,$24,$E4
+      FCB   $9F,$FF,$FC,$93,$92,$24,$A9
+      FCB   $20,$24,$80,$09,$C8,$0E,$54
+      FCB   $E0,$C2,$18,$28,$E2,$80,$2A
+      FCB   $00,$01,$00,$02
+STOP EQU   *-1    ; 85 bytes from START
+
+     ECHO  SIZE=&(*-START)
+     END   START
+
+-- LUA CODE TO CONVERT PICTURE INTO BIT MAP
+s = "         9         " ..
+    "       * 8 *       " ..
+    "  * *   *7*   * *  " ..
+    "   **    6    **   " ..
+    "  ***  * 5 *  ***  " ..
+    "     *  *4*  *     " ..
+    "      *  3  *      " ..
+    " *  *  * 2 *  *  * " ..
+    "  *  *  *1*  *  *  " ..
+    "9876543210123456789" ..
+    "  *  *  *1*  *  *  " ..
+    " *  *  * 2 *  *  * " ..
+    "      *  3  *      " ..
+    "     *  *4*  *     " ..
+    "  ***  * 5 *  ***  " ..
+    "   **    6    **   " ..
+    "  * *   *7*   * *  " ..
+    "       * 8 *       " ..
+    "         9         "
+
+function out(a, c)
+   if a>=256 then
+      io.stdout:write(string.format("$%02X,",a%256))
+      a=1
+   end
+   return a*2 + (c==' ' and 0 or 1)
+end
+a = 1
+for i=s:len(),1,-1 do
+   a = out(a, s:sub(i,i))
+end
+io.stdout:write(string.format("$%02X\n",a))

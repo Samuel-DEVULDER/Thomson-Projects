@@ -1,0 +1,79 @@
+/*--------------------------------------------------------------*
+ * Compilé avec C6809 v0.83                                     *
+ *--------------------------------------------------------------*
+ * Fichier source      : ../VCCC2025.ass
+ * Fichier destination : VCCC2025.BIN
+ * Contenu :
+ *     Main     0:VCCC2025.ASM 1757
+ *--------------------------------------------------------------*/
+
+Macro Pass
+Pass1
+Pass2
+      2        8000                     ORG   $8000 ; free ram zone
+      3
+      4                  E803     PUTC  EQU   $E803 ; put char (ROM)
+      5
+      6                  000A     LF    EQU   10    ; line feed
+      7                  000D     CR    EQU   13    ; carriage return
+      8                  0020     SP    EQU   32    ; space
+      9                  002A     ST    EQU   '*    ; star
+     10
+     11                           * VC3-2025/TO8 by __sam__ (85 bytes)
+     12
+     13  4+1   8000 30   8C 51    START LEAX  <STOP,PCR ; init stream
+     14  2     8003 86   13       LINE  LDA   #19   ; 19 lines in total
+     15  6+0   8005 64   84       NEXT  LSR   ,X    ; extract next bit
+     16  3     8007 26   02             BNE   CONT  ; ok-> continue
+     17  6+2   8009 66   82             ROR   ,-X   ; ko-> next in stream
+     18  2     800B C6   2A       CONT  LDB   #ST   ; load B reg with
+     19  3     800D 25   02             BCS   STAR  ; ..CC=1 -> star 
+     20  2     800F C6   20             LDB   #SP   ; ..CC=0 -> space
+     21  7     8011 8D   11       STAR  BSR   PRINT ; prints character
+     22  2     8013 4A                  DECA        ; end of line?
+     23  3     8014 26   EF             BNE   NEXT  ; ..no  -> loop back
+     24  7     8016 8D   06             BSR   CRLF  ; ..yes -> cr/lf
+     25  4     8018 8C   8027           CMPX  #DATA ; end of stream?
+     26  3     801B 26   E6             BNE   LINE  ; ..no  -> new line
+     27  5     801D 39                  RTS         ; ..yes -> all done
+     28  2     801E C6   0D       CRLF  LDB   #CR   ; prints CR
+     29  7     8020 8D   02             BSR   PRINT ; .. and .. 
+     30  2     8022 C6   0A             LDB   #LF   ; prints LF
+     31  4     8024 7E   E803     PRINT JMP   PUTC  ; call monitor
+     32
+     33        8027 00 40 00 2A   DATA  FCB   $00,$40,$00,$2A,$00,$A3,$8A
+               802B 00 A3 8A
+     34        802E 0C 21 83 95         FCB   $0C,$21,$83,$95,$38,$09,$C8
+               8032 38 09 C8
+     35        8035 00 92 02 4A         FCB   $00,$92,$02,$4A,$92,$24,$E4
+               8039 92 24 E4
+     36        803C 9F FF FC 93         FCB   $9F,$FF,$FC,$93,$92,$24,$A9
+               8040 92 24 A9
+     37        8043 20 24 80 09         FCB   $20,$24,$80,$09,$C8,$0E,$54
+               8047 C8 0E 54
+     38        804A E0 C2 18 28         FCB   $E0,$C2,$18,$28,$E2,$80,$2A
+               804E E2 80 2A
+     39        8051 00 01 00 02         FCB   $00,$01,$00,$02
+     40                  8054     STOP EQU   *-1    ; 85 bytes from START
+     41
+     42                                ECHO  SIZE=&(*-START)
+     43                  8000          END   START
+
+000000 Total Errors
+
+000014 Total Symbols
+     1x          Label 800B CONT
+     1x          Equ   000D CR
+     1x          Label 801E CRLF
+     1x          Label 8027 DATA
+     1x          Equ   000A LF
+     1x          Label 8003 LINE
+     1x          Label 8005 NEXT
+     2x          Label 8024 PRINT
+     1x          Equ   E803 PUTC
+     1x          Equ   0020 SP
+     1x          Equ   002A ST
+     1x          Label 8011 STAR
+     1x          Label 8000 START
+     1x          Equ   8054 STOP
+

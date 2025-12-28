@@ -1,0 +1,59 @@
+VCCC2025 entry for TO8
+
+Author: __sam__
+Category: Christmas Challenge
+System:   Thomson TO8 
+Language: Assembler (assembleur-6809-v3_memo7.rom, provided)
+Len source code: 1605 bytes (incl. comments)
+Len exe file:    95 bytes (on disk)
+Len code only:   85 bytes (in RAM)
+Instructions:
+1) Download any emulator:
+- TEO    : https://sourceforge.net/projects/teoemulator/
+- DCMOTO : http://dcmoto.free.fr/emulateur/index.html
+- other
+
+2) Select machine
+- TO8 
+
+3) Chose media
+- VCCC2025.k7 for tape drive
+- VCCC2025.sap for disk drive
+
+4) Boot into BASIC
+- BASIC 1 for tape drive (press 2)
+- BASIC 2 for disk drive (press 1)
+Note: yes, Thomson reversed the keys ;)
+
+5) Load and launch binary
+- for tape drive, type: LOADM"",,R
+- for disk drive, type: LOADM"VCCC2025",,R 
+Note: there are two commas before R.
+
+6) Enjoy the snowflake!
+
+Description:
+This is a very simple algorithm. It extracts bits from data 
+(19×19/8 bytes) and, depending on each bit, prints either a 
+space or a star.
+
+That’s all.
+
+Comments:
+I tried many more sophisticated algorithms (see my GitHub:
+https://github.com/Samuel-DEVULDER/Thomson-Projects/tree/main/2025/VCCC2025),
+but the dumbest one turned out to be the smallest. No need 
+to be clever this time.
+
+No special trick is used — it’s quite straightforward. Reads the
+comments in the source code. Just the K.I.S.S. principle.
+
+The binary is relocatable and should work on all Thomson TO-series 
+machines: TO7 (with 16K memory expansion), TO7/70, TO8, TO9, and TO9+.
+
+Hopefully, I’ll have time to submit one of the more sophisticated 
+algorithms as another entry for a rare machine.
+
+Note: The Thomson TO8 is an 8-bit French home computer from the 
+mid-1980s, powered by a Motorola 6809 CPU. It belongs to the same 
+family as the TO7 and TO9, widely used in French schools at the time.
