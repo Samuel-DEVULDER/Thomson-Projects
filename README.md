@@ -15,6 +15,7 @@ for i in */*; do test -d "$i" && git ls-files --error-unmatch "$i" >/dev/null 2>
 * [2014/foreverXV-PiMiTV](2014/foreverXV-PiMiTV) - demo produced for Forever Party XV
 * [2014/foreverXV-TopOPop](2014/foreverXV-TopOPop) - music/graphics demo for Forever Party XV
 * [2014/foreverXV-WRBP](2014/foreverXV-WRBP) - demo built for Forever Party XV
+* [2014/foreverXV-BloodyRun](2014/foreverXV-BloodyRun) - demo built for Forever Party XV
 * [2015/PIrat](2015/PIrat) - tiny (256-byte) intro that computes digits of Pi on the fly
 * [2015/forever-2015-thomcat](2015/forever-2015-thomcat) - Forever Party 2015 intro ("thomcat")
 * [2015/langton](2015/langton) - Langton's ant cellular-automaton demonstration
