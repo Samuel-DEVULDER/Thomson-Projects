@@ -19,4 +19,4 @@ Remarks:    1) 34 long seconds to wait before start.
             3) Music is few measures of William Tell by Rossini (final part).
             4) Source code is available on the disk.
             5) It is really a crazy bloody run !
-            6) The format of this README is copyright Samuel Devulder.
+            6) The format of this README is copyright Samuel Devulder ;)
